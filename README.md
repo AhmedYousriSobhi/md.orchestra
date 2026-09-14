@@ -41,8 +41,8 @@ python3 -m http.server 8000
    current structure.
 5. Use **+ New section** to write a whole new part of the document: a
    title, heading level, and which existing section to nest it under —
-   picked by clicking a wedge on a sunburst diagram of the whole document
-   (or its center, for the top level) rather than reading down a list.
+   picked from a collapsible tree of the whole document (the same
+   interaction as the sidebar) rather than reading down a flat dropdown.
 6. Click **💾 Save** any time — it writes straight back to the file if it
    was opened with **Open .md file**, otherwise it downloads the current
    Markdown. It's the only save control in the app, and it glows while
@@ -70,7 +70,7 @@ js/
   ui/                 sidebar, breadcrumb, card grid (incl. inline title/
                      content editing), insight modal, code viewer, notes
                      panel, settings/source panels, add-section modal +
-                     radial (sunburst) picker, map view, toast
+                     tree picker, map view, toast
   utils/              dom (incl. an SVG-element helper)/debounce/id/color
   main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
@@ -178,4 +178,9 @@ user reports: `mapView.js` had `dominantBaseline` (camelCase) where SVG
 needs the hyphenated `dominant-baseline` attribute name to take effect, and
 a Playwright default click (bounding-box center) failed on a legitimately
 thin, near-full-circle wedge — a forced coordinate click confirmed the
-picker itself works correctly; it was a test-tooling quirk, not an app bug.
+picker itself worked correctly; it was a test-tooling quirk, not an app bug.
+- **Stage 9** — Direct follow-up: the sunburst from Stage 8 was replaced
+  with `js/ui/treePicker.js`, a collapsible heading tree — same interaction
+  model as the sidebar (expand only the active path by default, click a
+  chevron for more) — after hands-on use showed a tree reads better than a
+  radial chart for picking a location in a document.
