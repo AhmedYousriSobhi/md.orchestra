@@ -25,10 +25,16 @@ python3 -m http.server 8000
    `sample2.md`, `sample3.md`).
 2. Browse the heading tree in the sidebar — collapsed to just the active
    path by default, click the ▸ chevrons to expand others — or open
-   **🗺️ Map** for a one-screen diagram of the whole document; the main
-   panel drills into whatever section you pick and shows its own content
-   plus a card grid of its subsections. In-document links (e.g. a Table of
-   Contents) jump to the right section instead of doing nothing.
+   **🗺️ Map** for a whole-document diagram, either the indented **🌳 Tree**
+   or an Obsidian-style **🧠 Mind map** with draggable nodes; the main panel
+   drills into whatever section you pick and shows its own content plus a
+   card grid of its subsections. In-document links (e.g. a Table of
+   Contents) jump to the right section instead of doing nothing. Drag any
+   heading in the sidebar onto another one to relocate it — drop on the
+   top/bottom third of a row to place it immediately before/after that
+   heading (as a sibling, at that exact spot — including promoting or
+   demoting it to/from the top level), or the middle third to nest it
+   inside as that heading's last subsection.
 3. Click a card's insight icon to open the AI popup: get a Claude summary,
    clarity suggestions, and optionally insert the suggestion straight into
    that section.
@@ -46,9 +52,11 @@ python3 -m http.server 8000
    leaving a stray bullet), Tab/Shift+Tab indents a list line, and
    Ctrl/Cmd+B, +I, +\` wrap the selection in bold/italic/code.
 5. Use **+ New section** to write a whole new part of the document: a
-   title, heading level, and which existing section to nest it under —
-   picked from a collapsible tree of the whole document (the same
-   interaction as the sidebar) rather than reading down a flat dropdown.
+   title, heading level, and exactly where it goes — click a heading in the
+   tree to drop it inside (as the last subsection), or drag the handle onto
+   the tree and hover a row's top/bottom/middle third to place it precisely
+   before/after/inside that heading, rather than only "first/last of its
+   parent."
 6. Click **💾 Save** any time — it writes straight back to the file if it
    was opened with **Open .md file**, otherwise it downloads the current
    Markdown. It's the only save control in the app, and it glows while
@@ -73,12 +81,16 @@ js/
                      anchors), toc.js (regenerate a Table of Contents)
   state/store.js      single source of truth + pub/sub
   ai/                 client.js (Claude fetch), prompts.js, settings.js
-  ui/                 sidebar, breadcrumb, card grid (incl. inline title/
-                     content editing), insight modal, code viewer, notes
-                     panel, settings/source panels, add-section modal +
-                     tree picker, map view, markdownEditing (list
-                     continuation / indent / bold-italic-code shortcuts,
-                     attached to every raw-Markdown textarea), toast
+  ui/                 sidebar (drag-and-drop to relocate sections),
+                     breadcrumb, card grid (incl. inline title/content
+                     editing), insight modal, code viewer, notes panel,
+                     settings/source panels, add-section modal + tree
+                     picker (drag-and-drop placement), dragDrop.js (shared
+                     before/inside/after zone detection), map view (tree
+                     diagram + mindMap.js's force-directed graph),
+                     markdownEditing (list continuation / indent /
+                     bold-italic-code shortcuts, attached to every
+                     raw-Markdown textarea), toast
   utils/              dom (incl. an SVG-element helper)/debounce/id/color
   main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
@@ -202,3 +214,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   an empty section) now drafts one from the current headings immediately,
   reusing the generator behind "Regenerate from headings" — guarded to
   only fire while the content field is still empty.
+- **Stage 11** — Reported bug: adding a "Table of Contents" section landed
+  after the very last section at that heading level instead of right under
+  the document's main headline, because "+ New section" could only place
+  new content as first/last child of a chosen parent. Replaced that with a
+  precise drop target (before/after a specific sibling, or inside a
+  heading as its first/last child) — `resolveDropTarget()` in
+  `state/store.js` — chosen by dragging a "New section" handle onto the
+  tree picker and hovering the top/bottom/middle third of a heading's row,
+  per the requested drag-and-drop interaction (click-to-select still works
+  as the quick default). The same before/inside/after mechanism
+  (`js/ui/dragDrop.js`) was then extended to the sidebar itself, so
+  existing sections can be dragged to relocate them — reordered, re-parented,
+  or promoted/demoted to/from the top level — via the new `moveSection()`,
+  which re-levels a moved subtree to fit its new depth and rejects moving a
+  node into itself or its own subsection.
+- **Stage 12** — Added a second view inside 🗺️ Map: an Obsidian-style
+  "🧠 Mind map" (`js/ui/mindMap.js`) alongside the existing "🌳 Tree"
+  diagram — a small from-scratch force-directed layout (repulsion between
+  every node pair, spring edges, a weak center pull, run to a settled state
+  before rendering) with freely draggable nodes, so a cluttered cluster can
+  be pulled apart by hand the way Obsidian's own graph view works.
