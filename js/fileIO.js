@@ -1,0 +1,55 @@
+export function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file.'));
+    reader.readAsText(file);
+  });
+}
+
+export async function fetchSample(path) {
+  const res = await fetch(path, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Could not load ${path} (${res.status}). Serve this folder over HTTP, not file://.`);
+  return res.text();
+}
+
+export const supportsFileSystemAccess = typeof window !== 'undefined' && 'showOpenFilePicker' in window;
+
+export async function openFilePicker() {
+  if (!supportsFileSystemAccess) return null;
+  const [handle] = await window.showOpenFilePicker({
+    types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+  });
+  const file = await handle.getFile();
+  const text = await file.text();
+  return { handle, fileName: file.name, text };
+}
+
+/** Write text back to a previously-opened File System Access handle. */
+export async function writeToHandle(handle, text) {
+  const writable = await handle.createWritable();
+  await writable.write(text);
+  await writable.close();
+}
+
+export function downloadText(fileName, text) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function guessCodeFileExtension(lang) {
+  const map = {
+    javascript: 'js', typescript: 'ts', python: 'py', bash: 'sh', shell: 'sh', sh: 'sh',
+    json: 'json', yaml: 'yml', yml: 'yml', html: 'html', css: 'css', sql: 'sql',
+    go: 'go', rust: 'rs', java: 'java', c: 'c', cpp: 'cpp', csharp: 'cs', ruby: 'rb',
+    php: 'php', markdown: 'md', text: 'txt', plaintext: 'txt',
+  };
+  return map[(lang || '').toLowerCase()] || 'txt';
+}

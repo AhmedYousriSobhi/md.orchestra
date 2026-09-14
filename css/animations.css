@@ -1,0 +1,16 @@
+/* Page-swap transition for #section-view when drilling into / back out of a section. */
+#section-view {
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(.2,.7,.3,1);
+}
+
+#section-view.panel-out-forward { opacity: 0; transform: translateX(-14px) scale(0.99); }
+#section-view.panel-out-back { opacity: 0; transform: translateX(14px) scale(0.99); }
+
+#section-view.panel-in-forward { opacity: 0; transform: translateX(18px) scale(0.99); }
+#section-view.panel-in-back { opacity: 0; transform: translateX(-18px) scale(0.99); }
+#section-view.panel-in-active { opacity: 1; transform: translateX(0) scale(1); }
+
+.sidebar-fade-enter { animation: fade-in 0.3s ease both; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+#empty-state { animation: fade-in 0.4s ease both; }

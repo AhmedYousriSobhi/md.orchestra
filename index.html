@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Markdown Insight Dashboard</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/14.1.0/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/cards.css">
+<link rel="stylesheet" href="css/modal.css">
+<link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+
+<div id="app-shell">
+  <header id="app-header">
+    <button id="sidebar-toggle" class="btn btn-ghost" type="button" title="Toggle sections" aria-label="Toggle sections">☰</button>
+    <div class="brand">
+      <span class="brand-title">Markdown Insight Dashboard</span>
+      <span class="brand-subtitle">read · annotate · ask Claude · save back</span>
+    </div>
+
+    <button id="open-file-btn" class="btn" type="button">Open .md file</button>
+    <input id="file-input" type="file" accept=".md,.markdown,.txt" />
+
+    <div class="samples-menu">
+      <button id="samples-btn" class="btn" type="button">Samples ▾</button>
+      <div id="samples-dropdown" class="samples-dropdown" hidden>
+        <button type="button" data-sample="sample.md">sample.md — onboarding checklist</button>
+        <button type="button" data-sample="sample2.md">sample2.md — HPC ops reference (large)</button>
+        <button type="button" data-sample="sample3.md">sample3.md — feature showcase</button>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div id="dirty-indicator" class="dirty-indicator"><span class="dot"></span><span id="dirty-text">No document loaded</span></div>
+    <button id="source-btn" class="btn" type="button" disabled>Source</button>
+    <button id="settings-btn" class="btn" type="button">Settings ⚙</button>
+  </header>
+
+  <div id="app-body">
+    <aside id="sidebar"></aside>
+
+    <main id="main-panel">
+      <div id="breadcrumb-bar"></div>
+      <div id="section-view-wrap">
+        <div id="empty-state">
+          <h2>No document loaded yet</h2>
+          <p>Open a Markdown file, drop one anywhere on this page, or load a bundled sample to see it broken into cards you can browse, annotate, and ask Claude about.</p>
+          <button id="empty-sample-btn" class="btn btn-primary" type="button">Try sample.md</button>
+          <span id="drop-hint">…or drag a .md file here</span>
+        </div>
+        <div id="section-view" hidden></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // Mermaid: don't auto-scan the whole page on load; render.js calls mermaid.run() explicitly per section.
+  if (window.mermaid) {
+    window.mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+  }
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

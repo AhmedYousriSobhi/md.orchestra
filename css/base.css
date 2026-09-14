@@ -1,0 +1,81 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --bg-soft: #eef1f8;
+  --surface: #ffffff;
+  --border: #e2e6f0;
+  --text: #1b2233;
+  --text-soft: #5b6478;
+  --text-faint: #8b93a7;
+  --shadow-sm: 0 1px 2px rgba(20, 25, 45, 0.06);
+  --shadow-md: 0 8px 24px rgba(20, 25, 45, 0.09);
+  --shadow-lg: 0 24px 64px rgba(15, 20, 40, 0.22);
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --accent-default: #6c5ce7;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+h1, h2, h3, h4, p, ul, ol { margin: 0; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary { background: var(--accent-default); border-color: var(--accent-default); color: #fff; }
+.btn-ghost { background: transparent; }
+.btn-insight {
+  background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+  color: #fff;
+  border: none;
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+.code-btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-soft);
+}
+.code-btn:hover { background: var(--bg-soft); }
+.code-btn-close { color: var(--text); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #c7cede; border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
