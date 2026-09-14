@@ -1,0 +1,63 @@
+import { findNode, getPath } from '../markdown/parser.js';
+
+const listeners = new Set();
+
+let state = {
+  doc: null,          // parsed section tree (see markdown/parser.js), or null before a file is loaded
+  fileName: null,      // display name of the loaded file
+  fileHandle: null,    // File System Access API handle, if the file was opened that way
+  selectedId: null,    // id of the section currently focused in the main panel
+  dirty: false,        // true once the in-memory doc diverges from the last load/save
+};
+
+export function getState() {
+  return state;
+}
+
+export function subscribe(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function notify() {
+  for (const fn of listeners) fn(state);
+}
+
+export function setState(patch) {
+  state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  notify();
+}
+
+export function loadDocument({ doc, fileName, fileHandle = null }) {
+  const firstChild = doc.children[0];
+  setState({
+    doc,
+    fileName,
+    fileHandle,
+    selectedId: firstChild ? firstChild.id : doc.id,
+    dirty: false,
+  });
+}
+
+export function selectSection(id) {
+  setState({ selectedId: id });
+}
+
+export function getSelectedNode() {
+  if (!state.doc || !state.selectedId) return null;
+  return findNode(state.doc, state.selectedId);
+}
+
+export function getSelectedPath() {
+  if (!state.doc || !state.selectedId) return [];
+  return getPath(state.doc, state.selectedId);
+}
+
+/** Replace one node's bodyMarkdown (and optionally title) in place, then mark the doc dirty. */
+export function updateNode(id, patch) {
+  if (!state.doc) return;
+  const node = findNode(state.doc, id);
+  if (!node) return;
+  Object.assign(node, patch);
+  setState({ doc: state.doc, dirty: true });
+}
