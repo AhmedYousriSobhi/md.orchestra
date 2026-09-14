@@ -24,7 +24,7 @@
 <script type="module">
 import { parseMarkdown } from '../js/markdown/parser.js';
 import { serializeMarkdown } from '../js/markdown/serializer.js';
-import { splitBody, joinBody, withNote, withAiInsert } from '../js/markdown/markers.js';
+import { splitBody, joinBody, withAiInsert } from '../js/markdown/markers.js';
 import { analyzeContent } from '../js/markdown/analyze.js';
 
 const results = [];
@@ -76,20 +76,35 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   check('re-parsing a serialized document reproduces the same tree', deepEqual(structuralSnapshot(doc1), structuralSnapshot(doc2)), serialized);
 }
 
-// 5. markers.js: split/join round trip and idempotent updates
+// 5. markers.js: split/join round trip, multiple independent notes, and idempotent updates
 {
-  let body = 'main paragraph';
-  body = withNote(body, 'a user note');
+  let body = joinBody({ main: 'main paragraph', notes: [{ id: 'n0', text: 'first note' }, { id: 'n1', text: 'second note' }] });
   body = withAiInsert(body, 'a claude suggestion');
   const parts = splitBody(body);
-  check('splitBody recovers main/note/aiInsert independently', parts.main === 'main paragraph' && parts.note === 'a user note' && parts.aiInsert === 'a claude suggestion');
+  check(
+    'splitBody recovers main/notes/aiInsert independently',
+    parts.main === 'main paragraph'
+      && parts.notes.length === 2
+      && parts.notes[0].text === 'first note'
+      && parts.notes[1].text === 'second note'
+      && parts.aiInsert === 'a claude suggestion',
+  );
 
-  const updated = withNote(body, 'an updated note');
-  const parts2 = splitBody(updated);
-  check('withNote replaces (not duplicates) an existing note', parts2.note === 'an updated note' && (updated.match(/dashboard:note:start/g) || []).length === 1);
+  const oneNoteEdited = joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === 'n0' ? { ...n, text: 'first note, edited' } : n)) });
+  const parts2 = splitBody(oneNoteEdited);
+  check(
+    'editing one note leaves the other untouched, without duplicating markers',
+    parts2.notes.find((n) => n.id === 'n0').text === 'first note, edited'
+      && parts2.notes.find((n) => n.id === 'n1').text === 'second note'
+      && (oneNoteEdited.match(/dashboard:note:n0:start/g) || []).length === 1,
+  );
 
-  const cleared = withNote(updated, '');
-  check('withNote with empty text removes the note block entirely', !cleared.includes('dashboard:note'));
+  const oneNoteDeleted = joinBody({ ...parts2, notes: parts2.notes.filter((n) => n.id !== 'n1') });
+  check('deleting one note removes only that marker block', !oneNoteDeleted.includes('dashboard:note:n1') && oneNoteDeleted.includes('dashboard:note:n0'));
+
+  const legacyBody = '<!-- dashboard:note:start -->\nan old single note\n<!-- dashboard:note:end -->';
+  const legacyParts = splitBody(legacyBody);
+  check('a pre-multi-note legacy marker is still read back as one note', legacyParts.notes.length === 1 && legacyParts.notes[0].text === 'an old single note');
 }
 
 // 6. analyze.js badge counts

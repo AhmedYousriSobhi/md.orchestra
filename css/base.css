@@ -79,6 +79,11 @@ button {
 .code-btn-danger { color: #a4351f; }
 .code-btn-danger:hover { background: #fce7e7; }
 
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
 .editing-hint {
   display: block; font-size: 0.7rem; color: var(--text-faint);
   margin-top: 0.35rem; font-style: italic;

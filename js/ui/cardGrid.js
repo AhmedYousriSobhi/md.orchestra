@@ -1,7 +1,7 @@
 import { h } from '../utils/dom.js';
 import { paletteFor } from '../utils/colors.js';
 import { analyzeContent, toPlainExcerpt } from '../markdown/analyze.js';
-import { splitBody, joinBody, withNote, withAiInsert } from '../markdown/markers.js';
+import { splitBody, joinBody, withAiInsert } from '../markdown/markers.js';
 import { renderMarkdownToSafeHtml, enhanceRenderedContent } from '../markdown/render.js';
 import { getPath, getTopLevelIndex } from '../markdown/parser.js';
 import { buildSlugIndex } from '../markdown/slug.js';
@@ -9,11 +9,12 @@ import { generateTocMarkdown, looksLikeTocSection } from '../markdown/toc.js';
 import {
   getState, selectSection, updateNode, removeSection,
 } from '../state/store.js';
-import { createNotesEditor } from './notesPanel.js';
+import { createNotesSection } from './notesPanel.js';
 import { openCodeViewer } from './codeViewer.js';
 import { openInsightModal } from './insightModal.js';
 import { showToast } from './toast.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
+import { nextId } from '../utils/id.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 
@@ -43,8 +44,14 @@ export function renderSectionView(container, node) {
 }
 
 function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
-  const { main, aiInsert, note } = splitBody(node.bodyMarkdown);
+  const { main, aiInsert, notes } = splitBody(node.bodyMarkdown);
   const card = h('article', { class: 'card card-focused', style: `--accent:${accent}` });
+  // Always re-read node.bodyMarkdown (not the `main`/`aiInsert`/`notes` above)
+  // at the moment of each edit: several independent fields (multiple notes,
+  // the AI-insert callout, the main body) can each change without the others
+  // triggering a full re-render — see main.js's focus guard — so a stale
+  // closure here would silently revert whichever field wasn't just edited.
+  const currentParts = () => splitBody(node.bodyMarkdown);
   const onNavigate = (id) => selectSection(id);
   const renderBody = () => renderMarkdownToSafeHtml(main);
 
@@ -95,7 +102,20 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
     ]));
   }
 
-  card.appendChild(createNotesEditor(note, (text) => updateNode(node.id, { bodyMarkdown: withNote(node.bodyMarkdown, text) })));
+  card.appendChild(createNotesSection(notes, {
+    onUpdate: (id, text) => {
+      const parts = currentParts();
+      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === id ? { ...n, text } : n)) }) });
+    },
+    onAdd: () => {
+      const parts = currentParts();
+      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: [...parts.notes, { id: nextId('note'), text: '' }] }) });
+    },
+    onDelete: (id) => {
+      const parts = currentParts();
+      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.filter((n) => n.id !== id) }) });
+    },
+  }));
 
   const actions = [editContentBtn];
 
@@ -105,7 +125,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
       type: 'button',
       onClick: () => {
         const regenerated = generateTocMarkdown(getState().doc, { excludeId: node.id });
-        updateNode(node.id, { bodyMarkdown: joinBody({ main: regenerated, aiInsert, note }) });
+        updateNode(node.id, { bodyMarkdown: joinBody({ ...currentParts(), main: regenerated }) });
         showToast('Table of contents regenerated from the current headings');
       },
     }, '🔄 Regenerate from headings'));
@@ -197,8 +217,8 @@ function enterContentEditMode(bodyEl, main, node, onDone) {
   }
 
   const save = () => {
-    const { aiInsert, note } = splitBody(node.bodyMarkdown);
-    updateNode(node.id, { bodyMarkdown: joinBody({ main: textarea.value, aiInsert, note }) });
+    const parts = splitBody(node.bodyMarkdown);
+    updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, main: textarea.value }) });
   };
   const cancel = () => onDone();
 
@@ -212,7 +232,7 @@ function enterContentEditMode(bodyEl, main, node, onDone) {
 }
 
 function buildPreviewCard(node, accent) {
-  const { main, note } = splitBody(node.bodyMarkdown);
+  const { main, notes } = splitBody(node.bodyMarkdown);
   const stats = analyzeContent(main);
   const excerpt = toPlainExcerpt(main, 140)
     || (node.children.length ? `${node.children.length} subsection${node.children.length > 1 ? 's' : ''}` : 'No content yet.');
@@ -223,7 +243,7 @@ function buildPreviewCard(node, accent) {
   if (stats.tables) badges.push(h('span', { class: 'stat-badge' }, `▦ ${stats.tables}`));
   if (stats.hasDetails) badges.push(h('span', { class: 'stat-badge' }, '⌄ collapsible'));
   if (node.children.length) badges.push(h('span', { class: 'stat-badge' }, `${node.children.length} sub`));
-  if (note) badges.push(h('span', { class: 'stat-badge stat-badge-note' }, '📝 note'));
+  if (notes.length) badges.push(h('span', { class: 'stat-badge stat-badge-note' }, `📝 ${notes.length > 1 ? `${notes.length} notes` : 'note'}`));
 
   return h('article', {
     class: 'card card-preview',

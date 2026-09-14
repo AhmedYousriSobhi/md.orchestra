@@ -41,6 +41,8 @@
   font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.85rem;
   background: #1e2333; color: #e5e9f5;
 }
+.edit-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.edit-toolbar .editing-hint { margin-top: 0; }
 .edit-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
 
 .card-grid {
@@ -122,15 +124,22 @@ pre.code-pre, pre.hljs {
 .callout-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.85rem; color: #5b3fb0; }
 
 .notes-editor { margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem; }
-.notes-editor-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+.notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.6rem; }
 .notes-editor-title { font-size: 0.82rem; font-weight: 600; color: var(--text-soft); }
 .notes-status { font-size: 0.72rem; color: var(--text-faint); }
+.notes-list { display: flex; flex-direction: column; gap: 0.7rem; }
+.note-card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.7rem; }
+.note-card-head { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; margin-bottom: 0.35rem; }
+.note-card-head .notes-status { margin-right: auto; }
 .notes-textarea {
   width: 100%; resize: vertical; min-height: 3.2rem;
   border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.7rem;
-  font-family: inherit; font-size: 0.85rem; background: var(--bg-soft); color: var(--text);
+  font-family: inherit; font-size: 0.85rem; background: var(--surface); color: var(--text);
 }
 .notes-textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent, var(--accent-default)) 40%, transparent); }
+.notes-textarea.image-drop-target,
+.content-edit-textarea.image-drop-target { outline: 2px dashed var(--accent-default); outline-offset: 2px; }
+.attach-image-btn { display: inline-flex; }
 
 @keyframes card-in {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
