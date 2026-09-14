@@ -33,15 +33,21 @@ python3 -m http.server 8000
    clarity suggestions, and optionally insert the suggestion straight into
    that section.
 4. Use the notes field on a card to add your own notes; they're stored
-   against that section.
-5. Use **+ New section** to write a whole new part of the document —
-   title, heading level, and which existing section to nest it under (any
-   node in the tree, not just whatever's currently open) — rather than
-   just annotating an existing one.
-6. Open the **Source** panel any time to see the live-generated Markdown and
-   save it — via the File System Access API (writes back to the opened
-   file, if it was opened with **Open .md file**) or as a download
-   fallback.
+   against that section. Use **✎ Edit content** / the pencil next to the
+   title to change the section's actual content and heading text (not just
+   an annotation), and **🗑 Delete section** to remove it. A section titled
+   something like "Table of Contents" gets a **🔄 Regenerate from
+   headings** action that rebuilds its bullet list from the document's
+   current structure.
+5. Use **+ New section** to write a whole new part of the document: a
+   title, heading level, and which existing section to nest it under —
+   picked by clicking a wedge on a sunburst diagram of the whole document
+   (or its center, for the top level) rather than reading down a list.
+6. Click **💾 Save** any time — it writes straight back to the file if it
+   was opened with **Open .md file**, otherwise it downloads the current
+   Markdown. It's the only save control in the app, and it glows while
+   there are unsaved changes. The **Source** panel is read-only, for
+   double-checking the generated Markdown or copying it elsewhere.
 7. Open **Settings** to provide your Anthropic API key and pick a Claude
    model. The key is stored only in `localStorage` on your machine and is
    sent directly to `api.anthropic.com` — never to any other service.
@@ -57,12 +63,14 @@ css/                 base, layout, cards, modal, animation styles
 js/
   markdown/          parser.js (md -> section tree), serializer.js (tree -> md),
                      render.js (section -> sanitized HTML: tables, code,
-                     mermaid, <details>)
+                     mermaid, <details>), slug.js (GitHub-compatible heading
+                     anchors), toc.js (regenerate a Table of Contents)
   state/store.js      single source of truth + pub/sub
   ai/                 client.js (Claude fetch), prompts.js, settings.js
-  ui/                 sidebar, breadcrumb, card grid, insight modal,
-                     code viewer, notes panel, settings/source panels,
-                     add-section modal, map view, toast
+  ui/                 sidebar, breadcrumb, card grid (incl. inline title/
+                     content editing), insight modal, code viewer, notes
+                     panel, settings/source panels, add-section modal +
+                     radial (sunburst) picker, map view, toast
   utils/              dom (incl. an SVG-element helper)/debounce/id/color
   main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
@@ -152,3 +160,22 @@ rest of the app.
   **+ New section**, for writing whole new document content anywhere in the
   tree rather than only annotating existing sections, and **🗺️ Map**, a
   one-screen diagram of the entire document's heading structure.
+- **Stage 8** — More user-reported work: sections can now be edited in
+  place (title, content) and deleted, not just annotated or created fresh;
+  a "Regenerate from headings" action keeps a Table of Contents section in
+  sync with the document's actual structure; the "+ New section" parent
+  dropdown was replaced with a sunburst diagram of the whole document to
+  click a location on, rather than read down a list; and saving was
+  collapsed into one obvious "💾 Save" button that always does the right
+  thing, replacing a Source panel whose available buttons quietly changed
+  depending on how the file was opened. Title editing hit the same
+  focus/re-render interaction the earlier notes fix addressed — routing
+  Enter/Escape through `blur()` fixed it, verified the edit now actually
+  reaches the sidebar and breadcrumb, not just the underlying data.
+
+Two things came from this round that are pure UI-verification catches, not
+user reports: `mapView.js` had `dominantBaseline` (camelCase) where SVG
+needs the hyphenated `dominant-baseline` attribute name to take effect, and
+a Playwright default click (bounding-box center) failed on a legitimately
+thin, near-full-circle wedge — a forced coordinate click confirmed the
+picker itself works correctly; it was a test-tooling quirk, not an app bug.
