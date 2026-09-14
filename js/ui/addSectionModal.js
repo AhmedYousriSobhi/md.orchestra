@@ -5,7 +5,7 @@ import { findNode } from '../markdown/parser.js';
 import {
   getState, insertSection, selectSection, getSelectedNode,
 } from '../state/store.js';
-import { renderRadialPicker } from './radialPicker.js';
+import { renderTreePicker } from './treePicker.js';
 import { showToast } from './toast.js';
 
 let overlayEl = null;
@@ -13,11 +13,11 @@ let overlayEl = null;
 /**
  * Open a form for authoring a brand-new section anywhere in the document:
  * title, heading level, which existing section to nest it under — picked
- * from a sunburst diagram of the whole document rather than a plain
- * dropdown, so "where" is a spatial choice, not a list to read — whether it
- * goes first or last among that parent's children, and its initial
- * Markdown body. Unlike the notes field, this becomes real document
- * content, not an annotation.
+ * from a collapsible tree of the whole document (the same interaction as
+ * the sidebar) rather than a plain dropdown, so it stays scannable however
+ * large the document is — whether it goes first or last among that
+ * parent's children, and its initial Markdown body. Unlike the notes
+ * field, this becomes real document content, not an annotation.
  */
 export function openAddSectionModal() {
   const { doc } = getState();
@@ -34,8 +34,8 @@ export function openAddSectionModal() {
     type: 'text', class: 'settings-input', placeholder: 'e.g. "Rollback procedure"',
   });
 
-  const pickedLabel = h('div', { class: 'radial-picked-label' });
-  const pickerBox = h('div', { class: 'radial-svg-box' });
+  const pickedLabel = h('div', { class: 'tree-picker-label' });
+  const pickerBox = h('div', { class: 'tree-picker-box' });
 
   const levelSelect = h('select', { class: 'settings-input' });
   function refreshLevelOptions() {
@@ -60,11 +60,11 @@ export function openAddSectionModal() {
 
   function onPick(id) {
     parentId = id;
-    renderRadialPicker(pickerBox, doc, parentId, onPick);
+    renderTreePicker(pickerBox, doc, parentId, onPick);
     updatePickedLabel();
     refreshLevelOptions();
   }
-  renderRadialPicker(pickerBox, doc, parentId, onPick);
+  renderTreePicker(pickerBox, doc, parentId, onPick);
   updatePickedLabel();
   refreshLevelOptions();
 
@@ -110,8 +110,9 @@ export function openAddSectionModal() {
         titleInput,
       ]),
       h('div', { class: 'insight-section' }, [
-        h('h3', {}, 'Nest under — click a wedge, or the center for the top of the document'),
-        h('div', { class: 'radial-picker-wrap' }, [pickerBox, pickedLabel]),
+        h('h3', {}, 'Nest under'),
+        pickerBox,
+        pickedLabel,
       ]),
       h('div', { class: 'add-section-grid' }, [
         h('div', { class: 'insight-section' }, [h('h3', {}, 'Heading level'), levelSelect]),

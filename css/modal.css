@@ -129,30 +129,17 @@
 .map-node:focus-visible { outline: none; }
 .map-node-current .map-label { fill: var(--accent, var(--accent-default)); font-weight: 700; }
 
-/* Radial (sunburst) section picker, used in the "+ New section" form */
-.radial-picker-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
-.radial-svg-box { width: min(300px, 100%); aspect-ratio: 1 / 1; margin: 0 auto; }
-.radial-picked-label {
-  font-size: 0.85rem; color: var(--text); text-align: center;
-  min-height: 1.3em;
+/* Tree section picker, used in the "+ New section" form */
+.tree-picker-box {
+  max-height: 260px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.5rem 0.6rem; background: var(--bg-soft);
 }
-.radial-picked-label strong { color: var(--accent-default); }
-
-.radial-arc {
-  fill: var(--accent, var(--accent-default)); opacity: 0.82;
-  stroke: var(--surface); stroke-width: 1.5; cursor: pointer;
-  transition: opacity 0.15s ease, filter 0.15s ease;
+.tree-picker-label {
+  font-size: 0.8rem; color: var(--text-faint); margin-top: 0.4rem;
 }
-.radial-wedge:hover .radial-arc, .radial-wedge:focus-visible .radial-arc { opacity: 1; filter: brightness(1.1); }
-.radial-wedge:focus-visible { outline: none; }
-.radial-selected .radial-arc { opacity: 1; stroke: var(--text); stroke-width: 2.5; }
-.radial-label { font-size: 8.5px; fill: #fff; pointer-events: none; }
-
-.radial-hub { cursor: pointer; }
-.radial-hub circle { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
-.radial-hub:hover circle, .radial-hub:focus-visible circle { stroke: var(--text); }
-.radial-hub.radial-selected circle { stroke: var(--accent-default); stroke-width: 2.5; }
-.radial-hub-label { font-size: 16px; }
+.tree-picker-label strong { color: var(--accent-default); }
+.tree-picker-root { margin-bottom: 0.3rem; }
 
 /* Toasts */
 #toast-stack {
