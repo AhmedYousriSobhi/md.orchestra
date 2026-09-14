@@ -1,5 +1,6 @@
 import { h } from '../utils/dom.js';
 import { debounce } from '../utils/debounce.js';
+import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 
 /**
  * A self-contained "your notes" editor for one section. Calls
@@ -12,6 +13,7 @@ export function createNotesEditor(initialText, onSave) {
     rows: '3',
   });
   textarea.value = initialText || '';
+  attachMarkdownEditingHelpers(textarea);
 
   const status = h('span', { class: 'notes-status' }, '');
   const debouncedSave = debounce((value) => {
@@ -32,5 +34,6 @@ export function createNotesEditor(initialText, onSave) {
       status,
     ]),
     textarea,
+    h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats'),
   ]);
 }

@@ -13,6 +13,7 @@ import { createNotesEditor } from './notesPanel.js';
 import { openCodeViewer } from './codeViewer.js';
 import { openInsightModal } from './insightModal.js';
 import { showToast } from './toast.js';
+import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 
@@ -186,6 +187,14 @@ function enterContentEditMode(bodyEl, main, node, onDone) {
   bodyEl.innerHTML = '';
   const textarea = h('textarea', { class: 'content-edit-textarea' });
   textarea.value = main;
+  attachMarkdownEditingHelpers(textarea);
+
+  if (!main.trim() && looksLikeTocSection(node)) {
+    // Starting to fill in an empty "Table of Contents" section: give it a
+    // first draft from the document's current headings straight away,
+    // same idea as "Regenerate from headings" but offered up front.
+    textarea.value = generateTocMarkdown(getState().doc, { excludeId: node.id });
+  }
 
   const save = () => {
     const { aiInsert, note } = splitBody(node.bodyMarkdown);
@@ -194,6 +203,7 @@ function enterContentEditMode(bodyEl, main, node, onDone) {
   const cancel = () => onDone();
 
   bodyEl.appendChild(textarea);
+  bodyEl.appendChild(h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats'));
   bodyEl.appendChild(h('div', { class: 'edit-actions' }, [
     h('button', { class: 'btn btn-primary', type: 'button', onClick: save }, 'Save content'),
     h('button', { class: 'btn btn-ghost', type: 'button', onClick: cancel }, 'Cancel'),

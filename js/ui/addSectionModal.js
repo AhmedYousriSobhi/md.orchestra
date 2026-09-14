@@ -2,10 +2,12 @@ import { h } from '../utils/dom.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { nextId } from '../utils/id.js';
 import { findNode } from '../markdown/parser.js';
+import { generateTocMarkdown, looksLikeTocSection } from '../markdown/toc.js';
 import {
   getState, insertSection, selectSection, getSelectedNode,
 } from '../state/store.js';
 import { renderTreePicker } from './treePicker.js';
+import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { showToast } from './toast.js';
 
 let overlayEl = null;
@@ -78,6 +80,17 @@ export function openAddSectionModal() {
     rows: '6',
     placeholder: 'Section content in Markdown — optional, you can also fill this in afterward from the card.',
   });
+  attachMarkdownEditingHelpers(contentTextarea);
+
+  // Typing a title like "Table of Contents" drafts one from the document's
+  // current headings right away, same as VS Code's Markdown All in One
+  // picking up a ToC as soon as you start writing it — only while the
+  // content is still untouched, so it never overwrites something typed.
+  titleInput.addEventListener('input', () => {
+    if (!contentTextarea.value.trim() && looksLikeTocSection({ title: titleInput.value })) {
+      contentTextarea.value = generateTocMarkdown(doc, {});
+    }
+  });
 
   const submit = () => {
     const title = titleInput.value.trim();
@@ -121,6 +134,7 @@ export function openAddSectionModal() {
       h('div', { class: 'insight-section' }, [
         h('h3', {}, 'Content'),
         contentTextarea,
+        h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats'),
       ]),
       h('button', { class: 'btn btn-primary', type: 'button', onClick: submit }, 'Add section'),
     ]),
