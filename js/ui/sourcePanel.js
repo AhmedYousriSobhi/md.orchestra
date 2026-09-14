@@ -7,6 +7,15 @@ import { getState, setState } from '../state/store.js';
 
 let overlayEl = null;
 
+function sourceHelpText(fileHandle, fileName) {
+  const base = 'This is generated live from the cards, notes, and AI suggestions above.';
+  if (fileHandle) return `${base} Save it back to the original file, or download a copy.`;
+  if (supportsFileSystemAccess) {
+    return `${base} "${fileName}" wasn't opened with the file picker (it was loaded another way — a sample, drag-and-drop, or the plain file input), so there's no direct handle to save back to. Use Download, then replace the file on disk yourself. To save in place next time, use "Open .md file".`;
+  }
+  return `${base} Your browser doesn't support saving straight back to a file, so use Download to get the updated Markdown, then replace the original file with it.`;
+}
+
 export function openSourcePanel() {
   const { doc, fileName, fileHandle } = getState();
   if (!doc) { showToast('Load a document first', { type: 'error' }); return; }
@@ -37,9 +46,7 @@ export function openSourcePanel() {
       h('button', { class: 'code-btn code-btn-close', type: 'button', onClick: () => closeOverlay(overlayEl) }, 'Close ✕'),
     ]),
     h('div', { class: 'side-panel-body' }, [
-      h('p', { class: 'settings-help' }, supportsFileSystemAccess
-        ? 'This is generated live from the cards, notes, and AI suggestions above. Save it back to the original file, or download a copy.'
-        : 'This is generated live from the cards, notes, and AI suggestions above. Your browser doesn’t support saving straight back to the original file, so use Download to get the updated Markdown.'),
+      h('p', { class: 'settings-help' }, sourceHelpText(fileHandle, fileName)),
       h('textarea', { class: 'source-textarea', readonly: true, html: undefined }, []),
       h('div', { class: 'settings-actions' }, [
         saveDirectBtn,

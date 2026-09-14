@@ -45,10 +45,26 @@ export function renderMarkdownToSafeHtml(mdText) {
 
 /**
  * Post-process a container after its sanitized HTML has been inserted:
- * turns ```mermaid fences into live diagrams and wires a toolbar (copy /
- * expand) onto every code block. `onOpenCode` receives {lang, code}.
+ * turns ```mermaid fences into live diagrams, wires a toolbar (copy /
+ * expand) onto every code block, and redirects in-document anchor links
+ * (e.g. a Table of Contents built from `[Title](#some-heading)`) to the
+ * matching section instead of a dead same-page `#anchor` jump.
+ * `onOpenCode` receives {lang, code}; `onNavigate(nodeId)` is called for an
+ * internal link whose `#slug` matches something in `slugIndex`.
  */
-export function enhanceRenderedContent(container, { onOpenCode } = {}) {
+export function enhanceRenderedContent(container, { onOpenCode, slugIndex, onNavigate } = {}) {
+  if (slugIndex && onNavigate) {
+    container.querySelectorAll('a[href^="#"]').forEach((a) => {
+      const slug = decodeURIComponent(a.getAttribute('href').slice(1));
+      const targetId = slugIndex.get(slug);
+      if (!targetId) return;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        onNavigate(targetId);
+      });
+    });
+  }
+
   const mermaidBlocks = container.querySelectorAll('code.language-mermaid');
   mermaidBlocks.forEach((codeEl, i) => {
     const pre = codeEl.closest('pre');

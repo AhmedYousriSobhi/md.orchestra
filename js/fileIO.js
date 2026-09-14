@@ -25,8 +25,23 @@ export async function openFilePicker() {
   return { handle, fileName: file.name, text };
 }
 
-/** Write text back to a previously-opened File System Access handle. */
+/**
+ * Write text back to a previously-opened File System Access handle.
+ * `showOpenFilePicker` only grants read access by default — writing requires
+ * explicitly requesting 'readwrite' first (this is what actually prompts
+ * the browser's "Edit file?" confirmation), otherwise createWritable()
+ * throws a NotAllowedError.
+ */
 export async function writeToHandle(handle, text) {
+  if (handle.queryPermission && handle.requestPermission) {
+    const current = await handle.queryPermission({ mode: 'readwrite' });
+    if (current !== 'granted') {
+      const requested = await handle.requestPermission({ mode: 'readwrite' });
+      if (requested !== 'granted') {
+        throw new Error('Permission to write to this file was not granted.');
+      }
+    }
+  }
   const writable = await handle.createWritable();
   await writable.write(text);
   await writable.close();

@@ -4,6 +4,7 @@ import { analyzeContent, toPlainExcerpt } from '../markdown/analyze.js';
 import { splitBody, withNote, withAiInsert } from '../markdown/markers.js';
 import { renderMarkdownToSafeHtml, enhanceRenderedContent } from '../markdown/render.js';
 import { getPath, getTopLevelIndex } from '../markdown/parser.js';
+import { buildSlugIndex } from '../markdown/slug.js';
 import { getState, selectSection, updateNode } from '../state/store.js';
 import { createNotesEditor } from './notesPanel.js';
 import { openCodeViewer } from './codeViewer.js';
@@ -19,8 +20,9 @@ export function renderSectionView(container, node) {
   const topLevelIndex = node.level === 0 ? -1 : getTopLevelIndex(doc, node.id);
   const accent = topLevelIndex >= 0 ? paletteFor(topLevelIndex).accent : '#475569';
   const breadcrumbTitles = path.map((n) => n.title);
+  const slugIndex = buildSlugIndex(doc);
 
-  container.appendChild(buildFocusedCard(node, accent, breadcrumbTitles, fileName));
+  container.appendChild(buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex));
 
   if (node.children.length) {
     container.appendChild(h('h3', { class: 'grid-heading' }, node.level === 0 ? 'Sections' : 'Subsections'));
@@ -35,9 +37,10 @@ export function renderSectionView(container, node) {
   }
 }
 
-function buildFocusedCard(node, accent, breadcrumbTitles, fileName) {
+function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
   const { main, aiInsert, note } = splitBody(node.bodyMarkdown);
   const card = h('article', { class: 'card card-focused', style: `--accent:${accent}` });
+  const onNavigate = (id) => selectSection(id);
 
   card.appendChild(h('div', { class: 'card-head' }, [
     node.level > 0 ? h('span', { class: 'card-badge' }, LEVEL_LABEL[node.level] || `H${node.level}`) : null,
@@ -47,13 +50,23 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName) {
   const bodyEl = h('div', { class: 'card-body rendered-markdown' });
   if (main) {
     bodyEl.innerHTML = renderMarkdownToSafeHtml(main);
-    enhanceRenderedContent(bodyEl, { onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }) });
+    enhanceRenderedContent(bodyEl, {
+      onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
+      slugIndex,
+      onNavigate,
+    });
   } else {
     bodyEl.appendChild(h('p', { class: 'card-empty-note' }, 'No content directly under this heading.'));
   }
   card.appendChild(bodyEl);
 
   if (aiInsert) {
+    const aiBodyEl = h('div', { class: 'rendered-markdown', html: renderMarkdownToSafeHtml(aiInsert) });
+    enhanceRenderedContent(aiBodyEl, {
+      onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
+      slugIndex,
+      onNavigate,
+    });
     card.appendChild(h('div', { class: 'callout callout-ai' }, [
       h('div', { class: 'callout-head' }, [
         h('span', {}, '✨ Claude suggestion'),
@@ -63,7 +76,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName) {
           onClick: () => updateNode(node.id, { bodyMarkdown: withAiInsert(node.bodyMarkdown, '') }),
         }, 'Remove'),
       ]),
-      h('div', { class: 'rendered-markdown', html: renderMarkdownToSafeHtml(aiInsert) }),
+      aiBodyEl,
     ]));
   }
 
