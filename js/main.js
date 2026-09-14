@@ -1,13 +1,14 @@
 import { parseMarkdown } from './markdown/parser.js';
+import { serializeMarkdown } from './markdown/serializer.js';
 import {
-  getState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath,
+  getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath,
 } from './state/store.js';
 import { renderSidebar } from './ui/sidebar.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
 import {
-  readFile, fetchSample, openFilePicker, supportsFileSystemAccess,
+  readFile, fetchSample, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
 } from './fileIO.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
@@ -28,6 +29,7 @@ const el = {
   emptySampleBtn: document.getElementById('empty-sample-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
+  saveBtn: document.getElementById('save-btn'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
@@ -44,6 +46,8 @@ function render() {
   el.sourceBtn.disabled = !doc;
   el.addSectionBtn.disabled = !doc;
   el.mapViewBtn.disabled = !doc;
+  el.saveBtn.disabled = !doc;
+  el.saveBtn.classList.toggle('is-dirty', Boolean(dirty));
 
   if (!doc) {
     el.emptyState.hidden = false;
@@ -142,6 +146,41 @@ el.samplesDropdown.querySelectorAll('button[data-sample]').forEach((btn) => {
   });
 });
 el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
+
+/**
+ * The one obvious way to persist changes: write straight back to the file
+ * if it was opened via "Open .md file" (a real File System Access handle),
+ * otherwise download the up-to-date Markdown. Either way counts as
+ * "saved" — the in-memory doc is no longer ahead of what the user has.
+ */
+async function handleSave() {
+  const { doc, fileName, fileHandle } = getState();
+  if (!doc) return;
+  const text = serializeMarkdown(doc);
+
+  if (fileHandle) {
+    try {
+      await writeToHandle(fileHandle, text);
+      setState({ dirty: false });
+      showToast(`Saved to ${fileName}`);
+    } catch (err) {
+      showToast(`Save failed: ${err.message}`, { type: 'error' });
+    }
+    return;
+  }
+
+  downloadText(fileName || 'document.md', text);
+  setState({ dirty: false });
+  showToast(
+    supportsFileSystemAccess
+      ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
+      : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
+    { duration: 5000 },
+  );
+}
+
+el.saveBtn.addEventListener('click', handleSave);
+el.dirtyIndicator.addEventListener('click', handleSave);
 
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', openMapView);
