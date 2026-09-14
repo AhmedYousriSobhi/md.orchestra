@@ -1,0 +1,14 @@
+{
+  "name": "Markdown Insight Dashboard",
+  "short_name": "MD Dashboard",
+  "description": "Read, annotate, and edit a Markdown file as colored cards, with Claude-powered insights.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#6c5ce7",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

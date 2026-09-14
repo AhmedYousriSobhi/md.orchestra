@@ -28,14 +28,16 @@ export function setState(patch) {
   notify();
 }
 
-export function loadDocument({ doc, fileName, fileHandle = null }) {
+export function loadDocument({
+  doc, fileName, fileHandle = null, dirty = false,
+}) {
   const firstChild = doc.children[0];
   setState({
     doc,
     fileName,
     fileHandle,
     selectedId: firstChild ? firstChild.id : doc.id,
-    dirty: false,
+    dirty,
   });
 }
 

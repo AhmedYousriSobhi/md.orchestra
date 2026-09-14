@@ -15,6 +15,8 @@ import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
+import { debounce } from './utils/debounce.js';
+import { saveRecoverySnapshot, loadRecoverySnapshot, clearRecoverySnapshot } from './recovery.js';
 
 const el = {
   sidebar: document.getElementById('sidebar'),
@@ -92,6 +94,25 @@ function handleSidebarMove({ nodeId, referenceId, placement }) {
 subscribe(render);
 render();
 
+// Crash recovery: while there are unsaved changes, keep a snapshot of the
+// current Markdown in localStorage (debounced — this fires on every store
+// update, including per-keystroke note/content autosaves). If the tab or
+// browser goes away before a real save, the next load offers to restore it.
+const snapshotIfDirty = debounce(() => {
+  const { doc, fileName, dirty } = getState();
+  if (doc && dirty) saveRecoverySnapshot({ fileName, markdown: serializeMarkdown(doc) });
+}, 1500);
+subscribe(snapshotIfDirty);
+
+// The standard "leave site?" browser confirmation — works the same whether
+// this is a normal tab or a window opened from an installed PWA shortcut.
+window.addEventListener('beforeunload', (e) => {
+  if (getState().dirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
 function loadFromText(text, fileName, fileHandle = null) {
   try {
     const doc = parseMarkdown(text);
@@ -99,6 +120,7 @@ function loadFromText(text, fileName, fileHandle = null) {
       showToast('That file has no headings or content — nothing to show.', { type: 'error' });
       return;
     }
+    clearRecoverySnapshot(); // starting fresh with a (possibly different) file — any older recovery snapshot no longer applies
     loadDocument({ doc, fileName, fileHandle });
     showToast(`Loaded ${fileName}`);
   } catch (err) {
@@ -106,6 +128,29 @@ function loadFromText(text, fileName, fileHandle = null) {
     showToast(`Could not parse ${fileName}: ${err.message}`, { type: 'error' });
   }
 }
+
+/** Offer to restore a crash-recovery snapshot left over from before the app last closed. */
+function checkForRecovery() {
+  const snapshot = loadRecoverySnapshot();
+  if (!snapshot || !snapshot.markdown) return;
+  const when = new Date(snapshot.savedAt).toLocaleString();
+  const shouldRestore = window.confirm(
+    `Found unsaved work from last time: "${snapshot.fileName}" (${when}).\n\nRestore it? (Cancel discards it — this can't be undone.)`,
+  );
+  if (!shouldRestore) { clearRecoverySnapshot(); return; }
+  try {
+    const doc = parseMarkdown(snapshot.markdown);
+    loadDocument({
+      doc, fileName: snapshot.fileName, fileHandle: null, dirty: true,
+    });
+    showToast(`Restored unsaved work for "${snapshot.fileName}"`);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not restore the recovered file', { type: 'error' });
+    clearRecoverySnapshot();
+  }
+}
+checkForRecovery();
 
 el.openFileBtn.addEventListener('click', async () => {
   if (supportsFileSystemAccess) {
@@ -168,6 +213,7 @@ async function handleSave() {
     try {
       await writeToHandle(fileHandle, text);
       setState({ dirty: false });
+      clearRecoverySnapshot();
       showToast(`Saved to ${fileName}`);
     } catch (err) {
       showToast(`Save failed: ${err.message}`, { type: 'error' });
@@ -177,6 +223,7 @@ async function handleSave() {
 
   downloadText(fileName || 'document.md', text);
   setState({ dirty: false });
+  clearRecoverySnapshot();
   showToast(
     supportsFileSystemAccess
       ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
@@ -196,6 +243,14 @@ el.sidebarToggle.addEventListener('click', () => {
   const isNarrowViewport = window.matchMedia('(max-width: 860px)').matches;
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
 });
+
+// Registering this lets a supporting browser offer "Install app" — opening
+// in its own standalone window, like a desktop app, rather than a tab.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker registration failed', err));
+  });
+}
 
 ['dragover', 'drop'].forEach((evt) => window.addEventListener(evt, (e) => e.preventDefault()));
 window.addEventListener('drop', async (e) => {
