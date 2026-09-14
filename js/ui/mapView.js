@@ -91,18 +91,41 @@ export function openMapView() {
 
   if (overlayEl) overlayEl.remove();
   overlayEl = h('div', { class: 'overlay map-overlay', hidden: true });
-  overlayEl.addEventListener('click', (e) => { if (e.target === overlayEl) closeOverlay(overlayEl); });
 
   const scroll = h('div', { class: 'map-scroll' });
-  const onPick = (id) => {
-    selectSection(id);
+
+  // The mind map runs a continuous requestAnimationFrame loop (so it can
+  // keep reacting to the cursor) — it must be explicitly stopped whenever
+  // we leave it, or it keeps ticking forever in the background.
+  let stopMindMap = null;
+  function teardownMindMap() {
+    if (stopMindMap) { stopMindMap(); stopMindMap = null; }
+  }
+
+  // transitions.js's global Escape handler closes any open overlay directly
+  // (it doesn't know about this component's animation loop), so this panel
+  // needs its own Escape listener purely to stop the loop when that happens
+  // — removed again on every close path, so repeated opens don't pile up.
+  function onEscape(e) { if (e.key === 'Escape') handleClose(); }
+  function handleClose() {
+    teardownMindMap();
+    document.removeEventListener('keydown', onEscape);
     closeOverlay(overlayEl);
+  }
+  document.addEventListener('keydown', onEscape);
+
+  overlayEl.addEventListener('click', (e) => { if (e.target === overlayEl) handleClose(); });
+
+  const onPick = (id) => {
+    handleClose();
+    selectSection(id);
   };
 
   const treeBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🌳 Tree');
   const mindBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🧠 Mind map');
 
   function renderMode() {
+    teardownMindMap();
     treeBtn.classList.toggle('map-mode-active', mapMode === 'tree');
     mindBtn.classList.toggle('map-mode-active', mapMode === 'mind');
     scroll.innerHTML = '';
@@ -112,7 +135,7 @@ export function openMapView() {
       const mindContainer = h('div', { class: 'mindmap-container' });
       scroll.appendChild(mindContainer);
       // needs real layout dimensions, which only exist once it's in the DOM
-      requestAnimationFrame(() => renderMindMap(mindContainer, doc, selectedId, onPick));
+      requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, doc, selectedId, onPick); });
     }
   }
   treeBtn.addEventListener('click', () => { mapMode = 'tree'; renderMode(); });
@@ -125,7 +148,11 @@ export function openMapView() {
         h('div', { class: 'insight-subtitle' }, `${fileName || ''} — click any heading to jump there, or drag a node in Mind map to rearrange it`),
       ]),
       h('div', { class: 'map-mode-toggle' }, [treeBtn, mindBtn]),
-      h('button', { class: 'code-btn code-btn-close', type: 'button', onClick: () => closeOverlay(overlayEl) }, 'Close ✕'),
+      h('button', {
+        class: 'code-btn code-btn-close',
+        type: 'button',
+        onClick: handleClose,
+      }, 'Close ✕'),
     ]),
     scroll,
   ]);

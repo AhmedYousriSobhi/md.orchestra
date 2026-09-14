@@ -337,3 +337,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   when the user switched files, could then silently mutate an unrelated
   node in the newly loaded one. Fixed by making IDs monotonically
   increase for the whole page session instead of resetting.
+- **Stage 18** — Made the 🧠 Mind map continuously alive rather than a
+  one-shot layout: it now runs its physics simulation every frame via
+  `requestAnimationFrame`, the cursor exerts a gentle repulsive field on
+  nearby nodes, and hovering a node dims everything else except its direct
+  neighbors (with the connecting edges highlighted). Found and fixed two
+  bugs through actual browser testing rather than code review alone: (1)
+  uncapped inverse-square repulsion could fling a node from a sane
+  position to thousands of pixels off-screen in about a second once the
+  cursor lingered nearby — fixed with a per-frame max-speed clamp; (2) the
+  hover highlight looked like it wasn't working at all — `classList.toggle`
+  calls were confirmed to be firing, but the resulting class never seemed
+  to "stick". Root cause: the cursor's own repulsion field pushes whichever
+  node is nearest it away, every frame, by design — so a node the user just
+  hovered gets shoved back out of a small hover radius almost immediately,
+  even holding the mouse perfectly still, well before it could visibly
+  register. Fixed by dropping identity-tracking hover in favor of always
+  highlighting whichever node is nearest the cursor within a radius sized
+  to comfortably contain where a repelled node settles — verified stable
+  under a 5-second continuous hover, with correct dim/neighbor-highlight
+  counts, and confirmed the highlight still clears on mouse-out and still
+  behaves correctly through a drag.

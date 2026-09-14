@@ -137,6 +137,13 @@
 .mindmap-node-current .mindmap-dot { stroke: var(--text); stroke-width: 2.5; }
 .mindmap-node-current .mindmap-label { fill: var(--accent, var(--accent-default)); font-weight: 700; }
 
+.mindmap-node, .mindmap-edge { transition: opacity 0.15s ease; }
+.mindmap-dim { opacity: 0.25; }
+.mindmap-focused .mindmap-dot { stroke: var(--text); stroke-width: 2.5; }
+.mindmap-focused .mindmap-label { font-weight: 700; fill: var(--text); }
+.mindmap-edge-dim { opacity: 0.12; }
+.mindmap-edge-active { stroke: var(--accent-default); stroke-width: 2; opacity: 1; }
+
 /* Tree section picker, used in the "+ New section" form */
 .tree-picker-box {
   max-height: 260px; overflow-y: auto;
