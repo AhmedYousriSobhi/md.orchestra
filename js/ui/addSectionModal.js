@@ -8,6 +8,7 @@ import {
 } from '../state/store.js';
 import { renderTreePicker } from './treePicker.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
+import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 import { showToast } from './toast.js';
 
 let overlayEl = null;
@@ -93,6 +94,7 @@ export function openAddSectionModal() {
     placeholder: 'Section content in Markdown — optional, you can also fill this in afterward from the card.',
   });
   attachMarkdownEditingHelpers(contentTextarea);
+  wireImageAttach(contentTextarea);
 
   // Typing a title like "Table of Contents" drafts one from the document's
   // current headings right away, same as VS Code's Markdown All in One
@@ -147,7 +149,10 @@ export function openAddSectionModal() {
       h('div', { class: 'insight-section' }, [
         h('h3', {}, 'Content'),
         contentTextarea,
-        h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats'),
+        h('div', { class: 'edit-toolbar' }, [
+          createAttachImageButton(contentTextarea),
+          h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in'),
+        ]),
       ]),
       h('button', { class: 'btn btn-primary', type: 'button', onClick: submit }, 'Add section'),
     ]),
