@@ -26,4 +26,9 @@ RUN printf 'server {\n\
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost/index.html >/dev/null || exit 1
+# 127.0.0.1, not "localhost": Alpine/musl resolves "localhost" to the IPv6
+# loopback (::1) first, and nginx's `listen 80;` above only binds the IPv4
+# socket — so `wget http://localhost/...` gets "connection refused" from
+# inside this exact container even while the app is served correctly over
+# the (IPv4) port mapping, permanently marking it unhealthy.
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1/index.html >/dev/null || exit 1

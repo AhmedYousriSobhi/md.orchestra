@@ -22,14 +22,28 @@ Or run it in Docker (nginx serving the same static files — no build step
 there either):
 
 ```bash
-docker compose up -d       # serves on http://localhost:8080
+./run.sh                    # starts the container if needed, then opens it
+                             # in its own window (see below) — the easiest path
+# equivalent, by hand:
+docker compose up -d        # serves on http://localhost:8080
 # or without compose:
 docker build -t md-dashboard . && docker run -p 8080:80 md-dashboard
 ```
 
-Either way, once it's open, a supporting browser (Chrome/Edge) will offer to
-**install** it — it registers a manifest + service worker, so it can run in
-its own app window instead of a tab.
+**Starting the container is not the same as opening it.** `docker compose
+up` / `docker run` only start the web server — nothing about Docker opens a
+browser or a window. `./run.sh` does both: it starts the container (skipping
+that step if one's already serving), then opens the app in its own
+standalone window (Chrome/Edge/Chromium via `--app=`, or a new Firefox
+window as a fallback — Firefox has no equivalent chromeless app mode).
+Without a script, get the same "own window" effect either by opening the
+URL and using the browser's own **Install app** option (it registers a
+manifest + service worker, so it can then be launched like any other app),
+or manually with e.g. `google-chrome --app=http://localhost:8080/index.html`.
+
+If port 8080 is already taken (commonly: a container from an earlier run is
+still up — check with `docker ps`), set `PORT` to use a different one, e.g.
+`PORT=8081 ./run.sh` or `PORT=8081 docker compose up -d`.
 
 ## Using it
 
