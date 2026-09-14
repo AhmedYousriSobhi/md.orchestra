@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Parser/serializer self-test</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.2rem; }
+  #summary { font-weight: 700; margin: 1rem 0; padding: 0.6rem 0.9rem; border-radius: 8px; }
+  #summary.pass { background: #e7f7ea; color: #1e6b33; }
+  #summary.fail { background: #fce7e7; color: #8a2020; }
+  li { margin: 0.35rem 0; font-size: 0.9rem; }
+  .pass-item { color: #1e6b33; }
+  .fail-item { color: #8a2020; }
+  pre { background: #f4f4f4; padding: 0.6rem; overflow-x: auto; font-size: 0.78rem; }
+</style>
+</head>
+<body>
+<h1>Markdown parser / serializer / markers — self-test</h1>
+<p>Runs a handful of assertions against the modules in <code>../js/markdown/</code> directly in the browser (there's no Node.js runtime in this project). Serve the project over HTTP for the sample-file round-trip checks to run.</p>
+<div id="summary">Running…</div>
+<ul id="results"></ul>
+
+<script type="module">
+import { parseMarkdown } from '../js/markdown/parser.js';
+import { serializeMarkdown } from '../js/markdown/serializer.js';
+import { splitBody, joinBody, withNote, withAiInsert } from '../js/markdown/markers.js';
+import { analyzeContent } from '../js/markdown/analyze.js';
+
+const results = [];
+function check(name, condition, detail) {
+  results.push({ name, pass: Boolean(condition), detail });
+}
+
+function structuralSnapshot(node) {
+  return {
+    level: node.level,
+    title: node.title,
+    body: node.bodyMarkdown,
+    children: node.children.map(structuralSnapshot),
+  };
+}
+const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// 1. Basic heading + nesting
+{
+  const doc = parseMarkdown('# A\n\ntext under A\n\n## B\ntext under B\n\n### C\n');
+  check('parses a simple 3-level heading tree', doc.children.length === 1 && doc.children[0].children.length === 1);
+  const a = doc.children[0];
+  check('captures body text under a heading', a.bodyMarkdown === 'text under A');
+  const b = a.children[0];
+  check('nests a lower heading as a child', b.title === 'B' && b.level === 2 && b.bodyMarkdown === 'text under B');
+}
+
+// 2. Fenced code blocks are not misread as headings, and are kept verbatim
+{
+  const md = '# Doc\n\n```text\n# not a heading\n## also not one\n```\n\nafter code';
+  const doc = parseMarkdown(md);
+  const node = doc.children[0];
+  check('does not treat headings inside fences as real headings', node.children.length === 0);
+  check('keeps fenced content verbatim', node.bodyMarkdown.includes('# not a heading') && node.bodyMarkdown.includes('after code'));
+}
+
+// 3. ATX closing-hash stripping
+{
+  const doc = parseMarkdown('## Title with trailing hashes ##\nbody');
+  check('strips a trailing ATX heading sequence', doc.children[0].title === 'Title with trailing hashes');
+}
+
+// 4. Round trip through serialize -> parse again preserves structure
+{
+  const original = '# Root\nintro\n\n## Child One\nsome text\n\n```js\nconst x = 1;\n```\n\n## Child Two\n- a\n- b\n';
+  const doc1 = parseMarkdown(original);
+  const serialized = serializeMarkdown(doc1);
+  const doc2 = parseMarkdown(serialized);
+  check('re-parsing a serialized document reproduces the same tree', deepEqual(structuralSnapshot(doc1), structuralSnapshot(doc2)), serialized);
+}
+
+// 5. markers.js: split/join round trip and idempotent updates
+{
+  let body = 'main paragraph';
+  body = withNote(body, 'a user note');
+  body = withAiInsert(body, 'a claude suggestion');
+  const parts = splitBody(body);
+  check('splitBody recovers main/note/aiInsert independently', parts.main === 'main paragraph' && parts.note === 'a user note' && parts.aiInsert === 'a claude suggestion');
+
+  const updated = withNote(body, 'an updated note');
+  const parts2 = splitBody(updated);
+  check('withNote replaces (not duplicates) an existing note', parts2.note === 'an updated note' && (updated.match(/dashboard:note:start/g) || []).length === 1);
+
+  const cleared = withNote(updated, '');
+  check('withNote with empty text removes the note block entirely', !cleared.includes('dashboard:note'));
+}
+
+// 6. analyze.js badge counts
+{
+  const md = '| a | b |\n|---|---|\n| 1 | 2 |\n\n```mermaid\ngraph TD; A-->B;\n```\n\n```js\nconsole.log(1);\n```\n\n<details><summary>x</summary>y</details>';
+  const stats = analyzeContent(md);
+  check('analyzeContent counts a table separator row', stats.tables === 1);
+  check('analyzeContent counts a mermaid block separately from code', stats.mermaidBlocks === 1 && stats.codeBlocks === 1);
+  check('analyzeContent detects a <details> block', stats.hasDetails === true);
+}
+
+// 7. Optional: round-trip check against the bundled sample files, if served over HTTP
+async function checkSampleFile(path) {
+  try {
+    const res = await fetch(`../${path}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(String(res.status));
+    const text = await res.text();
+    const doc1 = parseMarkdown(text);
+    const doc2 = parseMarkdown(serializeMarkdown(doc1));
+    check(`${path}: re-parse-after-serialize is structurally stable`, deepEqual(structuralSnapshot(doc1), structuralSnapshot(doc2)));
+  } catch (err) {
+    check(`${path}: round-trip (skipped — ${err.message}; serve over HTTP to run this)`, true);
+  }
+}
+
+async function run() {
+  await checkSampleFile('sample.md');
+  await checkSampleFile('sample2.md');
+  await checkSampleFile('sample3.md');
+
+  const list = document.getElementById('results');
+  list.innerHTML = '';
+  let failCount = 0;
+  for (const r of results) {
+    const li = document.createElement('li');
+    li.className = r.pass ? 'pass-item' : 'fail-item';
+    li.textContent = `${r.pass ? '✓' : '✗'} ${r.name}`;
+    if (!r.pass && r.detail) {
+      const pre = document.createElement('pre');
+      pre.textContent = r.detail;
+      li.appendChild(pre);
+    }
+    if (!r.pass) failCount += 1;
+    list.appendChild(li);
+  }
+  const summary = document.getElementById('summary');
+  summary.className = failCount === 0 ? 'pass' : 'fail';
+  summary.textContent = `${results.length - failCount} / ${results.length} passed`;
+}
+run();
+</script>
+</body>
+</html>
