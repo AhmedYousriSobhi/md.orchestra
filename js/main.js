@@ -51,6 +51,16 @@ function render() {
   el.emptyState.hidden = true;
   el.sectionView.hidden = false;
 
+  // A note/title edit fires a store update on every autosave tick. If the user is
+  // still typing in a field inside the card grid, rebuilding that DOM out from under
+  // them would drop focus, jump the cursor, and swallow whatever they type next — so
+  // skip the rebuild entirely until they click away. Nothing else changes while typing
+  // a note (sidebar/breadcrumb reflect headings, not note text), so this is always safe.
+  const active = document.activeElement;
+  if (active && el.sectionView.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+    return;
+  }
+
   const node = getSelectedNode();
   const path = getSelectedPath();
   if (!node) return;
@@ -129,7 +139,10 @@ el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
 
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);
-el.sidebarToggle.addEventListener('click', () => el.sidebar.classList.toggle('sidebar-open'));
+el.sidebarToggle.addEventListener('click', () => {
+  const isNarrowViewport = window.matchMedia('(max-width: 860px)').matches;
+  el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
+});
 
 ['dragover', 'drop'].forEach((evt) => window.addEventListener(evt, (e) => e.preventDefault()));
 window.addEventListener('drop', async (e) => {

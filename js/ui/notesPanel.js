@@ -18,7 +18,7 @@ export function createNotesEditor(initialText, onSave) {
     onSave(value);
     status.textContent = 'Saved';
     setTimeout(() => { status.textContent = ''; }, 1200);
-  }, 500);
+  }, 900);
 
   textarea.addEventListener('input', () => {
     status.textContent = 'Saving…';

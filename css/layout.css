@@ -59,22 +59,66 @@ aside#sidebar {
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 1rem 0.75rem 2rem;
+  transition: width 0.2s ease, opacity 0.15s ease;
+}
+/* Desktop: the ☰ button collapses the sidebar in place (it's a normal flex
+   sibling here, not an overlay) so it works at every width, not only the
+   narrow breakpoint below. */
+aside#sidebar.sidebar-collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-right: none;
 }
 .sidebar-empty { color: var(--text-faint); font-size: 0.85rem; padding: 0.5rem; }
 
 .nav-tree { list-style: none; margin: 0; padding: 0; }
-.nav-tree .nav-tree { padding-left: 0.85rem; border-left: 1px dashed var(--border); margin-left: 0.4rem; }
+.nav-tree .nav-tree {
+  padding-left: 0.95rem; margin-left: 0.85rem;
+  border-left: 2px solid color-mix(in srgb, var(--accent, var(--border)) 35%, transparent);
+}
 .nav-item { margin: 1px 0; }
+.nav-item-top { margin: 0.3rem 0; }
+
+.nav-row { display: flex; align-items: stretch; gap: 0.15rem; }
+.nav-chevron {
+  flex-shrink: 0; width: 22px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--text-faint); font-size: 0.65rem;
+  transition: transform 0.2s ease; border-radius: 6px;
+}
+.nav-chevron:hover { background: var(--bg-soft); color: var(--text); }
+.nav-chevron-open { transform: rotate(90deg); }
+.nav-chevron-spacer { visibility: hidden; }
+
 .nav-link {
   display: flex; align-items: center; gap: 0.5rem; width: 100%;
-  background: none; border: none; text-align: left; padding: 0.4rem 0.5rem;
+  background: none; border: none; text-align: left; padding: 0.45rem 0.55rem;
   border-radius: 8px; font-size: 0.83rem; color: var(--text-soft);
 }
 .nav-link:hover { background: var(--bg-soft); color: var(--text); }
 .nav-link .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, var(--accent-default)); flex-shrink: 0; }
 .nav-link-active { color: var(--text); font-weight: 600; }
 .nav-link-current { background: var(--bg-soft); color: var(--text); box-shadow: inset 2px 0 0 var(--accent, var(--accent-default)); }
-.nav-level-1 .nav-link { font-weight: 700; }
+
+.nav-link-top {
+  font-weight: 700; font-size: 0.88rem; color: var(--text);
+  background: var(--accent-soft, var(--bg-soft));
+  border: 1px solid transparent;
+}
+.nav-link-top:hover { border-color: color-mix(in srgb, var(--accent, var(--border)) 45%, transparent); }
+.nav-link-top.nav-link-current {
+  background: var(--accent-soft, var(--bg-soft));
+  border-color: var(--accent, var(--border));
+  box-shadow: inset 3px 0 0 var(--accent, var(--accent-default));
+}
+.nav-icon { font-size: 0.9rem; line-height: 1; flex-shrink: 0; }
+.nav-count {
+  margin-left: auto; font-size: 0.68rem; font-weight: 600; color: var(--accent, var(--text-faint));
+  background: color-mix(in srgb, var(--accent, var(--border)) 16%, white);
+  padding: 0.05rem 0.4rem; border-radius: 999px; flex-shrink: 0;
+}
 
 main#main-panel {
   flex: 1;
