@@ -20,19 +20,29 @@ python3 -m http.server 8000
 
 ## Using it
 
-1. Load a document: drag/drop a `.md` file, use the file picker, or load one
-   of the bundled samples (`sample.md`, `sample2.md`, `sample3.md`).
-2. Browse the heading tree in the sidebar; the main panel drills into a
-   section and shows its own content plus a card grid of its subsections.
+1. Load a document: use **Open .md file** (grants direct save-back on
+   Chrome/Edge), drag/drop, or load one of the bundled samples (`sample.md`,
+   `sample2.md`, `sample3.md`).
+2. Browse the heading tree in the sidebar — collapsed to just the active
+   path by default, click the ▸ chevrons to expand others — or open
+   **🗺️ Map** for a one-screen diagram of the whole document; the main
+   panel drills into whatever section you pick and shows its own content
+   plus a card grid of its subsections. In-document links (e.g. a Table of
+   Contents) jump to the right section instead of doing nothing.
 3. Click a card's insight icon to open the AI popup: get a Claude summary,
    clarity suggestions, and optionally insert the suggestion straight into
    that section.
 4. Use the notes field on a card to add your own notes; they're stored
    against that section.
-5. Open the **Source** panel any time to see the live-generated Markdown and
-   save it — via the File System Access API (writes back to the opened file)
-   or as a download fallback.
-6. Open **Settings** to provide your Anthropic API key and pick a Claude
+5. Use **+ New section** to write a whole new part of the document —
+   title, heading level, and which existing section to nest it under (any
+   node in the tree, not just whatever's currently open) — rather than
+   just annotating an existing one.
+6. Open the **Source** panel any time to see the live-generated Markdown and
+   save it — via the File System Access API (writes back to the opened
+   file, if it was opened with **Open .md file**) or as a download
+   fallback.
+7. Open **Settings** to provide your Anthropic API key and pick a Claude
    model. The key is stored only in `localStorage` on your machine and is
    sent directly to `api.anthropic.com` — never to any other service.
 
@@ -51,9 +61,9 @@ js/
   state/store.js      single source of truth + pub/sub
   ai/                 client.js (Claude fetch), prompts.js, settings.js
   ui/                 sidebar, breadcrumb, card grid, insight modal,
-                     code viewer, notes panel, settings panel, source panel,
-                     toast
-  utils/              dom/debounce/id/color helpers
+                     code viewer, notes panel, settings/source panels,
+                     add-section modal, map view, toast
+  utils/              dom (incl. an SVG-element helper)/debounce/id/color
   main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
 ```
@@ -86,13 +96,17 @@ rest of the app.
   documented direct-browser-access contract; if it turns out to need
   adjusting, `js/ai/client.js` is the only place that matters.
 - The File System Access "save back to the original file" path
-  (`js/fileIO.js`, used from the Source panel) is implemented per spec but
-  wasn't exercised interactively, since it requires a real file picker and
-  user gesture that headless testing can't drive. The download fallback
-  path was verified and works.
+  (`js/fileIO.js`, used from the Source panel) was verified with a mocked
+  file handle (confirms it requests `readwrite` permission and writes the
+  correct content) rather than a real native file-picker dialog, which
+  headless testing can't drive. The download fallback path was verified
+  directly and works.
 - Sample-file loading and the self-test's round-trip checks require the
   project to be served over HTTP (see *Running it*) — they silently no-op
   under `file://` because `fetch()` can't read local files that way.
+- The document map (🗺️) lays every heading out in one screen with its own
+  scroll region, sized for the typical case; a document with hundreds of
+  headings will still need to scroll within that region to see all of it.
 
 ## Progress log
 
@@ -119,3 +133,22 @@ rest of the app.
   rule beat the `hidden` attribute, a fence-counting bug in the card badge
   logic, and a header/sidebar that broke on narrow screens. See the
   corresponding commits for details.
+- **Stage 6** — User-reported fixes: a full re-render on every store update
+  (including the debounced note autosave) was replacing the notes
+  `<textarea>` out from under an in-progress edit, dropping focus and
+  silently discarding keystrokes typed right after — fixed by skipping the
+  rebuild while a field inside the card grid has focus. The ☰ sidebar
+  toggle only worked below the mobile breakpoint; it now collapses the
+  sidebar at any width. The sidebar tree is now collapsible at every level
+  (defaulting to just the active path expanded, not the whole outline) with
+  colored pills, icons, and descendant counts on top-level sections.
+- **Stage 7** — More user-reported fixes plus two new features: in-document
+  anchor links (Tables of Contents, cross-references) now navigate instead
+  of doing nothing — `markdown/slug.js` reproduces GitHub's own
+  heading-anchor algorithm to match `#some-heading` links to the right
+  section — and saving back to a file opened via "Open .md file" now
+  actually works (it was missing the `readwrite` permission request that
+  `showOpenFilePicker` requires before a write is allowed). Added
+  **+ New section**, for writing whole new document content anywhere in the
+  tree rather than only annotating existing sections, and **🗺️ Map**, a
+  one-screen diagram of the entire document's heading structure.
