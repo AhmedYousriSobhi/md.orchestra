@@ -314,3 +314,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   correctly, and ran the full self-test suite plus all three sample files
   through headless Chromium pointed at the container — same result as
   serving it directly.
+- **Stage 17** — Two follow-up bug reports after trying Docker. First: the
+  container's `HEALTHCHECK` was failing even though the app served
+  correctly, because Alpine/musl resolves `localhost` to IPv6 first and
+  nginx only binds IPv4 — fixed by pointing the healthcheck at `127.0.0.1`
+  instead. Separately, `docker run` on its own never opens a browser
+  window (it only starts a server) — added `run.sh`, which waits for the
+  container to respond then opens it in a real standalone window (Chrome/
+  Edge/Chromium's chromeless `--app=`, falling back to Firefox's
+  `--new-window` since that's what the access logs showed the user is
+  actually running, then `xdg-open`), and made the port configurable via
+  `PORT=`/`docker-compose.yml`'s `${PORT:-8080}` so a "port already
+  allocated" collision has an easy way out. Second: switching documents
+  (sample-1 to sample-2) while sample-1 had unsaved edits silently
+  discarded them instead of asking first — fixed by adding a
+  `window.confirm` guard at the top of `loadFromText()`, the single choke
+  point all four load paths (open file, drag-drop, recovery restore, and
+  loading a sample) funnel through. Testing that fix surfaced a more
+  serious latent bug: `parseMarkdown()` reset its node-ID counter on every
+  parse, so two separately-loaded documents could mint identical IDs; a
+  debounced note autosave from a just-abandoned document, if still pending
+  when the user switched files, could then silently mutate an unrelated
+  node in the newly loaded one. Fixed by making IDs monotonically
+  increase for the whole page session instead of resetting.
