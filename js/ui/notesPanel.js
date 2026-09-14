@@ -46,7 +46,18 @@ function createNoteCard(note, { onUpdate, onDelete }) {
     status.textContent = 'Saving…';
     debouncedSave(textarea.value);
   });
-  textarea.addEventListener('blur', () => onUpdate(note.id, textarea.value));
+  // Deferred to a fresh macrotask rather than calling onUpdate() straight
+  // away: blurring this textarea is very often *caused* by the user
+  // clicking something else entirely (a different heading, a workspace
+  // file) — and onUpdate ultimately re-renders the sidebar/file tree,
+  // which would replace the very element mid-click and swallow that click
+  // (its mouseup/click would land on nothing). Deferring lets the click
+  // that triggered this blur finish being handled on the DOM as it existed
+  // when the user pressed down, before anything gets rebuilt.
+  textarea.addEventListener('blur', () => {
+    debouncedSave.cancel();
+    setTimeout(() => onUpdate(note.id, textarea.value), 0);
+  });
 
   const deleteBtn = h('button', {
     class: 'icon-btn',

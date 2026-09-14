@@ -195,7 +195,14 @@ function enterTitleEditMode(headEl, node, fileName) {
   input.addEventListener('blur', () => {
     if (cancelled) { renderTitle(headEl, node, fileName); return; }
     const value = input.value.trim();
-    if (value && value !== node.title) updateNode(node.id, { title: value });
+    // Deferred to a fresh macrotask: this blur is very often *caused* by
+    // the user clicking a different heading (sidebar or workspace file
+    // tree), and updateNode() re-renders that same tree — rebuilding the
+    // very element mid-click and swallowing it (see notesPanel.js's blur
+    // handler for the same reasoning in more detail). Only the actual
+    // state-changing path needs this; the no-op branch below doesn't
+    // trigger a re-render, so it's not racy.
+    if (value && value !== node.title) setTimeout(() => updateNode(node.id, { title: value }), 0);
     else renderTitle(headEl, node, fileName);
   });
 
