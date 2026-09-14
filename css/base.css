@@ -30,6 +30,7 @@ body {
   font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.55;
+  overflow-x: hidden;
 }
 
 .mono {

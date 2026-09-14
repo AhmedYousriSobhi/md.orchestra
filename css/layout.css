@@ -108,6 +108,7 @@ main#main-panel {
   gap: 1rem; text-align: center; padding: 2rem;
   color: var(--text-soft);
 }
+#empty-state[hidden] { display: none; }
 #empty-state h2 { font-size: 1.3rem; color: var(--text); max-width: 32ch; }
 #empty-state p { max-width: 44ch; color: var(--text-faint); }
 #drop-hint { font-size: 0.8rem; color: var(--text-faint); }
@@ -119,7 +120,12 @@ main#main-panel {
 .grid-empty { color: var(--text-faint); font-size: 0.85rem; margin-top: 1rem; }
 
 @media (max-width: 860px) {
-  aside#sidebar { position: absolute; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: var(--shadow-lg); }
+  header#app-header { flex-wrap: wrap; row-gap: 0.5rem; }
+  header#app-header .brand { margin-right: auto; }
+  aside#sidebar {
+    position: absolute; top: 0; bottom: 0; left: 0; z-index: 15;
+    transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: var(--shadow-lg);
+  }
   aside#sidebar.sidebar-open { transform: translateX(0); }
   #breadcrumb-bar, #section-view-wrap { padding-left: 1rem; padding-right: 1rem; }
 }
