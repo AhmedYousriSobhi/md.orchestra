@@ -1,44 +1,30 @@
 import { h } from '../utils/dom.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { nextId } from '../utils/id.js';
+import { findNode } from '../markdown/parser.js';
 import {
   getState, insertSection, selectSection, getSelectedNode,
 } from '../state/store.js';
+import { renderRadialPicker } from './radialPicker.js';
 import { showToast } from './toast.js';
 
 let overlayEl = null;
 
-/** Flatten the tree into {id, level, title} in document order, plus a synthetic root entry. */
-function flattenForParentPicker(doc) {
-  const options = [{ id: doc.id, level: 0, title: null }];
-  function walk(node) {
-    options.push({ id: node.id, level: node.level, title: node.title });
-    node.children.forEach(walk);
-  }
-  doc.children.forEach(walk);
-  return options;
-}
-
-function parentOptionLabel(opt) {
-  if (opt.level === 0) return '(Top of document — no parent heading)';
-  const indent = '  '.repeat(Math.max(opt.level - 1, 0));
-  return `${indent}${'#'.repeat(opt.level)} ${opt.title || '(untitled)'}`;
-}
-
 /**
  * Open a form for authoring a brand-new section anywhere in the document:
- * title, heading level, which existing section to nest it under (defaulting
- * to whatever's currently open, but overridable to anywhere in the tree),
- * whether it goes first or last among that parent's children, and its
- * initial Markdown body — unlike the notes field, this becomes real
- * document content, not an annotation.
+ * title, heading level, which existing section to nest it under — picked
+ * from a sunburst diagram of the whole document rather than a plain
+ * dropdown, so "where" is a spatial choice, not a list to read — whether it
+ * goes first or last among that parent's children, and its initial
+ * Markdown body. Unlike the notes field, this becomes real document
+ * content, not an annotation.
  */
 export function openAddSectionModal() {
   const { doc } = getState();
   if (!doc) { showToast('Load a document first', { type: 'error' }); return; }
 
   const current = getSelectedNode();
-  const options = flattenForParentPicker(doc);
+  let parentId = current ? current.id : doc.id;
 
   if (overlayEl) overlayEl.remove();
   overlayEl = h('div', { class: 'overlay insight-overlay', hidden: true });
@@ -48,16 +34,13 @@ export function openAddSectionModal() {
     type: 'text', class: 'settings-input', placeholder: 'e.g. "Rollback procedure"',
   });
 
-  const parentSelect = h('select', { class: 'settings-input' }, options.map((opt) => {
-    const el = h('option', { value: opt.id }, parentOptionLabel(opt));
-    if (current && opt.id === current.id) el.selected = true;
-    return el;
-  }));
+  const pickedLabel = h('div', { class: 'radial-picked-label' });
+  const pickerBox = h('div', { class: 'radial-svg-box' });
 
   const levelSelect = h('select', { class: 'settings-input' });
   function refreshLevelOptions() {
-    const parentOpt = options.find((opt) => opt.id === parentSelect.value);
-    const parentLevel = parentOpt ? parentOpt.level : 0;
+    const parentNode = parentId === doc.id ? null : findNode(doc, parentId);
+    const parentLevel = parentNode ? parentNode.level : 0;
     const defaultLevel = Math.min(Math.max(parentLevel + 1, 1), 6);
     levelSelect.innerHTML = '';
     for (let lvl = 1; lvl <= 6; lvl += 1) {
@@ -66,8 +49,24 @@ export function openAddSectionModal() {
       levelSelect.appendChild(opt);
     }
   }
+
+  function updatePickedLabel() {
+    const parentNode = parentId === doc.id ? null : findNode(doc, parentId);
+    pickedLabel.innerHTML = '';
+    pickedLabel.appendChild(document.createTextNode('Adding under: '));
+    const strong = h('strong', {}, parentNode ? parentNode.title : '(top of document)');
+    pickedLabel.appendChild(strong);
+  }
+
+  function onPick(id) {
+    parentId = id;
+    renderRadialPicker(pickerBox, doc, parentId, onPick);
+    updatePickedLabel();
+    refreshLevelOptions();
+  }
+  renderRadialPicker(pickerBox, doc, parentId, onPick);
+  updatePickedLabel();
   refreshLevelOptions();
-  parentSelect.addEventListener('change', refreshLevelOptions);
 
   const positionSelect = h('select', { class: 'settings-input' }, [
     h('option', { value: 'end' }, 'Last, after its existing subsections'),
@@ -76,7 +75,7 @@ export function openAddSectionModal() {
 
   const contentTextarea = h('textarea', {
     class: 'notes-textarea',
-    rows: '7',
+    rows: '6',
     placeholder: 'Section content in Markdown — optional, you can also fill this in afterward from the card.',
   });
 
@@ -90,7 +89,7 @@ export function openAddSectionModal() {
       bodyMarkdown: contentTextarea.value.trim(),
       children: [],
     };
-    const ok = insertSection({ parentId: parentSelect.value, node, position: positionSelect.value });
+    const ok = insertSection({ parentId, node, position: positionSelect.value });
     if (!ok) { showToast('Could not add the section', { type: 'error' }); return; }
     selectSection(node.id);
     closeOverlay(overlayEl);
@@ -110,10 +109,13 @@ export function openAddSectionModal() {
         h('h3', {}, 'Title'),
         titleInput,
       ]),
+      h('div', { class: 'insight-section' }, [
+        h('h3', {}, 'Nest under — click a wedge, or the center for the top of the document'),
+        h('div', { class: 'radial-picker-wrap' }, [pickerBox, pickedLabel]),
+      ]),
       h('div', { class: 'add-section-grid' }, [
-        h('div', { class: 'insight-section' }, [h('h3', {}, 'Nest under'), parentSelect]),
         h('div', { class: 'insight-section' }, [h('h3', {}, 'Heading level'), levelSelect]),
-        h('div', { class: 'insight-section' }, [h('h3', {}, 'Where'), positionSelect]),
+        h('div', { class: 'insight-section' }, [h('h3', {}, 'Position'), positionSelect]),
       ]),
       h('div', { class: 'insight-section' }, [
         h('h3', {}, 'Content'),

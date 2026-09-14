@@ -27,7 +27,8 @@
 
 .code-viewer-head, .side-panel-head, .insight-panel .side-panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  padding: 1.1rem 1.35rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-default) 10%, white), var(--surface) 65%);
 }
 .code-viewer-title { font-weight: 700; font-size: 1rem; }
 .code-viewer-lang { font-size: 0.72rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -86,7 +87,7 @@
 
 .add-section-panel { width: min(640px, 100%); }
 .add-section-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem;
   margin-bottom: 0.25rem;
 }
 .add-section-grid .insight-section { margin-bottom: 0; }
@@ -127,6 +128,31 @@
 .map-node:hover .map-dot, .map-node:focus-visible .map-dot { r: 6; }
 .map-node:focus-visible { outline: none; }
 .map-node-current .map-label { fill: var(--accent, var(--accent-default)); font-weight: 700; }
+
+/* Radial (sunburst) section picker, used in the "+ New section" form */
+.radial-picker-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+.radial-svg-box { width: min(300px, 100%); aspect-ratio: 1 / 1; margin: 0 auto; }
+.radial-picked-label {
+  font-size: 0.85rem; color: var(--text); text-align: center;
+  min-height: 1.3em;
+}
+.radial-picked-label strong { color: var(--accent-default); }
+
+.radial-arc {
+  fill: var(--accent, var(--accent-default)); opacity: 0.82;
+  stroke: var(--surface); stroke-width: 1.5; cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+.radial-wedge:hover .radial-arc, .radial-wedge:focus-visible .radial-arc { opacity: 1; filter: brightness(1.1); }
+.radial-wedge:focus-visible { outline: none; }
+.radial-selected .radial-arc { opacity: 1; stroke: var(--text); stroke-width: 2.5; }
+.radial-label { font-size: 8.5px; fill: #fff; pointer-events: none; }
+
+.radial-hub { cursor: pointer; }
+.radial-hub circle { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+.radial-hub:hover circle, .radial-hub:focus-visible circle { stroke: var(--text); }
+.radial-hub.radial-selected circle { stroke: var(--accent-default); stroke-width: 2.5; }
+.radial-hub-label { font-size: 16px; }
 
 /* Toasts */
 #toast-stack {

@@ -74,7 +74,7 @@ function buildSvg(doc, selectedId, onPick) {
       onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(node.id); } },
     });
     group.appendChild(svg('circle', { cx: x, cy, r: isCurrent ? MARKER_R + 2 : MARKER_R, class: 'map-dot' }));
-    group.appendChild(svg('text', { x: x + MARKER_R + 8, y: cy, class: 'map-label', dominantBaseline: 'middle' }, truncate(node.title)));
+    group.appendChild(svg('text', { x: x + MARKER_R + 8, y: cy, class: 'map-label', 'dominant-baseline': 'middle' }, truncate(node.title)));
     group.appendChild(svg('title', {}, node.title || ''));
     nodeLayer.appendChild(group);
   });
