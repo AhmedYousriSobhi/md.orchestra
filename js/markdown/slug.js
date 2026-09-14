@@ -14,9 +14,10 @@ function slugify(title) {
     .replace(/ /g, '-');
 }
 
-/** Walk the whole tree in document order and map every possible anchor slug to its node id. */
-export function buildSlugIndex(root) {
-  const index = new Map();
+/** Walk the whole tree in document order, building both slug->id and id->slug maps in one pass. */
+export function buildSlugMaps(root) {
+  const slugToId = new Map();
+  const idToSlug = new Map();
   const seen = new Map();
 
   function visit(node) {
@@ -25,10 +26,16 @@ export function buildSlugIndex(root) {
       const count = seen.get(base) || 0;
       seen.set(base, count + 1);
       const slug = count === 0 ? base : `${base}-${count}`;
-      index.set(slug, node.id);
+      slugToId.set(slug, node.id);
+      idToSlug.set(node.id, slug);
     }
     node.children.forEach(visit);
   }
   visit(root);
-  return index;
+  return { slugToId, idToSlug };
+}
+
+/** Map every possible anchor slug to its node id (see buildSlugMaps). */
+export function buildSlugIndex(root) {
+  return buildSlugMaps(root).slugToId;
 }

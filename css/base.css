@@ -76,6 +76,8 @@ button {
 }
 .code-btn:hover { background: var(--bg-soft); }
 .code-btn-close { color: var(--text); }
+.code-btn-danger { color: #a4351f; }
+.code-btn-danger:hover { background: #fce7e7; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #c7cede; border-radius: 6px; }

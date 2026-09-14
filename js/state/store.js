@@ -1,4 +1,4 @@
-import { findNode, getPath } from '../markdown/parser.js';
+import { findNode, findParent, getPath } from '../markdown/parser.js';
 
 const listeners = new Set();
 
@@ -76,4 +76,14 @@ export function insertSection({ parentId, node, position = 'end' }) {
   else parent.children.push(node);
   setState({ doc: state.doc, dirty: true });
   return true;
+}
+
+/** Remove a section (and everything nested under it) from the tree. Returns the parent id, or null. */
+export function removeSection(id) {
+  if (!state.doc || id === state.doc.id) return null;
+  const parent = findParent(state.doc, id);
+  if (!parent) return null;
+  parent.children = parent.children.filter((c) => c.id !== id);
+  setState({ doc: state.doc, dirty: true });
+  return parent.id;
 }

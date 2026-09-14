@@ -18,11 +18,30 @@
   color: var(--accent, var(--accent-default)); background: color-mix(in srgb, var(--accent, var(--accent-default)) 12%, white);
   padding: 0.18rem 0.5rem; border-radius: 999px;
 }
-.card-title { font-size: 1.35rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.card-title { font-size: 1.35rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; flex: 1; }
 .card-title-sm { font-size: 1rem; }
+
+.icon-btn {
+  border: none; background: none; color: var(--text-faint); cursor: pointer;
+  font-size: 0.85rem; padding: 0.25rem 0.4rem; border-radius: 6px; line-height: 1;
+}
+.icon-btn:hover { background: var(--bg-soft); color: var(--text); }
+.title-edit-input {
+  flex: 1; font-size: 1.35rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em;
+  border: 1px solid var(--accent, var(--border)); border-radius: 8px; padding: 0.15rem 0.5rem;
+  font-family: inherit; background: var(--bg-soft);
+}
 
 .card-body.rendered-markdown { color: var(--text-soft); }
 .card-empty-note { color: var(--text-faint); font-style: italic; font-size: 0.88rem; }
+
+.content-edit-textarea {
+  width: 100%; min-height: 10rem; resize: vertical;
+  border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem;
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.85rem;
+  background: #1e2333; color: #e5e9f5;
+}
+.edit-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
 
 .card-grid {
   display: grid;
@@ -48,7 +67,8 @@
 }
 .stat-badge-note { color: #b8860b; background: #faf1de; }
 
-.card-actions { margin-top: 1rem; display: flex; justify-content: flex-end; }
+.card-actions { margin-top: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.card-actions-left { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 /* ---- rendered markdown content ---- */
 .rendered-markdown :is(h1,h2,h3,h4,h5,h6) { color: var(--text); margin: 1rem 0 0.4rem; font-size: 1rem; }
