@@ -1,4 +1,4 @@
-import { nextId, resetIdCounter } from '../utils/id.js';
+import { nextId } from '../utils/id.js';
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_RE = /^(```+|~~~+)(.*)$/;
@@ -25,7 +25,6 @@ function cleanTitle(rawTitle) {
  * holds any content that appears before the first heading.
  */
 export function parseMarkdown(mdText) {
-  resetIdCounter();
   const lines = String(mdText ?? '').replace(/\r\n/g, '\n').split('\n');
   const root = makeNode(0, 'Document');
   const stack = [root];

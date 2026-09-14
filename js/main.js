@@ -113,7 +113,20 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+/**
+ * Every entry point that replaces the loaded document — samples, "Open .md
+ * file", drag-drop — funnels through here, so this one guard covers all of
+ * them: if the current document has unsaved changes, confirm before
+ * discarding them. (beforeunload only catches closing the tab/window; it
+ * has no say over switching documents within the app.)
+ */
 function loadFromText(text, fileName, fileHandle = null) {
+  const current = getState();
+  if (current.dirty && !window.confirm(
+    `"${current.fileName}" has unsaved changes that will be lost. Load "${fileName}" anyway?`,
+  )) {
+    return;
+  }
   try {
     const doc = parseMarkdown(text);
     if (!doc.children.length && !doc.bodyMarkdown.trim()) {
