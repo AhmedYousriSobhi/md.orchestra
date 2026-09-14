@@ -74,7 +74,12 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    `data:` URI, so the section stays portable in one `.md` file). Use
    **✎ Edit content** / the pencil next to the
    title to change the section's actual content and heading text (not just
-   an annotation), and **🗑 Delete section** to remove it. A section titled
+   an annotation), and **🗑 Delete section** to remove it. Every section has
+   its own **↩ Undo**, too (disabled until there's something to undo): it
+   steps back one edit at a time through that section's own history —
+   content edits, notes, a title rename, an inserted AI suggestion, a
+   regenerated ToC — independently of any other section, in case an
+   edit turns out to be a mistake. A section titled
    something like "Table of Contents" gets a **🔄 Regenerate from
    headings** action that rebuilds its bullet list from the document's
    current structure — and typing that title in the first place drafts
@@ -479,3 +484,19 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   and clicking a file in the tree right after editing a note (the exact
   scenario that surfaced the blur bug) now works — plus the full existing
   self-test/mind-map/dark-mode regression suite still passes unchanged.
+- **Stage 24** — Added a per-section **↩ Undo** button. Rather than a
+  separate undo system, it hooks the one place every section edit already
+  passes through: `state/store.js`'s `updateNode()` now snapshots a
+  node's {bodyMarkdown, title} onto a small per-node stack (capped at 20)
+  before applying each change, and `undoNode()` pops the most recent one
+  back. Because content edits, notes (add/edit/delete), a title rename,
+  removing/inserting an AI suggestion, and regenerating a ToC all already
+  funnel through `updateNode`, every one of them is undoable with no
+  changes needed at those call sites — only the button itself (disabled
+  when a section has no history yet) and the store-level stack. Undo
+  history is per-section (unrelated sections never interfere with each
+  other) and resets when a different document loads. Verified: a title
+  rename followed by a content edit undoes in reverse order (content
+  first, then the rename), undoing a just-added note removes it again, a
+  subsection's undo is independent of its parent's, and switching
+  documents leaves a freshly-loaded section's Undo disabled.

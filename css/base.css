@@ -126,6 +126,8 @@ button {
   color: var(--text-soft);
 }
 .code-btn:hover { background: var(--bg-soft); }
+.code-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.code-btn:disabled:hover { background: none; }
 .code-btn-close { color: var(--text); }
 .code-btn-danger { color: var(--danger); }
 .code-btn-danger:hover { background: var(--danger-soft); }

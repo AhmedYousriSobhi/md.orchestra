@@ -7,7 +7,7 @@ import { getPath, getTopLevelIndex } from '../markdown/parser.js';
 import { buildSlugIndex } from '../markdown/slug.js';
 import { generateTocMarkdown, looksLikeTocSection } from '../markdown/toc.js';
 import {
-  getState, selectSection, updateNode, removeSection,
+  getState, selectSection, updateNode, removeSection, canUndoNode, undoNode,
 } from '../state/store.js';
 import { createNotesSection } from './notesPanel.js';
 import { openCodeViewer } from './codeViewer.js';
@@ -84,6 +84,21 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     onClick: () => enterContentEditMode(bodyEl, main, node, showRenderedBody),
   }, '✎ Edit content');
 
+  // Steps back through this section's own edit history (see store.js's
+  // updateNode/undoNode) — content edits, notes, title renames, an inserted
+  // AI suggestion, a regenerated ToC — one step per click, oldest edits
+  // last. Disabled rather than hidden when there's nothing to undo yet, so
+  // it doesn't shift the other buttons around as history accumulates.
+  const undoBtn = h('button', {
+    class: 'code-btn',
+    type: 'button',
+    disabled: !canUndoNode(node.id),
+    title: 'Undo the last change to this section',
+    onClick: () => {
+      if (undoNode(node.id)) showToast('Undid the last change to this section');
+    },
+  }, '↩ Undo');
+
   if (aiInsert) {
     const aiBodyEl = h('div', { class: 'rendered-markdown', html: renderMarkdownToSafeHtml(aiInsert) });
     enhanceRenderedContent(aiBodyEl, {
@@ -120,7 +135,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     },
   }));
 
-  const actions = [editContentBtn];
+  const actions = [editContentBtn, undoBtn];
 
   if (looksLikeTocSection(node)) {
     actions.push(h('button', {

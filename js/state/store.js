@@ -29,9 +29,21 @@ export function setState(patch) {
   notify();
 }
 
+// Per-section undo history: each node id maps to a stack of its previous
+// {bodyMarkdown, title} snapshots, oldest first — one entry per updateNode()
+// call, so "Undo" on a section's card steps back through its edits one at a
+// time (content changes, notes, title renames, an inserted AI suggestion —
+// everything that goes through updateNode) regardless of which of those
+// touched it most recently. Capped so a long editing session can't grow it
+// unboundedly; reset whenever a different document is loaded, since node
+// ids from the previous one are meaningless here.
+const undoStacks = new Map();
+const MAX_UNDO_DEPTH = 20;
+
 export function loadDocument({
   doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null,
 }) {
+  undoStacks.clear();
   const firstChild = doc.children[0];
   setState({
     doc,
@@ -57,13 +69,34 @@ export function getSelectedPath() {
   return getPath(state.doc, state.selectedId);
 }
 
-/** Replace one node's bodyMarkdown (and optionally title) in place, then mark the doc dirty. */
+/** Replace one node's bodyMarkdown (and optionally title) in place, then mark the doc dirty. Snapshots the node's prior state first, for undoNode(). */
 export function updateNode(id, patch) {
   if (!state.doc) return;
   const node = findNode(state.doc, id);
   if (!node) return;
+  const stack = undoStacks.get(id) || [];
+  stack.push({ bodyMarkdown: node.bodyMarkdown, title: node.title });
+  if (stack.length > MAX_UNDO_DEPTH) stack.shift();
+  undoStacks.set(id, stack);
   Object.assign(node, patch);
   setState({ doc: state.doc, dirty: true });
+}
+
+export function canUndoNode(id) {
+  const stack = undoStacks.get(id);
+  return Boolean(stack && stack.length);
+}
+
+/** Step one section back through its own edit history (see updateNode). Returns false if there's nothing to undo. */
+export function undoNode(id) {
+  if (!state.doc) return false;
+  const node = findNode(state.doc, id);
+  if (!node) return false;
+  const stack = undoStacks.get(id);
+  if (!stack || !stack.length) return false;
+  Object.assign(node, stack.pop());
+  setState({ doc: state.doc, dirty: true });
+  return true;
 }
 
 /** Remove a section (and everything nested under it) from the tree. Returns the parent id, or null. */
