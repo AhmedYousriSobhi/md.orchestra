@@ -1,9 +1,6 @@
-# Markdown Insight Dashboard
+# MD.Orchestra
 
-An AI-assisted dashboard that reads a Markdown document, presents it as a
-navigable set of colored cards, lets you capture notes and Claude-generated
-suggestions against any section, and writes everything back into a single
-Markdown file on request.
+An AI-assisted dashboard that reads a Markdown document — or a whole directory of them — presents it as a navigable set of colored cards, lets you capture notes and Claude-generated suggestions against any section, and writes everything back into the source Markdown file(s) on request.
 
 `doc_flowchart.html` is the earlier flowchart-style prototype and is kept
 as-is for reference; it is not part of the dashboard described below.

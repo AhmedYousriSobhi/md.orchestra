@@ -1,7 +1,7 @@
 {
-  "name": "Markdown Insight Dashboard",
-  "short_name": "MD Dashboard",
-  "description": "Read, annotate, and edit a Markdown file as colored cards, with Claude-powered insights.",
+  "name": "MD.Orchestra",
+  "short_name": "MD.Orchestra",
+  "description": "Read, annotate, and edit a Markdown file — or a whole directory of them — as colored cards, with Claude-powered insights.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
