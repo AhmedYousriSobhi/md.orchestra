@@ -61,3 +61,19 @@ export function updateNode(id, patch) {
   Object.assign(node, patch);
   setState({ doc: state.doc, dirty: true });
 }
+
+/**
+ * Splice a brand-new section node into the tree as a child of `parentId`
+ * (which may be the document root itself), at the start or end of its
+ * existing children. Unlike updateNode this is a structural change — used
+ * for authoring whole new sections, not annotating an existing one.
+ */
+export function insertSection({ parentId, node, position = 'end' }) {
+  if (!state.doc) return false;
+  const parent = findNode(state.doc, parentId);
+  if (!parent) return false;
+  if (position === 'start') parent.children.unshift(node);
+  else parent.children.push(node);
+  setState({ doc: state.doc, dirty: true });
+  return true;
+}

@@ -12,6 +12,8 @@ import {
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
+import { openAddSectionModal } from './ui/addSectionModal.js';
+import { openMapView } from './ui/mapView.js';
 
 const el = {
   sidebar: document.getElementById('sidebar'),
@@ -24,6 +26,8 @@ const el = {
   samplesBtn: document.getElementById('samples-btn'),
   samplesDropdown: document.getElementById('samples-dropdown'),
   emptySampleBtn: document.getElementById('empty-sample-btn'),
+  addSectionBtn: document.getElementById('add-section-btn'),
+  mapViewBtn: document.getElementById('map-view-btn'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
@@ -38,6 +42,8 @@ function render() {
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
   el.sourceBtn.disabled = !doc;
+  el.addSectionBtn.disabled = !doc;
+  el.mapViewBtn.disabled = !doc;
 
   if (!doc) {
     el.emptyState.hidden = false;
@@ -137,6 +143,8 @@ el.samplesDropdown.querySelectorAll('button[data-sample]').forEach((btn) => {
 });
 el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
 
+el.addSectionBtn.addEventListener('click', openAddSectionModal);
+el.mapViewBtn.addEventListener('click', openMapView);
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);
 el.sidebarToggle.addEventListener('click', () => {
