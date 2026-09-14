@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Blueprint — Document Flow Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+  :root{
+    --navy-950:#081522;
+    --navy-900:#0d2438;
+    --navy-800:#123151;
+    --grid:#1c3d5c;
+    --paper:#f4efe2;
+    --paper-dim:#e7e0cd;
+    --ink:#1c1a15;
+    --ink-soft:#5a5548;
+    --copper:#c17a3f;
+    --copper-bright:#e0954f;
+    --teal:#1f5c5c;
+    --teal-bright:#3fb8a8;
+    --start:#3f8f5f;
+    --end:#8264b0;
+    --decision:#c08a2e;
+    --step:#3e6e9e;
+    --reference:#6b6f76;
+    --danger:#b5533f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--navy-950);}
+  body{
+    font-family: "Iowan Old Style","Palatino Linotype",Georgia,serif;
+    color:var(--paper);
+    overflow:hidden;
+  }
+  .sans{ font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .mono{ font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+
+  /* ---------- layout shell ---------- */
+  #shell{ display:flex; flex-direction:column; height:100%; }
+
+  header{
+    display:flex; align-items:center; gap:1rem;
+    padding:0.9rem 1.4rem;
+    background:linear-gradient(180deg,var(--navy-900),var(--navy-950));
+    border-bottom:1px solid var(--grid);
+    flex-shrink:0;
+    z-index:5;
+  }
+  header .brand{ display:flex; flex-direction:column; margin-right:0.5rem; }
+  header .brand .title{ font-size:1.15rem; letter-spacing:0.01em; color:var(--paper); }
+  header .brand .subtitle{ font-size:0.72rem; color:#8fa9c2; font-family:inherit; font-style:italic;}
+  header .spacer{ flex:1; }
+  header button, header label.file-btn{
+    font-family:inherit; font-size:0.82rem; cursor:pointer;
+    background:var(--navy-800); color:var(--paper);
+    border:1px solid var(--grid); border-radius:4px;
+    padding:0.45rem 0.85rem; transition:background .15s, border-color .15s;
+  }
+  header button:hover, header label.file-btn:hover{ background:#173f66; border-color:var(--copper);}
+  header button.primary{ background:var(--copper); border-color:var(--copper-bright); color:#1a1204; font-weight:600;}
+  header button.primary:hover{ background:var(--copper-bright);}
+  header button:disabled{ opacity:0.45; cursor:not-allowed; }
+  header input[type=file]{ display:none; }
+
+  #status{
+    font-size:0.78rem; color:#8fa9c2; min-width:180px; text-align:right;
+  }
+
+  /* ---------- input drawer ---------- */
+  #drawer{
+    background:var(--navy-900); border-bottom:1px solid var(--grid);
+    padding:1rem 1.4rem; display:none; flex-shrink:0;
+  }
+  #drawer.open{ display:block; }
+  #drawer textarea{
+    width:100%; height:220px; resize:vertical;
+    background:#0a1c2c; color:#dce8f2; border:1px solid var(--grid);
+    border-radius:6px; padding:0.8rem; font-size:0.85rem; line-height:1.5;
+  }
+  #drawer .hint{ font-size:0.75rem; color:#6f8aa5; margin-top:0.4rem; }
+
+  /* ---------- canvas ---------- */
+  #canvas-wrap{
+    position:relative; flex:1; overflow:hidden; cursor:grab;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:34px 34px;
+    background-color:var(--navy-950);
+  }
+  #canvas-wrap.grabbing{ cursor:grabbing; }
+  #world{
+    position:absolute; top:0; left:0; transform-origin:0 0;
+    will-change:transform;
+  }
+  #world.smooth{ transition:transform 0.45s cubic-bezier(.22,.61,.36,1); }
+  #edges{ position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
+  #nodes-layer{ position:absolute; top:0; left:0; }
+
+  /* ---------- zoom controls ---------- */
+  #zoom-controls{
+    position:absolute; right:1.1rem; bottom:1.1rem; z-index:4;
+    display:flex; flex-direction:column; gap:0.4rem;
+  }
+  #zoom-controls button{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--grid);
+    background:var(--navy-800); color:var(--paper); font-size:1.05rem; cursor:pointer;
+  }
+  #zoom-controls button:hover{ background:#173f66; }
+
+  /* ---------- empty state ---------- */
+  #empty-state{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:0.9rem; text-align:center; padding:2rem;
+  }
+  #empty-state h2{ font-weight:400; font-size:1.4rem; color:#cfe0ee; max-width:30ch; margin:0;}
+  #empty-state p{ font-family: inherit; color:#6f8aa5; max-width:42ch; margin:0; font-size:0.95rem;}
+  #empty-state button{
+    margin-top:0.4rem; font-family:inherit; font-size:0.9rem; cursor:pointer;
+    background:var(--copper); border:1px solid var(--copper-bright); color:#1a1204;
+    border-radius:4px; padding:0.6rem 1.2rem; font-weight:600;
+  }
+
+  /* ---------- node cards ---------- */
+  @keyframes cardIn{
+    from{ opacity:0; transform:translate(-18px,-14px) scale(0.94); }
+    to{ opacity:1; transform:translate(0,0) scale(1); }
+  }
+  .node{
+    position:absolute; width:248px;
+    background:var(--paper); color:var(--ink);
+    border-radius:3px;
+    box-shadow:0 3px 0 rgba(0,0,0,0.35), 0 10px 18px rgba(0,0,0,0.35);
+    padding:0.85rem 0.9rem 0.75rem;
+    border-top:5px solid var(--step);
+    animation:cardIn 0.5s cubic-bezier(.16,.84,.44,1) both;
+    transition:box-shadow .2s ease, transform .2s ease, z-index 0s;
+  }
+  .node:hover{
+    box-shadow:0 4px 0 rgba(0,0,0,0.4), 0 14px 26px rgba(0,0,0,0.45);
+    transform:translateY(-2px);
+    z-index:3;
+  }
+  .node.expanded{ z-index:5; }
+  .node.role-start{ border-top-color:var(--start); }
+  .node.role-end{ border-top-color:var(--end); }
+  .node.role-decision{ border-top-color:var(--decision); }
+  .node.role-reference{ border-top-color:var(--reference); }
+  .node .badge{
+    display:inline-block; font-family: inherit; font-size:0.62rem; letter-spacing:0.06em;
+    color:var(--ink-soft); margin-bottom:0.3rem;
+  }
+  .node h3{
+    margin:0 0 0.35rem; font-size:0.98rem; line-height:1.25; font-weight:600; color:var(--ink);
+  }
+  .node .summary{
+    font-family: inherit; font-size:0.82rem; line-height:1.4; color:#3a362c; margin:0 0 0.5rem;
+  }
+  .node ul.points{ margin:0 0 0.4rem; padding-left:1.1rem; }
+  .node ul.points li{ font-size:0.78rem; color:var(--ink-soft); margin-bottom:0.18rem; }
+  .node .code-toggle{
+    font-family: inherit; font-size:0.72rem; cursor:pointer; user-select:none;
+    display:inline-flex; align-items:center; gap:0.3rem;
+    color:var(--teal); border-top:1px dashed #c9c1a8; padding-top:0.4rem; margin-top:0.2rem;
+  }
+  .node .code-toggle:hover{ color:var(--teal-bright); }
+  .node .code-toggle .chevron{ display:inline-block; transition:transform .3s cubic-bezier(.4,0,.2,1); }
+  .node .code-toggle.open .chevron{ transform:rotate(90deg); }
+  .node .code-panel{
+    display:grid; grid-template-rows:0fr; opacity:0;
+    transition:grid-template-rows .35s cubic-bezier(.4,0,.2,1), opacity .28s ease;
+  }
+  .node .code-panel.open{ grid-template-rows:1fr; opacity:1; }
+  .node .code-panel-inner{ overflow:hidden; min-height:0; }
+  .node .code-panel-scroll{ margin-top:0.5rem; max-height:260px; overflow-y:auto; }
+  .node .code-block{
+    background:#0a1c2c; border-radius:4px; padding:0.55rem 0.6rem;
+    margin-bottom:0.5rem; overflow-x:auto;
+  }
+  .node .code-caption{ font-size:0.68rem; color:var(--ink-soft); margin:0.15rem 0 0.25rem; font-style:italic; }
+  .node .code-block pre{ margin:0; }
+  .node .code-block code{ font-size:0.72rem; line-height:1.45; background:transparent !important; }
+  .node .lang-tag{
+    font-size:0.6rem; letter-spacing:0.04em; color:#7fa; opacity:0.7;
+  }
+
+  svg .edge{ fill:none; stroke:#3a5a78; stroke-width:2; }
+  svg .edge-arrow{ fill:#3a5a78; }
+
+  /* ---------- loading overlay ---------- */
+  #loading{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(8,21,34,0.72); z-index:6; flex-direction:column; gap:0.8rem;
+  }
+  #loading.show{ display:flex; }
+  .spinner{
+    width:34px; height:34px; border-radius:50%;
+    border:3px solid var(--grid); border-top-color:var(--copper);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading span{ color:#cfe0ee; font-size:0.9rem; }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:#4a5f74; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="shell">
+
+  <header class="sans">
+    <div class="brand">
+      <span class="title">Blueprint</span>
+      <span class="subtitle">turn any doc into a flow</span>
+    </div>
+    <button id="toggle-drawer">Paste / edit Markdown</button>
+    <label class="file-btn" for="file-input">Upload .md</label>
+    <input id="file-input" type="file" accept=".md,.markdown,.txt" />
+    <button id="load-example">Try an example</button>
+    <div class="spacer"></div>
+    <label class="sans" style="font-size:0.78rem; color:#8fa9c2; display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+      <input type="checkbox" id="use-ai" checked style="accent-color:var(--copper);" />
+      AI analysis
+    </label>
+    <button id="generate-btn" class="primary">Generate flowchart</button>
+    <div id="status"></div>
+  </header>
+
+  <div id="drawer">
+    <textarea id="md-input" class="mono" placeholder="Paste your Markdown here…"></textarea>
+    <div class="hint sans">Headings (#, ##, ###) become flow nodes. Bullets become key points. Fenced code blocks (```) are attached to the nearest heading and shown as expandable snippets.</div>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="empty-state" class="sans">
+      <h2>No document loaded yet</h2>
+      <p>Paste a Markdown file, upload one, or try the example — Blueprint will read its structure, summarize each section with Claude, and lay it out as a flowchart with your code blocks attached where they belong.</p>
+      <button id="empty-example-btn">Try an example</button>
+    </div>
+    <div id="world">
+      <svg id="edges" width="1" height="1"></svg>
+      <div id="nodes-layer"></div>
+    </div>
+    <div id="loading"><div class="spinner"></div><span id="loading-text">Analyzing document…</span></div>
+    <div id="zoom-controls">
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="zoom-reset" title="Fit to screen">⤢</button>
+      <button id="zoom-out" title="Zoom out">−</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+if (window.hljs) { /* configured lazily per block via hljs.highlightElement */ }
+
+/* ============================================================
+   1. MARKDOWN PARSING  →  tree of heading sections
+   ============================================================ */
+let UID = 0;
+function newNode(title, level) {
+  return { id: 'n' + (UID++), title, level, children: [], bullets: [], codeBlocks: [], textParts: [] };
+}
+
+function parseMarkdown(md) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  const root = newNode('Document', 0);
+  let stack = [{ level: 0, node: root }];
+  let inCode = false, codeLang = '', codeBuf = [];
+
+  const headingRe = /^(#{1,6})\s+(.*\S)\s*$/;
+  const bulletRe = /^(\s*)([-*+]|\d+[.)])\s+(.*\S)\s*$/;
+
+  for (const raw of lines) {
+    const fence = raw.match(/^```(.*)$/);
+    if (fence) {
+      if (!inCode) { inCode = true; codeLang = fence[1].trim() || 'text'; codeBuf = []; }
+      else {
+        inCode = false;
+        stack[stack.length - 1].node.codeBlocks.push({ lang: codeLang, code: codeBuf.join('\n') });
+      }
+      continue;
+    }
+    if (inCode) { codeBuf.push(raw); continue; }
+
+    const h = raw.match(headingRe);
+    const b = raw.match(bulletRe);
+
+    if (h) {
+      const level = h[1].length;
+      const node = newNode(h[2].trim(), level);
+      while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+      stack[stack.length - 1].node.children.push(node);
+      stack.push({ level, node });
+    } else if (b) {
+      const node = stack[stack.length - 1].node;
+      node.bullets.push(b[3].trim());
+    } else if (raw.trim() !== '') {
+      stack[stack.length - 1].node.textParts.push(raw.trim());
+    }
+  }
+  return root;
+}
+
+/* Flatten to a list of heading-level nodes only (the flowchart nodes),
+   preserving parent/child relationships. Root becomes a synthetic "start". */
+function flattenSections(root) {
+  const list = [];
+  function rec(node, parent) {
+    if (node !== root) list.push({ node, parentId: parent ? parent.id : null });
+    for (const c of node.children) rec(c, node !== root ? node : null);
+  }
+  // if root has no heading children at all but has bullets/text, keep root itself
+  rec(root, null);
+  return list;
+}
+
+/* ============================================================
+   2. LLM ANALYSIS (Claude via the built-in fetch bridge),
+      with a heuristic fallback if the call fails or is disabled.
+   ============================================================ */
+const SEQUENCE_WORDS = ['step','first','then','next','finally','after','before','process','workflow','stage','phase'];
+const DECISION_WORDS = ['if ', 'choose', 'decide', 'either', 'depending', 'option'];
+
+function heuristicAnalysis(sections, docTitle) {
+  return sections.map((s, i) => {
+    const text = (s.node.textParts.join(' ') + ' ' + s.node.bullets.join(' ')).trim();
+    const lower = text.toLowerCase();
+    let role = 'step';
+    if (i === 0) role = 'start';
+    else if (i === sections.length - 1) role = 'end';
+    else if (DECISION_WORDS.some(w => lower.includes(w))) role = 'decision';
+    else if (s.node.children.length === 0 && s.node.bullets.length === 0 && s.node.codeBlocks.length === 0) role = 'reference';
+
+    const summary = text ? (text.length > 140 ? text.slice(0, 140).trim() + '…' : text)
+                          : (s.node.bullets[0] || 'No description provided.');
+    const keyPoints = s.node.bullets.slice(0, 3);
+    const codeCaptions = s.node.codeBlocks.map(cb => `${cb.lang} snippet`);
+    return { summary, key_points: keyPoints, role, code_captions: codeCaptions };
+  });
+}
+
+async function callClaude(prompt) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  const data = await response.json();
+  const text = (data.content || []).map(b => b.text || '').join('\n');
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON in LLM response');
+  return JSON.parse(match[0]);
+}
+
+function buildPrompt(sections, docTitle) {
+  const capped = sections.slice(0, 24); // keep the prompt (and 1000-token response) manageable
+  const outline = capped.map((s, i) => {
+    const text = (s.node.textParts.join(' ') + ' ' + s.node.bullets.join('; ')).slice(0, 260);
+    const codeSummaries = s.node.codeBlocks.map((cb, ci) => `    code[${ci}] (${cb.lang}): ${cb.code.slice(0, 120).replace(/\n/g, ' ')}`).join('\n');
+    return `[${i}] (level ${s.node.level}) "${s.node.title}"\n  text: ${text || '(no body text)'}\n${codeSummaries}`;
+  }).join('\n\n');
+
+  return `You are analyzing the section outline of a document titled "${docTitle}" so it can be redrawn as a flowchart.
+
+${outline}
+
+For EACH section index above, return:
+- "summary": one plain-English sentence (<=22 words)
+- "key_points": up to 3 short phrases (<=6 words each) worth showing on a flowchart card
+- "role": one of "start", "step", "decision", "reference", "end" — "start" for the section that kicks things off, "end" for the one that concludes it, "decision" only if the section genuinely presents a choice/branch, "reference" for background/glossary-style sections with no action, otherwise "step"
+- "code_captions": if the section lists any code[i] entries, one short caption (<=10 words) per code entry, in order; otherwise an empty array
+
+Respond ONLY with JSON, no prose, no markdown fences:
+{"sections": [{"index":0,"summary":"...","key_points":["..."],"role":"...","code_captions":["..."]}]}`;
+}
+
+async function analyzeSections(sections, docTitle, useAI, setStatus) {
+  if (!useAI) return heuristicAnalysis(sections, docTitle);
+  try {
+    setStatus('Asking Claude to read and summarize the document…');
+    const prompt = buildPrompt(sections, docTitle);
+    const result = await callClaude(prompt);
+    const byIndex = {};
+    (result.sections || []).forEach(s => { byIndex[s.index] = s; });
+    const fallback = heuristicAnalysis(sections, docTitle);
+    return sections.map((s, i) => {
+      const r = byIndex[i];
+      if (!r) return fallback[i];
+      return {
+        summary: r.summary || fallback[i].summary,
+        key_points: (r.key_points && r.key_points.length) ? r.key_points.slice(0, 3) : fallback[i].key_points,
+        role: r.role || fallback[i].role,
+        code_captions: (r.code_captions && r.code_captions.length) ? r.code_captions : fallback[i].code_captions
+      };
+    });
+  } catch (err) {
+    console.warn('AI analysis failed, falling back to heuristic:', err);
+    setStatus('AI analysis unavailable — used a quick offline summary instead.');
+    return heuristicAnalysis(sections, docTitle);
+  }
+}
+
+/* ============================================================
+   3. LAYOUT — a vertical, indented branch tree.
+      The chart grows DOWN the page (one row per section, in
+      document order); each level of nesting branches slightly to
+      the right, like an outline — not a wide horizontal spread.
+   ============================================================ */
+const ROW_H = 176;     // vertical space per section (card row)
+const INDENT_W = 130;  // horizontal shift per nesting level
+const CARD_W = 248;
+
+function computeLayout(root) {
+  let cursor = 0;
+  let maxDepth = 0;
+  function place(node, depth) {
+    node._x = depth * INDENT_W;
+    node._y = cursor * ROW_H;
+    node._order = cursor;
+    cursor += 1;
+    if (depth > maxDepth) maxDepth = depth;
+    for (const child of node.children) place(child, depth + 1);
+  }
+  place(root, 0);
+  return { rows: cursor, maxDepth, width: maxDepth * INDENT_W + CARD_W, height: cursor * ROW_H };
+}
+
+/* ============================================================
+   4. RENDERING
+   ============================================================ */
+const ROLE_LABEL = { start: 'START', end: 'END', decision: 'DECISION POINT', reference: 'REFERENCE', step: 'STEP' };
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderCodeBlock(cb, caption) {
+  const langClass = 'language-' + (cb.lang || 'plaintext').toLowerCase().replace(/[^a-z0-9]/g, '') || 'language-plaintext';
+  return `
+    <div class="code-block">
+      ${caption ? `<div class="code-caption">${escapeHtml(caption)}</div>` : ''}
+      <div class="lang-tag mono">${escapeHtml(cb.lang || 'text')}</div>
+      <pre><code class="${langClass}">${escapeHtml(cb.code)}</code></pre>
+    </div>`;
+}
+
+function staggerDelay(order) {
+  return Math.min(order * 0.06, 0.7); // seconds, capped so long docs don't crawl
+}
+
+function buildNodeEl(node, analysis) {
+  const el = document.createElement('div');
+  el.className = `node role-${analysis.role} sans`;
+  el.style.left = node._x + 'px';
+  el.style.top = node._y + 'px';
+  el.style.animationDelay = staggerDelay(node._order) + 's';
+  el.dataset.nodeId = node.id;
+
+  const points = (analysis.key_points || []).map(p => `<li>${escapeHtml(p)}</li>`).join('');
+  const codeCount = node.codeBlocks.length;
+
+  el.innerHTML = `
+    <span class="badge">${ROLE_LABEL[analysis.role] || 'STEP'}</span>
+    <h3>${escapeHtml(node.title)}</h3>
+    <p class="summary">${escapeHtml(analysis.summary || '')}</p>
+    ${points ? `<ul class="points">${points}</ul>` : ''}
+    ${codeCount ? `<div class="code-toggle"><span class="chevron">▸</span> ${codeCount} code snippet${codeCount > 1 ? 's' : ''} — click to view</div>
+    <div class="code-panel"><div class="code-panel-inner"><div class="code-panel-scroll">
+      ${node.codeBlocks.map((cb, i) => renderCodeBlock(cb, (analysis.code_captions || [])[i])).join('')}
+    </div></div></div>` : ''}
+  `;
+
+  const toggle = el.querySelector('.code-toggle');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const panel = el.querySelector('.code-panel');
+      const isOpen = panel.classList.toggle('open');
+      toggle.classList.toggle('open', isOpen);
+      el.classList.toggle('expanded', isOpen);
+      if (isOpen && window.hljs) {
+        panel.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+      }
+    });
+  }
+  return el;
+}
+
+/* Vertical S-curve: drops from the parent, then eases sideways into
+   the indented child column — reads as a branch, not a straight wire. */
+function edgePath(x1, y1, x2, y2) {
+  const midY = y1 + (y2 - y1) * 0.55;
+  return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+}
+
+let viewState = { scale: 1, tx: 60, ty: 40 };
+
+function applyTransform(smooth) {
+  const world = document.getElementById('world');
+  world.classList.toggle('smooth', !!smooth);
+  world.style.transform = `translate(${viewState.tx}px, ${viewState.ty}px) scale(${viewState.scale})`;
+}
+
+/* Animate an SVG path drawing itself in, timed just after its child card lands. */
+function animateEdgeIn(path, delaySeconds) {
+  const len = path.getTotalLength();
+  path.style.strokeDasharray = String(len);
+  path.style.strokeDashoffset = String(len);
+  path.getBoundingClientRect(); // force layout so the transition below actually animates
+  path.style.transition = `stroke-dashoffset 0.55s cubic-bezier(.4,0,.2,1) ${delaySeconds}s`;
+  requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
+}
+
+function renderFlow(root, analysisMap, layout) {
+  document.getElementById('empty-state').style.display = 'none';
+  const nodesLayer = document.getElementById('nodes-layer');
+  const svg = document.getElementById('edges');
+  nodesLayer.innerHTML = '';
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" class="edge-arrow"></path>
+      </marker>
+    </defs>`;
+
+  svg.setAttribute('width', layout.width + 160);
+  svg.setAttribute('height', layout.height + 220);
+
+  const CARD_ANCHOR_LEFT = 20;
+  const CARD_EXIT_Y = 150; // approx. card bottom before any code panel expands
+
+  function walk(node) {
+    if (node.id === root.id) {
+      const el = document.createElement('div');
+      el.className = 'node role-start sans';
+      el.style.left = node._x + 'px';
+      el.style.top = node._y + 'px';
+      el.style.animationDelay = staggerDelay(node._order) + 's';
+      el.innerHTML = `<span class="badge">START</span><h3>${escapeHtml(node.title)}</h3>`;
+      nodesLayer.appendChild(el);
+    } else {
+      const analysis = analysisMap[node.id] || { summary: '', key_points: [], role: 'step', code_captions: [] };
+      nodesLayer.appendChild(buildNodeEl(node, analysis));
+    }
+    for (const child of node.children) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', 'edge');
+      path.setAttribute('marker-end', 'url(#arrow)');
+      path.setAttribute('d', edgePath(
+        node._x + CARD_ANCHOR_LEFT, node._y + CARD_EXIT_Y,
+        child._x + CARD_ANCHOR_LEFT, child._y
+      ));
+      svg.appendChild(path);
+      animateEdgeIn(path, staggerDelay(child._order) * 0.85);
+      walk(child);
+    }
+  }
+  walk(root);
+
+  // fit to screen (instant, so the per-card stagger animation plays within the final frame)
+  const wrap = document.getElementById('canvas-wrap');
+  const availW = wrap.clientWidth - 120;
+  const availH = wrap.clientHeight - 120;
+  const scale = Math.max(0.35, Math.min(1, availW / (layout.width + 160), availH / (layout.height + 220)));
+  viewState = { scale, tx: 60, ty: 40 };
+  applyTransform(false);
+}
+
+/* ============================================================
+   5. WIRING UP THE UI
+   ============================================================ */
+const drawer = document.getElementById('drawer');
+document.getElementById('toggle-drawer').addEventListener('click', () => drawer.classList.toggle('open'));
+
+document.getElementById('file-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('md-input').value = reader.result;
+    drawer.classList.add('open');
+  };
+  reader.readAsText(file);
+});
+
+const EXAMPLE_MD = `# Deploying the Checkout Service
+
+## Overview
+This service handles payment capture and order confirmation for the storefront.
+
+## Prerequisites
+- Docker installed locally
+- Access to the staging Kubernetes cluster
+- A valid STRIPE_API_KEY secret
+
+## Build the image
+Run the build script to produce a versioned container image.
+
+\`\`\`bash
+docker build -t checkout-service:$(git rev-parse --short HEAD) .
+docker push registry.internal/checkout-service:$(git rev-parse --short HEAD)
+\`\`\`
+
+## Choose a rollout strategy
+Decide whether this is a routine deploy or a hotfix.
+- Routine deploy: use the canary rollout
+- Hotfix: use the direct rollout and skip canary analysis
+
+## Canary rollout
+- Ship to 5% of traffic first
+- Watch error rate and latency dashboards for 15 minutes
+- Promote to 100% if error rate stays under 0.5%
+
+\`\`\`yaml
+strategy:
+  canary:
+    steps:
+      - setWeight: 5
+      - pause: {duration: 15m}
+      - setWeight: 100
+\`\`\`
+
+## Rollback
+If error rates spike, roll back immediately to the last known-good image.
+
+\`\`\`bash
+kubectl argo rollouts undo checkout-service
+\`\`\`
+
+## Confirm deployment
+- Check the health endpoint returns 200
+- Verify a test transaction completes end-to-end
+- Notify #payments-team in Slack
+`;
+
+function loadExample() {
+  document.getElementById('md-input').value = EXAMPLE_MD;
+  drawer.classList.add('open');
+}
+document.getElementById('load-example').addEventListener('click', loadExample);
+document.getElementById('empty-example-btn').addEventListener('click', () => { loadExample(); generate(); });
+
+function setStatus(msg) { document.getElementById('status').textContent = msg || ''; }
+
+async function generate() {
+  const md = document.getElementById('md-input').value.trim();
+  if (!md) { setStatus('Paste or upload a Markdown document first.'); drawer.classList.add('open'); return; }
+
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = true;
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('loading-text').textContent = 'Reading document structure…';
+
+  try {
+    const root = parseMarkdown(md);
+    const h1 = root.children.find(c => c.level === 1);
+    const docTitle = h1 ? h1.title : 'Document';
+    // Treat the top-level H1 (if present) as the synthetic start node, and
+    // its own children as the first row of the flow.
+    const flowRoot = h1 || root;
+    if (h1) { flowRoot.title = docTitle; }
+
+    const sections = flattenSections(flowRoot);
+    if (sections.length === 0) {
+      setStatus('No headings found — add at least one # / ## / ### heading.');
+      document.getElementById('loading').classList.remove('show');
+      btn.disabled = false;
+      return;
+    }
+
+    const useAI = document.getElementById('use-ai').checked;
+    document.getElementById('loading-text').textContent = useAI
+      ? 'Asking Claude to summarize each section…'
+      : 'Summarizing sections…';
+
+    const analysisList = await analyzeSections(sections, docTitle, useAI, (m) => {
+      document.getElementById('loading-text').textContent = m;
+    });
+
+    const analysisMap = {};
+    sections.forEach((s, i) => { analysisMap[s.node.id] = analysisList[i]; });
+
+    const layout = computeLayout(flowRoot);
+    renderFlow(flowRoot, analysisMap, layout);
+    setStatus(useAI ? 'Summarized with Claude · ' + sections.length + ' sections' : 'Offline summary · ' + sections.length + ' sections');
+  } catch (err) {
+    console.error(err);
+    setStatus('Something went wrong parsing that document.');
+  } finally {
+    document.getElementById('loading').classList.remove('show');
+    btn.disabled = false;
+  }
+}
+document.getElementById('generate-btn').addEventListener('click', generate);
+
+/* ---- pan & zoom ---- */
+const wrap = document.getElementById('canvas-wrap');
+let dragging = false, dragStart = { x: 0, y: 0 }, viewStart = { tx: 0, ty: 0 };
+
+wrap.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.node')) return;
+  dragging = true;
+  wrap.classList.add('grabbing');
+  dragStart = { x: e.clientX, y: e.clientY };
+  viewStart = { tx: viewState.tx, ty: viewState.ty };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  viewState.tx = viewStart.tx + (e.clientX - dragStart.x);
+  viewState.ty = viewStart.ty + (e.clientY - dragStart.y);
+  applyTransform(false); // instant while actively dragging, for responsiveness
+});
+window.addEventListener('mouseup', () => { dragging = false; wrap.classList.remove('grabbing'); });
+
+wrap.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.08 : 0.08;
+  viewState.scale = Math.max(0.25, Math.min(2.2, viewState.scale + delta));
+  applyTransform(true);
+}, { passive: false });
+
+document.getElementById('zoom-in').addEventListener('click', () => { viewState.scale = Math.min(2.2, viewState.scale + 0.15); applyTransform(true); });
+document.getElementById('zoom-out').addEventListener('click', () => { viewState.scale = Math.max(0.25, viewState.scale - 0.15); applyTransform(true); });
+document.getElementById('zoom-reset').addEventListener('click', () => { viewState = { scale: 1, tx: 60, ty: 40 }; applyTransform(true); });
+</script>
+</body>
+</html>
