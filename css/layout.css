@@ -37,19 +37,7 @@ header#app-header {
 }
 .dirty-indicator:hover { background: var(--bg-soft); color: var(--text); }
 .dirty-indicator.is-dirty { color: #b8860b; }
-.dirty-indicator.is-dirty .dot { animation: dirty-pulse 1.6s ease-in-out infinite; }
-.dirty-indicator .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.7; flex-shrink: 0; }
-
-@keyframes dirty-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.35); }
-}
-
-#save-btn.is-dirty { animation: save-glow 1.8s ease-in-out infinite; }
-@keyframes save-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-default) 55%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-default) 0%, transparent); }
-}
+.dirty-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.7; flex-shrink: 0; }
 
 .samples-menu { position: relative; }
 .samples-dropdown {

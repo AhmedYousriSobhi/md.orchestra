@@ -7,12 +7,12 @@
   --text: #1b2233;
   --text-soft: #5b6478;
   --text-faint: #8b93a7;
-  --shadow-sm: 0 1px 2px rgba(20, 25, 45, 0.06);
-  --shadow-md: 0 8px 24px rgba(20, 25, 45, 0.09);
-  --shadow-lg: 0 24px 64px rgba(15, 20, 40, 0.22);
+  --shadow-sm: 0 1px 2px rgba(20, 25, 45, 0.05);
+  --shadow-md: 0 4px 16px rgba(20, 25, 45, 0.07);
+  --shadow-lg: 0 12px 40px rgba(15, 20, 40, 0.14);
   --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --accent-default: #6c5ce7;
   font-synthesis: none;
 }
@@ -47,23 +47,18 @@ button {
 .btn {
   font-size: 0.85rem;
   font-weight: 600;
-  padding: 0.55rem 1.05rem;
-  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-.btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
-.btn:active { transform: translateY(0); }
+.btn:hover { border-color: color-mix(in srgb, var(--accent-default) 40%, var(--border)); }
 .btn-primary { background: var(--accent-default); border-color: var(--accent-default); color: #fff; }
 .btn-ghost { background: transparent; }
-.btn-insight {
-  background: linear-gradient(135deg, #6c5ce7, #a78bfa);
-  color: #fff;
-  border: none;
-}
-.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn-insight { background: var(--accent-default); color: #fff; border: none; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .code-btn {
   font-size: 0.72rem;

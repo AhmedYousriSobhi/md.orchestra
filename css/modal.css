@@ -28,7 +28,7 @@
 .code-viewer-head, .side-panel-head, .insight-panel .side-panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 1.1rem 1.35rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-default) 10%, white), var(--surface) 65%);
+  background: var(--surface);
 }
 .code-viewer-title { font-weight: 700; font-size: 1rem; }
 .code-viewer-lang { font-size: 0.72rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }

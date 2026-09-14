@@ -47,7 +47,6 @@ function render() {
   el.addSectionBtn.disabled = !doc;
   el.mapViewBtn.disabled = !doc;
   el.saveBtn.disabled = !doc;
-  el.saveBtn.classList.toggle('is-dirty', Boolean(dirty));
 
   if (!doc) {
     el.emptyState.hidden = false;
