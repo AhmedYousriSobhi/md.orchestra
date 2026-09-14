@@ -18,6 +18,19 @@ python3 -m http.server 8000
 # open http://localhost:8000/index.html
 ```
 
+Or run it in Docker (nginx serving the same static files — no build step
+there either):
+
+```bash
+docker compose up -d       # serves on http://localhost:8080
+# or without compose:
+docker build -t md-dashboard . && docker run -p 8080:80 md-dashboard
+```
+
+Either way, once it's open, a supporting browser (Chrome/Edge) will offer to
+**install** it — it registers a manifest + service worker, so it can run in
+its own app window instead of a tab.
+
 ## Using it
 
 1. Load a document: use **Open .md file** (grants direct save-back on
@@ -38,8 +51,12 @@ python3 -m http.server 8000
 3. Click a card's insight icon to open the AI popup: get a Claude summary,
    clarity suggestions, and optionally insert the suggestion straight into
    that section.
-4. Use the notes field on a card to add your own notes; they're stored
-   against that section. Use **✎ Edit content** / the pencil next to the
+4. Use **+ Add note** on a card to jot down as many separate notes as you
+   want on that section — each is its own field with its own delete button.
+   Paste an image, drag one in, or use the **📎 Image** button to attach it
+   (works in notes and while editing section content — it's embedded as a
+   `data:` URI, so the section stays portable in one `.md` file). Use
+   **✎ Edit content** / the pencil next to the
    title to change the section's actual content and heading text (not just
    an annotation), and **🗑 Delete section** to remove it. A section titled
    something like "Table of Contents" gets a **🔄 Regenerate from
@@ -73,6 +90,9 @@ isolation:
 
 ```
 index.html          shell: header, sidebar, main panel, side panels
+manifest.json, sw.js, icons/   installable app shell (see AI integration
+                     section below the data model)
+Dockerfile, docker-compose.yml, .dockerignore   nginx-served container
 css/                 base, layout, cards, modal, animation styles
 js/
   markdown/          parser.js (md -> section tree), serializer.js (tree -> md),
@@ -80,19 +100,24 @@ js/
                      mermaid, <details>), slug.js (GitHub-compatible heading
                      anchors), toc.js (regenerate a Table of Contents)
   state/store.js      single source of truth + pub/sub
+  recovery.js          crash-recovery snapshot in localStorage
   ai/                 client.js (Claude fetch), prompts.js, settings.js
   ui/                 sidebar (drag-and-drop to relocate sections),
                      breadcrumb, card grid (incl. inline title/content
-                     editing), insight modal, code viewer, notes panel,
-                     settings/source panels, add-section modal + tree
-                     picker (drag-and-drop placement), dragDrop.js (shared
-                     before/inside/after zone detection), map view (tree
-                     diagram + mindMap.js's force-directed graph),
-                     markdownEditing (list continuation / indent /
-                     bold-italic-code shortcuts, attached to every
-                     raw-Markdown textarea), toast
+                     editing), insight modal, code viewer, notes panel
+                     (multiple independent notes per section), imageAttach.js
+                     (paste/drag/button -> data: URI image, used by notes and
+                     section-content editing), settings/source panels,
+                     add-section modal + tree picker (drag-and-drop
+                     placement), dragDrop.js (shared before/inside/after zone
+                     detection), map view (tree diagram + mindMap.js's
+                     force-directed graph), markdownEditing (list
+                     continuation / indent / bold-italic-code shortcuts,
+                     attached to every raw-Markdown textarea), toast
   utils/              dom (incl. an SVG-element helper)/debounce/id/color
-  main.js             wires everything together
+  main.js             wires everything together; also the beforeunload
+                     guard, crash-recovery prompt, and service-worker
+                     registration
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
 ```
 
@@ -235,3 +260,43 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   every node pair, spring edges, a weak center pull, run to a settled state
   before rendering) with freely draggable nodes, so a cluttered cluster can
   be pulled apart by hand the way Obsidian's own graph view works.
+- **Stage 13** — A section's notes became a *list*: "+ Add note" adds an
+  independent note (own textarea, own delete button) instead of the one
+  shared field from before. `markdown/markers.js`'s marker format moved
+  from a single `dashboard:note:start/end` pair to one numbered pair per
+  note, reading a pre-multi-note save back as one legacy note so nothing
+  gets silently dropped. Building "+ Add note" surfaced a real bug before
+  it shipped: `joinBody()` dropped any note with empty text, which meant a
+  freshly-added (necessarily empty) note serialized right back out to
+  nothing — fixed by always writing every note regardless of emptiness,
+  since deletion is now its own explicit action. Also added image
+  attachment — paste, drag, or a "📎 Image" button, read as a `data:` URI
+  Markdown image — at the note level and (a follow-up commit) while
+  editing or authoring section content; insertion is block-aware (pads
+  with a blank line) after testing showed a naive cursor-position insert
+  could glue an image onto the end of, say, a table row and corrupt it.
+- **Stage 14** — A minimalist visual pass, CSS only: no behavior change,
+  every button/card/panel stayed exactly where it was. Removed the
+  gradient panel headers, the pill-shaped buttons (plain rounded rects
+  now), the hover lift+shadow, and the pulsing dirty-indicator/glowing
+  Save animations; cards' thick colored top band became a slim left
+  accent stripe. Verified the app looks and behaves identically
+  feature-for-feature afterward.
+- **Stage 15** — Three "feels like a real app" pieces: `manifest.json` +
+  `icons/icon.svg` + `sw.js` make the dashboard installable (a supporting
+  browser can offer to open it in its own standalone window); a
+  `beforeunload` handler blocks closing while there are unsaved changes;
+  and `js/recovery.js` keeps a debounced localStorage snapshot of the
+  Markdown while the document is dirty, offering to restore it (loaded
+  back in as still-unsaved) on the next load if the app never closed
+  cleanly. Verified end-to-end: editing a note leaves a snapshot,
+  reloading prompts to restore it (and separately confirms the
+  beforeunload prompt itself fires), and declining instead discards the
+  snapshot; with nothing dirty, reloading prompts for neither.
+- **Stage 16** — Added `Dockerfile` / `docker-compose.yml` (nginx serving
+  the same static files — no build step here either) for portability.
+  Actually built and ran the image rather than just writing it: verified
+  every core file (including the manifest and service worker) is served
+  correctly, and ran the full self-test suite plus all three sample files
+  through headless Chromium pointed at the container — same result as
+  serving it directly.
