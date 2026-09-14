@@ -119,6 +119,8 @@ aside#sidebar.sidebar-collapsed {
 .nav-link .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, var(--accent-default)); flex-shrink: 0; }
 .nav-link-active { color: var(--text); font-weight: 600; }
 .nav-link-current { background: var(--bg-soft); color: var(--text); box-shadow: inset 2px 0 0 var(--accent, var(--accent-default)); }
+.nav-link-dragging { opacity: 0.4; }
+.nav-link[draggable="true"] { cursor: grab; }
 
 .nav-link-top {
   font-weight: 700; font-size: 0.88rem; color: var(--text);

@@ -1,7 +1,7 @@
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import {
-  getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath,
+  getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection,
 } from './state/store.js';
 import { renderSidebar } from './ui/sidebar.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
@@ -75,12 +75,19 @@ function render() {
   const path = getSelectedPath();
   if (!node) return;
 
-  renderSidebar(el.sidebar, doc, path.map((n) => n.id), selectSection);
+  renderSidebar(el.sidebar, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
   animatedSwap(el.sectionView, (container) => renderSectionView(container, node), direction);
+}
+
+/** Drag-and-drop reordering/relocating in the sidebar — see sidebar.js. */
+function handleSidebarMove({ nodeId, referenceId, placement }) {
+  if (!moveSection({ nodeId, referenceId, placement })) {
+    showToast("Can't move a section into itself or its own subsection", { type: 'error' });
+  }
 }
 
 subscribe(render);
