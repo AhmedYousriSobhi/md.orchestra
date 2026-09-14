@@ -19,8 +19,8 @@ import { nextId } from '../utils/id.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 
-/** Render the focused card for `node` plus a grid of its direct children into `container`. */
-export function renderSectionView(container, node) {
+/** Render the focused card for `node` plus a grid of its direct children into `container`. `onNavigateFile` (optional) handles a link to another file in an open workspace — see markdown/render.js. */
+export function renderSectionView(container, node, onNavigateFile) {
   container.innerHTML = '';
   const { doc, fileName } = getState();
   const path = getPath(doc, node.id);
@@ -29,7 +29,7 @@ export function renderSectionView(container, node) {
   const breadcrumbTitles = path.map((n) => n.title);
   const slugIndex = buildSlugIndex(doc);
 
-  container.appendChild(buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex));
+  container.appendChild(buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, onNavigateFile));
 
   if (node.children.length) {
     container.appendChild(h('h3', { class: 'grid-heading' }, node.level === 0 ? 'Sections' : 'Subsections'));
@@ -44,7 +44,7 @@ export function renderSectionView(container, node) {
   }
 }
 
-function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
+function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, onNavigateFile) {
   const { main, aiInsert, notes } = splitBody(node.bodyMarkdown);
   const card = h('article', { class: 'card card-focused', style: `--accent:${accent}` });
   // Always re-read node.bodyMarkdown (not the `main`/`aiInsert`/`notes` above)
@@ -69,6 +69,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
         onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
         slugIndex,
         onNavigate,
+        onNavigateFile,
       });
     } else {
       bodyEl.appendChild(h('p', { class: 'card-empty-note' }, 'No content directly under this heading.'));
@@ -89,6 +90,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex) {
       onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
       slugIndex,
       onNavigate,
+      onNavigateFile,
     });
     card.appendChild(h('div', { class: 'callout callout-ai' }, [
       h('div', { class: 'callout-head' }, [

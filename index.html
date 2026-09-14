@@ -45,6 +45,8 @@
 
     <button id="open-file-btn" class="btn" type="button">Open .md file</button>
     <input id="file-input" type="file" accept=".md,.markdown,.txt" />
+    <button id="open-folder-btn" class="btn" type="button" title="Open a whole directory of Markdown files">📁 Open folder</button>
+    <input id="folder-input" type="file" webkitdirectory multiple />
 
     <div class="samples-menu">
       <button id="samples-btn" class="btn" type="button">Samples ▾</button>
@@ -68,7 +70,10 @@
   </header>
 
   <div id="app-body">
-    <aside id="sidebar"></aside>
+    <aside id="sidebar">
+      <div id="workspace-tree"></div>
+      <div id="heading-tree"></div>
+    </aside>
 
     <main id="main-panel">
       <div id="breadcrumb-bar"></div>

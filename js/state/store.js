@@ -8,6 +8,7 @@ let state = {
   fileHandle: null,    // File System Access API handle, if the file was opened that way
   selectedId: null,    // id of the section currently focused in the main panel
   dirty: false,        // true once the in-memory doc diverges from the last load/save
+  workspaceRelPath: null, // this file's path within the open workspace (state/workspace.js), or null if it wasn't opened from one
 };
 
 export function getState() {
@@ -29,7 +30,7 @@ export function setState(patch) {
 }
 
 export function loadDocument({
-  doc, fileName, fileHandle = null, dirty = false,
+  doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null,
 }) {
   const firstChild = doc.children[0];
   setState({
@@ -38,6 +39,7 @@ export function loadDocument({
     fileHandle,
     selectedId: firstChild ? firstChild.id : doc.id,
     dirty,
+    workspaceRelPath,
   });
 }
 

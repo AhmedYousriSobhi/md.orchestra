@@ -1,15 +1,23 @@
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
+import { buildSlugIndex } from './markdown/slug.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection,
 } from './state/store.js';
+import {
+  getWorkspace, setWorkspace, clearWorkspace, getWorkspaceFile, resolveWorkspaceLink,
+} from './state/workspace.js';
 import { renderSidebar } from './ui/sidebar.js';
+import { renderFilesTree } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
 import {
   readFile, fetchSample, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
 } from './fileIO.js';
+import {
+  supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
+} from './workspaceIO.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -26,12 +34,16 @@ applyTheme(getTheme());
 
 const el = {
   sidebar: document.getElementById('sidebar'),
+  workspaceTree: document.getElementById('workspace-tree'),
+  headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
   sectionView: document.getElementById('section-view'),
   emptyState: document.getElementById('empty-state'),
   fileInput: document.getElementById('file-input'),
   openFileBtn: document.getElementById('open-file-btn'),
+  folderInput: document.getElementById('folder-input'),
+  openFolderBtn: document.getElementById('open-folder-btn'),
   samplesBtn: document.getElementById('samples-btn'),
   samplesDropdown: document.getElementById('samples-dropdown'),
   emptySampleBtn: document.getElementById('empty-sample-btn'),
@@ -47,7 +59,9 @@ const el = {
 let lastPathLength = 0;
 
 function render() {
-  const { doc, fileName, dirty } = getState();
+  const { doc, fileName, dirty, workspaceRelPath } = getState();
+
+  renderFilesTree(el.workspaceTree, getWorkspace(), workspaceRelPath, (relPath) => openWorkspaceFile(relPath), handleCloseWorkspace);
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
@@ -59,7 +73,7 @@ function render() {
   if (!doc) {
     el.emptyState.hidden = false;
     el.sectionView.hidden = true;
-    el.sidebar.innerHTML = '';
+    el.headingTree.innerHTML = '';
     el.breadcrumb.innerHTML = '';
     lastPathLength = 0;
     return;
@@ -82,12 +96,12 @@ function render() {
   const path = getSelectedPath();
   if (!node) return;
 
-  renderSidebar(el.sidebar, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
+  renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
-  animatedSwap(el.sectionView, (container) => renderSectionView(container, node), direction);
+  animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
 }
 
 /** Drag-and-drop reordering/relocating in the sidebar — see sidebar.js. */
@@ -121,12 +135,16 @@ window.addEventListener('beforeunload', (e) => {
 
 /**
  * Every entry point that replaces the loaded document — samples, "Open .md
- * file", drag-drop — funnels through here, so this one guard covers all of
- * them: if the current document has unsaved changes, confirm before
- * discarding them. (beforeunload only catches closing the tab/window; it
- * has no say over switching documents within the app.)
+ * file", drag-drop, a workspace file, following a cross-file link — funnels
+ * through here, so this one guard covers all of them: if the current
+ * document has unsaved changes, confirm before discarding them.
+ * (beforeunload only catches closing the tab/window; it has no say over
+ * switching documents within the app.) `workspaceRelPath` records which open
+ * workspace file this is (null for a standalone file/sample), and `anchor`
+ * — a heading slug — jumps straight to that section once loaded, for a
+ * cross-file link like `[...](other.md#some-heading)`.
  */
-function loadFromText(text, fileName, fileHandle = null) {
+function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, anchor = null } = {}) {
   const current = getState();
   if (current.dirty && !window.confirm(
     `"${current.fileName}" has unsaved changes that will be lost. Load "${fileName}" anyway?`,
@@ -140,12 +158,66 @@ function loadFromText(text, fileName, fileHandle = null) {
       return;
     }
     clearRecoverySnapshot(); // starting fresh with a (possibly different) file — any older recovery snapshot no longer applies
-    loadDocument({ doc, fileName, fileHandle });
+    loadDocument({
+      doc, fileName, fileHandle, workspaceRelPath,
+    });
+    if (anchor) {
+      const targetId = buildSlugIndex(doc).get(anchor);
+      if (targetId) selectSection(targetId);
+    }
     showToast(`Loaded ${fileName}`);
   } catch (err) {
     console.error(err);
     showToast(`Could not parse ${fileName}: ${err.message}`, { type: 'error' });
   }
+}
+
+/** Read one file from the open workspace and load it as the active document (still funneling through loadFromText's unsaved-changes guard). */
+async function openWorkspaceFile(relPath, anchor = null) {
+  const entry = getWorkspaceFile(relPath);
+  if (!entry) {
+    showToast(`"${relPath}" isn't in the open folder.`, { type: 'error' });
+    return;
+  }
+  try {
+    const text = await readWorkspaceFileText(entry);
+    loadFromText(text, entry.name, entry.fileHandle, { workspaceRelPath: relPath, anchor });
+  } catch (err) {
+    showToast(`Could not open ${entry.name}: ${err.message}`, { type: 'error' });
+  }
+}
+
+/**
+ * enhanceRenderedContent (markdown/render.js) calls this for any rendered
+ * link that isn't a same-page "#anchor" jump; it resolves relative to
+ * whichever workspace file is currently open, and returns whether it
+ * actually handled it (a link to some other page entirely — an external
+ * URL, or a .md file outside this folder — is left to behave normally).
+ */
+function handleNavigateFile(href) {
+  const { workspaceRelPath } = getState();
+  if (!workspaceRelPath) return false;
+  const resolved = resolveWorkspaceLink(workspaceRelPath, href);
+  if (!resolved) return false;
+  openWorkspaceFile(resolved.relPath, resolved.anchor);
+  return true;
+}
+
+function handleCloseWorkspace() {
+  clearWorkspace();
+  render();
+}
+
+async function handleWorkspaceOpened({ rootName, files }) {
+  if (!files.length) {
+    showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
+    return;
+  }
+  setWorkspace({ rootName, files });
+  showToast(`Opened "${rootName}" — ${files.length} Markdown file${files.length === 1 ? '' : 's'} found.`);
+  const sorted = files.slice().sort((a, b) => a.relPath.localeCompare(b.relPath));
+  const preferred = sorted.find((f) => !f.relPath.includes('/') && /^(README|INDEX)\.(md|markdown)$/i.test(f.name));
+  await openWorkspaceFile((preferred || sorted[0]).relPath);
 }
 
 /** Offer to restore a crash-recovery snapshot left over from before the app last closed. */
@@ -190,6 +262,26 @@ el.fileInput.addEventListener('change', async (e) => {
   const text = await readFile(file);
   loadFromText(text, file.name);
   el.fileInput.value = '';
+});
+
+el.openFolderBtn.addEventListener('click', async () => {
+  if (supportsDirectoryPicker) {
+    try {
+      const result = await openDirectoryPicker();
+      if (result) await handleWorkspaceOpened(result);
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast(`Could not open folder: ${err.message}`, { type: 'error' });
+    }
+  } else {
+    el.folderInput.click();
+  }
+});
+
+el.folderInput.addEventListener('change', async (e) => {
+  const { files } = e.target;
+  if (!files || !files.length) return;
+  await handleWorkspaceOpened(workspaceFromFileList(files));
+  el.folderInput.value = '';
 });
 
 el.samplesBtn.addEventListener('click', (e) => {

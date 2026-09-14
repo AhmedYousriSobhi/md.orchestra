@@ -46,17 +46,22 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
 
 1. Load a document: use **Open .md file** (grants direct save-back on
    Chrome/Edge), drag/drop, or load one of the bundled samples (`sample.md`,
-   `sample2.md`, `sample3.md`).
+   `sample2.md`, `sample3.md`) — or use **📁 Open folder** to load a whole
+   directory of them at once (see "Working with a directory" below).
 2. Browse the heading tree in the sidebar — collapsed to just the active
    path by default, click the ▸ chevrons to expand others — or open
    **🗺️ Map** for a whole-document diagram, either the indented **🌳 Tree**
-   or an Obsidian-style **🧠 Mind map** with draggable nodes; the main panel
-   drills into whatever section you pick and shows its own content plus a
-   card grid of its subsections. In-document links (e.g. a Table of
-   Contents) jump to the right section instead of doing nothing. Drag any
-   heading in the sidebar onto another one to relocate it — drop on the
-   top/bottom third of a row to place it immediately before/after that
-   heading (as a sibling, at that exact spot — including promoting or
+   or an Obsidian-style **🧠 Mind map**: a continuously-live force layout
+   (not a one-shot diagram) that auto-fits the whole thing into view no
+   matter how large the document is, reacts to the cursor with a Dock/Apple
+   Watch-style magnify-and-pull effect, and supports scroll-to-zoom,
+   drag-to-pan the background, and dragging a node to reposition it. The
+   main panel drills into whatever section you pick and shows its own
+   content plus a card grid of its subsections. In-document links (e.g. a
+   Table of Contents) jump to the right section instead of doing nothing.
+   Drag any heading in the sidebar onto another one to relocate it — drop
+   on the top/bottom third of a row to place it immediately before/after
+   that heading (as a sibling, at that exact spot — including promoting or
    demoting it to/from the top level), or the middle third to nest it
    inside as that heading's last subsection.
 3. Click a card's insight icon to open the AI popup: get a Claude summary,
@@ -86,13 +91,40 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    before/after/inside that heading, rather than only "first/last of its
    parent."
 6. Click **💾 Save** any time — it writes straight back to the file if it
-   was opened with **Open .md file**, otherwise it downloads the current
-   Markdown. It's the only save control in the app, and it glows while
-   there are unsaved changes. The **Source** panel is read-only, for
+   was opened with **Open .md file** (or a workspace folder, on a browser
+   that grants live handles — see below), otherwise it downloads the
+   current Markdown. It's the only save control in the app, and it glows
+   while there are unsaved changes. The **Source** panel is read-only, for
    double-checking the generated Markdown or copying it elsewhere.
 7. Open **Settings** to provide your Anthropic API key and pick a Claude
-   model. The key is stored only in `localStorage` on your machine and is
-   sent directly to `api.anthropic.com` — never to any other service.
+   model (the key is stored only in `localStorage` on your machine and is
+   sent directly to `api.anthropic.com` — never to any other service), and
+   to switch between System/Light/Dark appearance.
+
+### Working with a directory
+
+**📁 Open folder** reads every `.md`/`.markdown` file in a directory (and
+its subfolders — dotfiles/dotfolders like `.git` are skipped) and adds a
+folder/file tree to the top of the sidebar, above the current file's own
+heading tree. Everything above still works exactly the same on whichever
+file is active; nothing about editing, saving, or the unsaved-changes guard
+needed to change — clicking a different file in the tree just re-runs the
+same "load a document" path a sample or **Open .md file** already uses, so
+switching away from unsaved edits still asks for confirmation first.
+
+A relative Markdown link in one file's content — `[the guide](sub/guide.md)`,
+or with an anchor, `[a step](sub/guide.md#some-heading)` — resolves against
+the other files in the same folder and switches to that file (and jumps to
+the matching heading) instead of doing nothing or trying to navigate the
+browser away; a link to something outside the opened folder, or a normal
+external URL, is left completely alone. On Chrome/Edge this uses the File
+System Access API (`showDirectoryPicker`), which keeps a live handle per
+file so **Save** writes straight back to disk for every one of them, the
+same guarantee **Open .md file** already gives a single file. Firefox has
+no such API, so there `📁 Open folder` falls back to an
+`<input webkitdirectory>` — everything else works identically, but without
+a live handle **Save** downloads instead (again, exactly like opening a
+single file without the File System Access API).
 
 ## Architecture
 
@@ -108,12 +140,19 @@ css/                 base, layout, cards, modal, animation styles
 js/
   markdown/          parser.js (md -> section tree), serializer.js (tree -> md),
                      render.js (section -> sanitized HTML: tables, code,
-                     mermaid, <details>), slug.js (GitHub-compatible heading
-                     anchors), toc.js (regenerate a Table of Contents)
-  state/store.js      single source of truth + pub/sub
+                     mermaid, <details>; also resolves a rendered link
+                     against an open workspace), slug.js (GitHub-compatible
+                     heading anchors), toc.js (regenerate a Table of Contents)
+  state/store.js      single active document + pub/sub (fileName, fileHandle,
+                     selectedId, dirty, and which workspace file it is, if any)
+  state/workspace.js   an opened directory's file registry + folder tree,
+                     and relative-link resolution against it
+  workspaceIO.js       reads a directory (File System Access on Chrome/Edge,
+                     an <input webkitdirectory> fallback elsewhere)
   recovery.js          crash-recovery snapshot in localStorage
   ai/                 client.js (Claude fetch), prompts.js, settings.js
   ui/                 sidebar (drag-and-drop to relocate sections),
+                     filesPanel.js (the open workspace's folder/file tree),
                      breadcrumb, card grid (incl. inline title/content
                      editing), insight modal, code viewer, notes panel
                      (multiple independent notes per section), imageAttach.js
@@ -121,11 +160,11 @@ js/
                      section-content editing), settings/source panels,
                      add-section modal + tree picker (drag-and-drop
                      placement), dragDrop.js (shared before/inside/after zone
-                     detection), map view (tree diagram + mindMap.js's
-                     force-directed graph), markdownEditing (list
-                     continuation / indent / bold-italic-code shortcuts,
-                     attached to every raw-Markdown textarea), toast
-  utils/              dom (incl. an SVG-element helper)/debounce/id/color
+                     detection), map view (tree diagram + mindMap.js's live,
+                     cursor-reactive force-directed graph), markdownEditing
+                     (list continuation / indent / bold-italic-code
+                     shortcuts, attached to every raw-Markdown textarea), toast
+  utils/              dom (incl. an SVG-element helper)/debounce/id/color/theme
   main.js             wires everything together; also the beforeunload
                      guard, crash-recovery prompt, and service-worker
                      registration
@@ -380,3 +419,63 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   transforms, and re-ran the existing hover/drag/self-test regressions
   (5-second stable hover, dim/edge highlighting, dragging a node) with no
   change in behavior on an ordinary small document.
+- **Stage 20** — Reported: after the mind-map work landed, "I see
+  everything is the same" — reloading showed no change at all. Root
+  cause: `sw.js`'s service worker cached same-origin files
+  stale-while-revalidate (answer from cache immediately, refresh the
+  cache in the background for *next* time), so every code change needed
+  one extra invisible reload before it actually showed up — for an
+  actively-developed app that's indistinguishable from the change never
+  having happened. Switched to network-first (cache only as an offline
+  fallback) and bumped `CACHE_NAME` so the already-stale cache gets
+  purged. Verified via a fresh service-worker registration that a fetch
+  through it serves the current file content, not a cached one.
+- **Stage 21** — Added a dark mode option to Settings (System/Light/Dark),
+  backed by `js/utils/theme.js` and a small inline script at the top of
+  `index.html`'s `<head>` that applies a saved choice before first paint
+  (no light-then-dark flash). `base.css` gained a full dark palette under
+  both a `prefers-color-scheme` media query and a `data-theme="dark"`
+  selector. Caught, via an actual dark-mode screenshot rather than just
+  code review, that the sidebar's current-top-level-section background
+  used a fixed light pastel per accent color with light text drawn on top
+  of it — unreadable in dark mode — and fixed it (and a few other fixed-hex
+  spots) to compute from the accent color against the theme's own surface
+  instead.
+- **Stage 22** — Renamed the project to **MD.Orchestra** ahead of the
+  directory-support work below, and wired the project's new GitHub repo
+  as the `origin` remote.
+- **Stage 23** — Directory-level support: **📁 Open folder** reads every
+  Markdown file in a chosen directory (recursively, skipping dotfiles) —
+  File System Access (`showDirectoryPicker`) on Chrome/Edge for live
+  read/write handles per file, an `<input webkitdirectory>` fallback
+  elsewhere (Firefox has no such API) — and adds a folder/file tree
+  (`state/workspace.js`, `ui/filesPanel.js`) above the current file's own
+  heading tree in the sidebar. Opening a file from that tree funnels
+  through the exact same single-document load path every other entry
+  point (a sample, "Open .md file", drag-drop) already used, so the
+  unsaved-changes confirm guard, crash recovery, and saving all just work
+  without having to know a workspace is involved. A relative Markdown link
+  in one file's content (`[...](sub/other.md)`, optionally with a
+  `#heading` anchor) now resolves against the other files in the same
+  folder and switches to it instead of doing nothing.
+
+  Testing this (not just reading the code) surfaced a real, pre-existing
+  bug affecting the *original* single-document sidebar too, unrelated to
+  directories: clicking a different heading while a note or section title
+  was mid-edit could silently swallow the click. Blurring that field
+  commits the edit immediately, which re-renders the sidebar/tree — and
+  that blur is very often *caused* by the very click on a different
+  heading, so the re-render replaces the clicked element mid-click before
+  its mouseup/click can land. Fixed by deferring the actual commit
+  (`onUpdate`/`updateNode`) to a fresh macrotask via `setTimeout(...,0)`,
+  so the click that triggered the blur finishes on the DOM as it stood
+  when the user pressed down. Verified end-to-end with a generated
+  two-file test directory: folder tree renders correctly (no duplicated
+  root-folder entry — an early bug in the `webkitdirectory` fallback,
+  where its relative paths include the chosen folder's own name unlike
+  the File System Access path), cross-file links (plain and with an
+  anchor) navigate correctly, the unsaved-changes guard fires switching
+  workspace files, "close this folder" leaves the current document open,
+  and clicking a file in the tree right after editing a note (the exact
+  scenario that surfaced the blur bug) now works — plus the full existing
+  self-test/mind-map/dark-mode regression suite still passes unchanged.

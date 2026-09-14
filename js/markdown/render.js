@@ -46,24 +46,37 @@ export function renderMarkdownToSafeHtml(mdText) {
 /**
  * Post-process a container after its sanitized HTML has been inserted:
  * turns ```mermaid fences into live diagrams, wires a toolbar (copy /
- * expand) onto every code block, and redirects in-document anchor links
- * (e.g. a Table of Contents built from `[Title](#some-heading)`) to the
- * matching section instead of a dead same-page `#anchor` jump.
+ * expand) onto every code block, redirects in-document anchor links (e.g.
+ * a Table of Contents built from `[Title](#some-heading)`) to the matching
+ * section instead of a dead same-page `#anchor` jump, and — when a
+ * workspace (a whole opened directory, see state/workspace.js) is active —
+ * redirects a relative link to another Markdown file in it to switching
+ * documents in-app instead of a dead/real navigation.
  * `onOpenCode` receives {lang, code}; `onNavigate(nodeId)` is called for an
- * internal link whose `#slug` matches something in `slugIndex`.
+ * internal link whose `#slug` matches something in `slugIndex`;
+ * `onNavigateFile(href)` is called (with the link's original href, so it
+ * can resolve both the path and any #anchor together) for a link that isn't
+ * a same-page anchor.
  */
-export function enhanceRenderedContent(container, { onOpenCode, slugIndex, onNavigate } = {}) {
-  if (slugIndex && onNavigate) {
-    container.querySelectorAll('a[href^="#"]').forEach((a) => {
-      const slug = decodeURIComponent(a.getAttribute('href').slice(1));
-      const targetId = slugIndex.get(slug);
+export function enhanceRenderedContent(container, {
+  onOpenCode, slugIndex, onNavigate, onNavigateFile,
+} = {}) {
+  container.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href');
+    if (href.startsWith('#')) {
+      if (!slugIndex || !onNavigate) return;
+      const targetId = slugIndex.get(decodeURIComponent(href.slice(1)));
       if (!targetId) return;
       a.addEventListener('click', (e) => {
         e.preventDefault();
         onNavigate(targetId);
       });
-    });
-  }
+    } else if (onNavigateFile) {
+      a.addEventListener('click', (e) => {
+        if (onNavigateFile(href)) e.preventDefault();
+      });
+    }
+  });
 
   const mermaidBlocks = container.querySelectorAll('code.language-mermaid');
   mermaidBlocks.forEach((codeEl, i) => {
