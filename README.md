@@ -38,7 +38,13 @@ python3 -m http.server 8000
    an annotation), and **🗑 Delete section** to remove it. A section titled
    something like "Table of Contents" gets a **🔄 Regenerate from
    headings** action that rebuilds its bullet list from the document's
-   current structure.
+   current structure — and typing that title in the first place drafts
+   one immediately, before you even save.
+   Every one of these Markdown text fields picks up a few habits from
+   editors like VS Code's Markdown All in One: Enter continues a list
+   (numbered lists auto-increment; an empty item exits the list instead of
+   leaving a stray bullet), Tab/Shift+Tab indents a list line, and
+   Ctrl/Cmd+B, +I, +\` wrap the selection in bold/italic/code.
 5. Use **+ New section** to write a whole new part of the document: a
    title, heading level, and which existing section to nest it under —
    picked from a collapsible tree of the whole document (the same
@@ -70,7 +76,9 @@ js/
   ui/                 sidebar, breadcrumb, card grid (incl. inline title/
                      content editing), insight modal, code viewer, notes
                      panel, settings/source panels, add-section modal +
-                     tree picker, map view, toast
+                     tree picker, map view, markdownEditing (list
+                     continuation / indent / bold-italic-code shortcuts,
+                     attached to every raw-Markdown textarea), toast
   utils/              dom (incl. an SVG-element helper)/debounce/id/color
   main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
@@ -184,3 +192,13 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   model as the sidebar (expand only the active path by default, click a
   chevron for more) — after hands-on use showed a tree reads better than a
   radial chart for picking a location in a document.
+- **Stage 10** — Brought some of VS Code's Markdown All in One habits into
+  every raw-Markdown textarea (notes, in-place content editing, new-section
+  content) via `js/ui/markdownEditing.js`: Enter continues a bullet/
+  numbered/task list (an empty item exits cleanly instead of leaving a
+  stray marker), Tab/Shift+Tab indents a list line without trapping
+  keyboard focus on plain text, and Ctrl/Cmd+B/I/`` ` `` wrap the selection.
+  Typing a title like "Table of Contents" (in "+ New section", or renaming
+  an empty section) now drafts one from the current headings immediately,
+  reusing the generator behind "Regenerate from headings" — guarded to
+  only fire while the content field is still empty.
