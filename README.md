@@ -358,3 +358,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   under a 5-second continuous hover, with correct dim/neighbor-highlight
   counts, and confirmed the highlight still clears on mouse-out and still
   behaves correctly through a drag.
+- **Stage 19** — Reported: the mind map still didn't feel dynamic, and a
+  large document's graph was cropped by the window instead of fitting in
+  it. Both traced back to the same gap — the layout's physics ran in a
+  fixed-size space tied to the container's pixel dimensions, so a document
+  with a lot of headings needed more room than the window actually had,
+  and the previous cursor interaction (a physics repulsion force) was
+  subtle enough to barely register as "dynamic". Replaced both: the
+  physics now runs in its own world space sized to the node count, and the
+  view auto-fits that whole settled layout into the visible window when
+  the map opens (scaling down as far as it needs to — verified with a
+  126-heading generated test document that not one of the 126 nodes
+  rendered outside the container's bounds, versus the old fixed 1:1
+  mapping that would have run pixels off-screen). Scroll-to-zoom and
+  drag-to-pan the background were added for drilling into a dense cluster,
+  plus a "⤢ Fit" button to snap back to the whole-map view. In place of
+  the old repulsion force, hovering a node now triggers an Apple
+  Watch/Dock-style fisheye: the node under the cursor (and its close
+  neighbors, tapering off smoothly) visibly grows and nudges toward the
+  pointer, purely as a render-time effect layered on top of the physics
+  positions — it can't destabilize the layout the way physically shoving
+  nodes away from the cursor could. Verified the magnify effect, wheel
+  zoom, background pan, and the fit button all update the expected SVG
+  transforms, and re-ran the existing hover/drag/self-test regressions
+  (5-second stable hover, dim/edge highlighting, dragging a node) with no
+  change in behavior on an ordinary small document.

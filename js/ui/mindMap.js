@@ -1,4 +1,4 @@
-import { svg } from '../utils/dom.js';
+import { h, svg } from '../utils/dom.js';
 import { paletteFor } from '../utils/colors.js';
 
 // A small force-directed layout (repulsion between every pair of nodes,
@@ -6,22 +6,43 @@ import { paletteFor } from '../utils/colors.js';
 // "mind map" of the whole document, as an alternative to the indented tree:
 // nodes are free-floating and can be dragged, rather than fixed to a row.
 // The simulation keeps running (not just a one-shot layout): it settles to
-// near-zero motion on its own, and the cursor acts as a gentle repulsive
-// field, so hovering near a cluster nudges it apart instead of the graph
-// being inert once drawn.
+// near-zero motion on its own.
+//
+// Two things layer on top of that physics, both driven by the tracked
+// cursor position every frame:
+//  - A zoom/pan "world" transform, auto-fit to the settled layout's actual
+//    bounding box when the view opens. This is what keeps a big document's
+//    graph from being cropped: no matter how much space the physics needs
+//    (which grows with node count), the whole thing is scaled to fit inside
+//    the visible viewport at open time, and the user can still scroll to
+//    zoom or drag the background to pan into a dense cluster.
+//  - A per-node fisheye magnify+pull effect, like the Dock or an Apple
+//    Watch springboard: nodes near the cursor grow and nudge slightly
+//    toward it, tapering smoothly back to normal size within a radius.
+//    This is what actually makes hovering the graph feel alive, and it's a
+//    render-only effect layered on top of the physics positions — it never
+//    touches velocity, so it can't destabilize the layout the way physically
+//    repelling nodes from the cursor previously did.
 const REPULSION = 14000;
 const SPRING_LENGTH = 85;
 const SPRING_K = 0.05;
 const CENTER_K = 0.012;
 const DAMPING = 0.82;
 const SETTLE_ITERATIONS = 220;
-const CURSOR_RADIUS = 130;
-const CURSOR_STRENGTH = 2600;
 // Inverse-square repulsion can spike hugely for one frame if two nodes
-// happen to pass very close together (a real occurrence once the cursor
-// field is nudging things around); capping per-frame speed keeps that from
-// flinging a node off-screen instead of just sliding it quickly.
+// happen to pass very close together; capping per-frame speed keeps that
+// from flinging a node off-screen instead of just sliding it quickly.
 const MAX_SPEED = 22;
+
+const FISHEYE_RADIUS = 170;
+const FISHEYE_MAX_SCALE = 1.85;
+const FISHEYE_MAX_PULL = 20;
+const HOVER_RADIUS = FISHEYE_RADIUS;
+
+const MIN_ZOOM = 0.12;
+const MAX_ZOOM = 4;
+const FIT_PADDING = 56;
+const FIT_MAX_INITIAL_ZOOM = 1.35;
 
 function buildGraph(doc) {
   const nodes = [];
@@ -53,22 +74,18 @@ function buildGraph(doc) {
 }
 
 /** Deterministic seed (by index, not Math.random()) so re-opening the same document settles into the same starting layout. */
-function seedPositions(nodes, width, height) {
-  const cx = width / 2;
-  const cy = height / 2;
-  const seedRadius = Math.min(width, height) * 0.32;
+function seedPositions(nodes, size) {
+  const seedRadius = size * 0.32;
   nodes.forEach((n, i) => {
     const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
     const wobble = 0.6 + 0.4 * ((i * 7) % 5) / 4;
-    n.x = cx + seedRadius * wobble * Math.cos(angle);
-    n.y = cy + seedRadius * wobble * Math.sin(angle);
+    n.x = seedRadius * wobble * Math.cos(angle);
+    n.y = seedRadius * wobble * Math.sin(angle);
   });
 }
 
-/** One physics step: accumulate repulsion/spring/center/cursor forces, then integrate with damping. */
-function step(nodes, edges, width, height, cursor) {
-  const cx = width / 2;
-  const cy = height / 2;
+/** One physics step: accumulate repulsion/spring/center forces, then integrate with damping. Runs in "world" space, independent of the viewport's zoom/pan. */
+function step(nodes, edges) {
   nodes.forEach((n) => { n.fx = 0; n.fy = 0; });
 
   for (let i = 0; i < nodes.length; i += 1) {
@@ -98,23 +115,10 @@ function step(nodes, edges, width, height, cursor) {
     b.fx -= fx; b.fy -= fy;
   });
 
-  if (cursor) {
-    nodes.forEach((n) => {
-      if (n.dragging) return;
-      const dx = n.x - cursor.x;
-      const dy = n.y - cursor.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      if (dist >= CURSOR_RADIUS) return;
-      const force = (CURSOR_STRENGTH * (CURSOR_RADIUS - dist)) / CURSOR_RADIUS;
-      n.fx += (dx / dist) * force;
-      n.fy += (dy / dist) * force;
-    });
-  }
-
   nodes.forEach((n) => {
     if (n.dragging) return;
-    n.fx += (cx - n.x) * CENTER_K;
-    n.fy += (cy - n.y) * CENTER_K;
+    n.fx += -n.x * CENTER_K;
+    n.fy += -n.y * CENTER_K;
     n.vx = (n.vx + n.fx) * DAMPING;
     n.vy = (n.vy + n.fy) * DAMPING;
     const speed = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
@@ -127,20 +131,20 @@ function step(nodes, edges, width, height, cursor) {
   });
 }
 
-/** Convert a client-space point to this SVG's own user-space coordinates, accounting for the viewBox scale. */
-function toSvgPoint(svgEl, clientX, clientY) {
-  if (!svgEl.createSVGPoint) return null;
-  const pt = svgEl.createSVGPoint();
+/** Convert a client-space point into `spaceEl`'s own local coordinate system — accounting for the SVG's viewBox scale, and (when spaceEl is the inner world group rather than the root) its current pan/zoom transform too. */
+function toSvgPoint(svgRoot, spaceEl, clientX, clientY) {
+  if (!svgRoot.createSVGPoint) return null;
+  const pt = svgRoot.createSVGPoint();
   pt.x = clientX;
   pt.y = clientY;
-  const ctm = svgEl.getScreenCTM();
+  const ctm = spaceEl.getScreenCTM();
   if (!ctm) return null;
   const p = pt.matrixTransform(ctm.inverse());
   return { x: p.x, y: p.y };
 }
 
-/** Let the user drag a node to reposition it; a plain click (no movement) fires onClick instead. */
-function wireDrag(groupEl, node, onClick) {
+/** Let the user drag a node to reposition it (in world space); a plain click (no movement) fires onClick instead. */
+function wireDrag(groupEl, node, root, world, onClick) {
   let dragging = false;
   let moved = false;
 
@@ -154,7 +158,7 @@ function wireDrag(groupEl, node, onClick) {
   });
   groupEl.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    const p = toSvgPoint(groupEl.ownerSVGElement, e.clientX, e.clientY);
+    const p = toSvgPoint(root, world, e.clientX, e.clientY);
     if (!p) return;
     if (Math.abs(p.x - node.x) > 2 || Math.abs(p.y - node.y) > 2) moved = true;
     node.x = p.x;
@@ -169,46 +173,33 @@ function wireDrag(groupEl, node, onClick) {
 
 /** Render an Obsidian-style force-directed "mind map" of the whole document into `container`. Returns a stop() to cancel its animation loop. */
 export function renderMindMap(container, doc, selectedId, onPick) {
-  const width = container.clientWidth || 900;
-  const height = Math.max(container.clientHeight || 600, 480);
+  const viewW = container.clientWidth || 900;
+  const viewH = Math.max(container.clientHeight || 600, 480);
   const { nodes, edges, neighbors } = buildGraph(doc);
-  seedPositions(nodes, width, height);
-  for (let i = 0; i < SETTLE_ITERATIONS; i += 1) step(nodes, edges, width, height, null);
+
+  // The physics runs in its own "world" space sized to the node count, not
+  // to the visible viewport — a big document just needs more room, and the
+  // view-fit step below scales that down to whatever actually fits.
+  const worldSize = Math.max(700, Math.sqrt(nodes.length) * 220);
+  seedPositions(nodes, worldSize);
+  for (let i = 0; i < SETTLE_ITERATIONS; i += 1) step(nodes, edges);
 
   const root = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    style: 'display:block; width:100%; height:100%; font-family: -apple-system, Helvetica, Arial, sans-serif;',
+    viewBox: `0 0 ${viewW} ${viewH}`,
+    style: 'display:block; width:100%; height:100%; font-family: -apple-system, Helvetica, Arial, sans-serif; touch-action: none;',
   });
+
+  const world = svg('g', { class: 'mindmap-world' });
+  root.appendChild(world);
 
   const edgeLayer = svg('g', { class: 'mindmap-edges' });
   edges.forEach((edge) => {
     edge.el = svg('line', { class: 'mindmap-edge' });
     edgeLayer.appendChild(edge.el);
   });
-  root.appendChild(edgeLayer);
+  world.appendChild(edgeLayer);
 
-  // Hover is driven from the tracked cursor position inside tick() below,
-  // not from native pointerenter/pointerleave on the node <g> elements.
-  // Those elements get a fresh `transform` every animation frame (the whole
-  // point of "dynamic" nodes), and a continuously-moving element can drift
-  // out from under a perfectly still cursor and back again, which fires
-  // spurious leave/enter pairs and makes the highlight flicker or drop out
-  // right when it's queried.
-  //
-  // A tight, fixed radius isn't enough either: the cursor's own repulsion
-  // field (CURSOR_RADIUS/CURSOR_STRENGTH above) actively pushes whichever
-  // node is closest to the pointer AWAY from it, every frame, by design —
-  // a node the user just hovered gets shoved outside a small radius almost
-  // immediately, even with the pointer held perfectly still, as it's pushed
-  // out toward the edge of the repulsion field. Rather than chase a single
-  // "still the same node?" identity through that motion, just highlight
-  // whichever node is nearest the cursor right now, using a radius generous
-  // enough to comfortably contain where a repelled node settles (it
-  // equilibrates around CURSOR_RADIUS away, plus overshoot from momentum) —
-  // that node stays the natural answer to "nearest" even as it's pushed
-  // outward, since nothing else is closer to the cursor than it is.
   let hoveredId = null;
-  const HOVER_RADIUS = CURSOR_RADIUS + 90;
   function applyHighlight() {
     const related = hoveredId ? neighbors.get(hoveredId) : null;
     nodes.forEach((n) => {
@@ -221,22 +212,6 @@ export function renderMindMap(container, doc, selectedId, onPick) {
       e.el.classList.toggle('mindmap-edge-dim', Boolean(hoveredId) && !involved);
       e.el.classList.toggle('mindmap-edge-active', Boolean(involved));
     });
-  }
-  function updateHover() {
-    let nextId = null;
-    if (cursor && !nodes.some((n) => n.dragging)) {
-      let bestDist = HOVER_RADIUS;
-      nodes.forEach((n) => {
-        const dx = n.x - cursor.x;
-        const dy = n.y - cursor.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= bestDist) { bestDist = dist; nextId = n.id; }
-      });
-    }
-    if (nextId !== hoveredId) {
-      hoveredId = nextId;
-      applyHighlight();
-    }
   }
 
   const nodeLayer = svg('g', { class: 'mindmap-nodes' });
@@ -251,20 +226,143 @@ export function renderMindMap(container, doc, selectedId, onPick) {
     group.appendChild(svg('circle', { r, class: 'mindmap-dot' }));
     group.appendChild(svg('text', { x: r + 6, y: 4, class: 'mindmap-label' }, n.title || '(untitled)'));
     group.appendChild(svg('title', {}, n.title || ''));
-    wireDrag(group, n, () => onPick(n.id));
+    wireDrag(group, n, root, world, () => onPick(n.id));
+    n.r = r;
     n.el = group;
     nodeLayer.appendChild(group);
   });
-  root.appendChild(nodeLayer);
+  world.appendChild(nodeLayer);
 
-  let cursor = null;
-  root.addEventListener('pointermove', (e) => { cursor = toSvgPoint(root, e.clientX, e.clientY); });
-  root.addEventListener('pointerleave', () => { cursor = null; updateHover(); });
+  // --- View (pan/zoom), auto-fit to whatever the physics actually needs ---
+  let zoom = 1;
+  let tx = 0;
+  let ty = 0;
+  function applyWorldTransform() {
+    world.setAttribute('transform', `translate(${tx},${ty}) scale(${zoom})`);
+  }
+  function contentBounds() {
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    nodes.forEach((n) => {
+      const labelW = 10 + (n.title || '(untitled)').length * 6.4;
+      minX = Math.min(minX, n.x - n.r - 4);
+      maxX = Math.max(maxX, n.x + n.r + labelW);
+      minY = Math.min(minY, n.y - n.r - 10);
+      maxY = Math.max(maxY, n.y + n.r + 10);
+    });
+    if (!Number.isFinite(minX)) return {
+      minX: -viewW / 2, minY: -viewH / 2, maxX: viewW / 2, maxY: viewH / 2,
+    };
+    return {
+      minX, minY, maxX, maxY,
+    };
+  }
+  function fitToContent() {
+    const b = contentBounds();
+    const bw = Math.max(b.maxX - b.minX, 1);
+    const bh = Math.max(b.maxY - b.minY, 1);
+    zoom = Math.min(
+      (viewW - FIT_PADDING * 2) / bw,
+      (viewH - FIT_PADDING * 2) / bh,
+      FIT_MAX_INITIAL_ZOOM,
+    );
+    zoom = Math.max(zoom, MIN_ZOOM);
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    tx = viewW / 2 - zoom * cx;
+    ty = viewH / 2 - zoom * cy;
+    applyWorldTransform();
+  }
+  fitToContent();
+
+  const fitBtn = h('button', {
+    class: 'mindmap-fit-btn',
+    type: 'button',
+    title: 'Fit the whole map in view',
+    onClick: () => fitToContent(),
+  }, '⤢ Fit');
+
+  // --- Cursor tracking, pan-by-dragging-the-background, and wheel zoom ---
+  let cursorWorld = null;
+  let panState = null;
+
+  root.addEventListener('pointerdown', (e) => {
+    if (e.target.closest && e.target.closest('.mindmap-node')) return;
+    const p = toSvgPoint(root, root, e.clientX, e.clientY);
+    if (!p) return;
+    panState = {
+      startX: p.x, startY: p.y, tx0: tx, ty0: ty, pointerId: e.pointerId,
+    };
+    root.classList.add('mindmap-panning');
+    root.setPointerCapture(e.pointerId);
+  });
+  root.addEventListener('pointermove', (e) => {
+    cursorWorld = toSvgPoint(root, world, e.clientX, e.clientY);
+    if (panState && panState.pointerId === e.pointerId) {
+      const p = toSvgPoint(root, root, e.clientX, e.clientY);
+      if (p) {
+        tx = panState.tx0 + (p.x - panState.startX);
+        ty = panState.ty0 + (p.y - panState.startY);
+        applyWorldTransform();
+      }
+    }
+  });
+  function endPan(e) {
+    if (panState && (!e || panState.pointerId === e.pointerId)) {
+      panState = null;
+      root.classList.remove('mindmap-panning');
+    }
+  }
+  root.addEventListener('pointerup', endPan);
+  root.addEventListener('pointercancel', endPan);
+  root.addEventListener('pointerleave', () => { cursorWorld = null; endPan(); });
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rootPt = toSvgPoint(root, root, e.clientX, e.clientY);
+    if (!rootPt) return;
+    const worldBefore = { x: (rootPt.x - tx) / zoom, y: (rootPt.y - ty) / zoom };
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    tx = rootPt.x - zoom * worldBefore.x;
+    ty = rootPt.y - zoom * worldBefore.y;
+    applyWorldTransform();
+  }, { passive: false });
+
+  function updateHover() {
+    let nextId = null;
+    if (cursorWorld && !nodes.some((n) => n.dragging)) {
+      let bestDist = HOVER_RADIUS;
+      nodes.forEach((n) => {
+        const dist = Math.hypot(n.x - cursorWorld.x, n.y - cursorWorld.y);
+        if (dist <= bestDist) { bestDist = dist; nextId = n.id; }
+      });
+    }
+    if (nextId !== hoveredId) {
+      hoveredId = nextId;
+      applyHighlight();
+    }
+  }
 
   let rafId = null;
   function tick() {
-    step(nodes, edges, width, height, cursor);
-    nodes.forEach((n) => n.el.setAttribute('transform', `translate(${n.x},${n.y})`));
+    step(nodes, edges);
+    nodes.forEach((n) => {
+      let scale = 1;
+      let dxAdd = 0;
+      let dyAdd = 0;
+      if (cursorWorld && !n.dragging) {
+        const dx = cursorWorld.x - n.x;
+        const dy = cursorWorld.y - n.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < FISHEYE_RADIUS) {
+          const t = 1 - dist / FISHEYE_RADIUS;
+          const ease = t * t * (3 - 2 * t); // smoothstep: gentle taper, no hard edge
+          scale = 1 + (FISHEYE_MAX_SCALE - 1) * ease;
+          const pull = FISHEYE_MAX_PULL * ease;
+          if (dist > 0.01) { dxAdd = (dx / dist) * pull; dyAdd = (dy / dist) * pull; }
+        }
+      }
+      n.el.setAttribute('transform', `translate(${n.x + dxAdd},${n.y + dyAdd}) scale(${scale})`);
+    });
     edges.forEach((e) => {
       e.el.setAttribute('x1', e.a.x); e.el.setAttribute('y1', e.a.y);
       e.el.setAttribute('x2', e.b.x); e.el.setAttribute('y2', e.b.y);
@@ -276,6 +374,7 @@ export function renderMindMap(container, doc, selectedId, onPick) {
 
   container.innerHTML = '';
   container.appendChild(root);
+  container.appendChild(fitBtn);
 
   return function stop() {
     if (rafId !== null) cancelAnimationFrame(rafId);
