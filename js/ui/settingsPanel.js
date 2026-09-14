@@ -1,9 +1,35 @@
 import { h } from '../utils/dom.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { getAiSettings, saveAiSettings, clearAiSettings, CLAUDE_MODELS } from '../ai/settings.js';
+import { getTheme, setTheme } from '../utils/theme.js';
 import { showToast } from './toast.js';
 
 let panelEl = null;
+
+const THEME_OPTIONS = [
+  { value: 'system', label: '🖥️ System' },
+  { value: 'light', label: '☀️ Light' },
+  { value: 'dark', label: '🌙 Dark' },
+];
+
+function buildThemeToggle() {
+  const wrap = h('div', { class: 'theme-toggle', role: 'radiogroup', 'aria-label': 'Theme' });
+  function render() {
+    const current = getTheme();
+    wrap.innerHTML = '';
+    THEME_OPTIONS.forEach(({ value, label }) => {
+      wrap.appendChild(h('button', {
+        class: `theme-toggle-btn${value === current ? ' theme-toggle-active' : ''}`,
+        type: 'button',
+        role: 'radio',
+        'aria-checked': String(value === current),
+        onClick: () => { setTheme(value); render(); },
+      }, label));
+    });
+  }
+  render();
+  return wrap;
+}
 
 function build() {
   const overlay = h('div', { class: 'overlay side-panel-overlay', hidden: true });
@@ -38,6 +64,9 @@ function build() {
       h('button', { class: 'code-btn code-btn-close', type: 'button', onClick: () => closeOverlay(overlay) }, 'Close ✕'),
     ]),
     h('div', { class: 'side-panel-body' }, [
+      h('label', { class: 'settings-label' }, 'Appearance'),
+      buildThemeToggle(),
+      h('hr', { class: 'settings-divider' }),
       h('p', { class: 'settings-help' }, 'Provider support today is limited to Claude (Anthropic). Your key is stored only in this browser’s localStorage and is sent directly to api.anthropic.com — never anywhere else.'),
       h('label', { class: 'settings-label', for: 'ai-model-select' }, 'Model'),
       modelSelect,

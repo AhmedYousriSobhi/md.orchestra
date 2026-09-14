@@ -14,7 +14,7 @@
 .card-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
 .card-badge {
   font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
-  color: var(--accent, var(--accent-default)); background: color-mix(in srgb, var(--accent, var(--accent-default)) 12%, white);
+  color: var(--accent, var(--accent-default)); background: color-mix(in srgb, var(--accent, var(--accent-default)) 12%, var(--surface));
   padding: 0.18rem 0.5rem; border-radius: 999px;
 }
 .card-title { font-size: 1.35rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; flex: 1; }
@@ -65,7 +65,7 @@
   font-size: 0.7rem; color: var(--text-faint); background: var(--bg-soft);
   padding: 0.15rem 0.5rem; border-radius: 999px;
 }
-.stat-badge-note { color: #b8860b; background: #faf1de; }
+.stat-badge-note { color: var(--note-badge-text); background: var(--note-badge-bg); }
 
 .card-actions { margin-top: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
 .card-actions-left { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -83,7 +83,7 @@
 .rendered-markdown table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; font-size: 0.85rem; }
 .rendered-markdown th, .rendered-markdown td { border: 1px solid var(--border); padding: 0.45rem 0.6rem; text-align: left; }
 .rendered-markdown thead th { background: var(--bg-soft); font-weight: 600; }
-.rendered-markdown tbody tr:nth-child(even) { background: color-mix(in srgb, var(--bg-soft) 60%, white); }
+.rendered-markdown tbody tr:nth-child(even) { background: color-mix(in srgb, var(--bg-soft) 60%, var(--surface)); }
 .rendered-markdown details {
   margin: 0.6rem 0; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; background: var(--bg-soft);
 }
@@ -118,8 +118,8 @@ pre.code-pre, pre.hljs {
 .code-toolbar .code-btn:hover { background: rgba(255,255,255,0.16); }
 
 .callout { margin: 1rem 0; border-radius: 10px; padding: 0.85rem 1rem; }
-.callout-ai { background: #f2effe; border: 1px solid #e0d6fb; }
-.callout-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.85rem; color: #5b3fb0; }
+.callout-ai { background: var(--ai-tint-bg); border: 1px solid var(--ai-tint-border); }
+.callout-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.85rem; color: var(--ai-tint-text); }
 
 .notes-editor { margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem; }
 .notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.6rem; }

@@ -52,7 +52,7 @@ export function renderTreePicker(container, doc, selectedTarget, onDrop) {
 }
 
 function buildItem(node, topLevelIndex, trailIds, selectedId, onDrop, rerender, pickerRoot) {
-  const { accent, soft } = paletteFor(topLevelIndex);
+  const { accent } = paletteFor(topLevelIndex);
   const hasChildren = node.children.length > 0;
   const isSelected = node.id === selectedId;
   const isTop = node.level === 1;
@@ -60,7 +60,7 @@ function buildItem(node, topLevelIndex, trailIds, selectedId, onDrop, rerender, 
 
   const li = h('li', {
     class: `nav-item nav-level-${node.level}${isTop ? ' nav-item-top' : ''}`,
-    style: isTop ? `--accent:${accent}; --accent-soft:${soft};` : null,
+    style: isTop ? `--accent:${accent};` : null,
   });
 
   const row = h('div', { class: 'nav-row tree-picker-drop-row' });

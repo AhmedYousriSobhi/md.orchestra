@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+  // Applied synchronously, before any CSS paints, so a saved dark-mode
+  // choice doesn't flash light-then-dark on load. Mirrors js/utils/theme.js's
+  // storage key/format; kept inline (not imported) specifically so it runs
+  // before the stylesheets below are applied.
+  (function () {
+    try {
+      var t = localStorage.getItem('md-dashboard-theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* ignore */ }
+  }());
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Markdown Insight Dashboard</title>

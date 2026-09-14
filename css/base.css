@@ -14,7 +14,63 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --accent-default: #6c5ce7;
+  --danger: #a4351f;
+  --danger-soft: #fce7e7;
+  --note-badge-text: #b8860b;
+  --note-badge-bg: #faf1de;
+  --ai-tint-bg: #f2effe;
+  --ai-tint-border: #e0d6fb;
+  --ai-tint-text: #5b3fb0;
   font-synthesis: none;
+}
+
+/* Dark mode: applied either by explicit user choice (data-theme="dark",
+   set from Settings) or, when the user's chosen mode is "system" (the
+   default — no data-theme attribute at all), by the OS-level preference.
+   data-theme="light" always wins over the OS preference below it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #12141c;
+    --bg-soft: #191d29;
+    --surface: #1e2233;
+    --border: #2c3148;
+    --text: #e8eaf2;
+    --text-soft: #a8afc4;
+    --text-faint: #747c93;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
+    --accent-default: #9b8cf5;
+    --danger: #ff8066;
+    --danger-soft: rgba(255, 128, 102, 0.16);
+    --note-badge-text: #e6bb56;
+    --note-badge-bg: rgba(230, 187, 86, 0.16);
+    --ai-tint-bg: rgba(155, 140, 245, 0.16);
+    --ai-tint-border: rgba(155, 140, 245, 0.4);
+    --ai-tint-text: #c8bcff;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #12141c;
+  --bg-soft: #191d29;
+  --surface: #1e2233;
+  --border: #2c3148;
+  --text: #e8eaf2;
+  --text-soft: #a8afc4;
+  --text-faint: #747c93;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --accent-default: #9b8cf5;
+  --danger: #ff8066;
+  --danger-soft: rgba(255, 128, 102, 0.16);
+  --note-badge-text: #e6bb56;
+  --note-badge-bg: rgba(230, 187, 86, 0.16);
+  --ai-tint-bg: rgba(155, 140, 245, 0.16);
+  --ai-tint-border: rgba(155, 140, 245, 0.4);
+  --ai-tint-text: #c8bcff;
 }
 
 * { box-sizing: border-box; }
@@ -71,8 +127,8 @@ button {
 }
 .code-btn:hover { background: var(--bg-soft); }
 .code-btn-close { color: var(--text); }
-.code-btn-danger { color: #a4351f; }
-.code-btn-danger:hover { background: #fce7e7; }
+.code-btn-danger { color: var(--danger); }
+.code-btn-danger:hover { background: var(--danger-soft); }
 
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

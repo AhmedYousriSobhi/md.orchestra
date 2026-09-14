@@ -47,7 +47,7 @@ export function renderSidebar(container, doc, activeTrailIds, onSelect, onMove) 
 }
 
 function buildItem(node, topLevelIndex, activeTrailIds, onSelect, onMove, rerender, sidebarRoot) {
-  const { accent, soft } = paletteFor(topLevelIndex);
+  const { accent } = paletteFor(topLevelIndex);
   const isActive = activeTrailIds.includes(node.id);
   const isCurrent = activeTrailIds[activeTrailIds.length - 1] === node.id;
   const hasChildren = node.children.length > 0;
@@ -56,7 +56,7 @@ function buildItem(node, topLevelIndex, activeTrailIds, onSelect, onMove, rerend
 
   const li = h('li', {
     class: `nav-item nav-level-${node.level}${isTop ? ' nav-item-top' : ''}`,
-    style: isTop ? `--accent:${accent}; --accent-soft:${soft};` : null,
+    style: isTop ? `--accent:${accent};` : null,
   });
 
   const row = h('div', { class: 'nav-row' });

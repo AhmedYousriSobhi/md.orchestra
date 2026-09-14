@@ -17,6 +17,12 @@ import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { debounce } from './utils/debounce.js';
 import { saveRecoverySnapshot, loadRecoverySnapshot, clearRecoverySnapshot } from './recovery.js';
+import { getTheme, applyTheme } from './utils/theme.js';
+
+// Belt-and-suspenders: index.html already stamps this inline (synchronously,
+// before first paint, to avoid a light-then-dark flash) — this just keeps
+// the module in sync with whatever was actually applied.
+applyTheme(getTheme());
 
 const el = {
   sidebar: document.getElementById('sidebar'),

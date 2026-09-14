@@ -112,19 +112,22 @@ aside#sidebar.sidebar-collapsed {
 
 .nav-link-top {
   font-weight: 700; font-size: 0.88rem; color: var(--text);
-  background: var(--accent-soft, var(--bg-soft));
+  /* Computed from --accent at use time (not a fixed --accent-soft hex from
+     the palette) so it adapts to the current theme's surface instead of
+     staying a fixed light pastel that washes out against dark text/bg. */
+  background: color-mix(in srgb, var(--accent, var(--border)) 14%, var(--surface));
   border: 1px solid transparent;
 }
 .nav-link-top:hover { border-color: color-mix(in srgb, var(--accent, var(--border)) 45%, transparent); }
 .nav-link-top.nav-link-current {
-  background: var(--accent-soft, var(--bg-soft));
+  background: color-mix(in srgb, var(--accent, var(--border)) 22%, var(--surface));
   border-color: var(--accent, var(--border));
   box-shadow: inset 3px 0 0 var(--accent, var(--accent-default));
 }
 .nav-icon { font-size: 0.9rem; line-height: 1; flex-shrink: 0; }
 .nav-count {
   margin-left: auto; font-size: 0.68rem; font-weight: 600; color: var(--accent, var(--text-faint));
-  background: color-mix(in srgb, var(--accent, var(--border)) 16%, white);
+  background: color-mix(in srgb, var(--accent, var(--border)) 16%, var(--surface));
   padding: 0.05rem 0.4rem; border-radius: 999px; flex-shrink: 0;
 }
 
