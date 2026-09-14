@@ -12,21 +12,40 @@ import { showToast } from './toast.js';
 
 let overlayEl = null;
 
+function describeTarget(doc, target) {
+  const refNode = target.referenceId === doc.id ? null : findNode(doc, target.referenceId);
+  const label = refNode ? refNode.title : 'the document';
+  if (target.placement === 'before') return `Right before "${label}"`;
+  if (target.placement === 'after') return `Right after "${label}"`;
+  if (target.referenceId === doc.id) return 'At the top of the document';
+  return `Inside "${label}", as its last subsection`;
+}
+
+function defaultLevelFor(doc, target) {
+  if (target.placement === 'before' || target.placement === 'after') {
+    const refNode = findNode(doc, target.referenceId);
+    return refNode ? refNode.level : 1;
+  }
+  if (target.referenceId === doc.id) return 1;
+  const refNode = findNode(doc, target.referenceId);
+  return refNode ? Math.min(refNode.level + 1, 6) : 1;
+}
+
 /**
  * Open a form for authoring a brand-new section anywhere in the document:
- * title, heading level, which existing section to nest it under — picked
- * from a collapsible tree of the whole document (the same interaction as
- * the sidebar) rather than a plain dropdown, so it stays scannable however
- * large the document is — whether it goes first or last among that
- * parent's children, and its initial Markdown body. Unlike the notes
- * field, this becomes real document content, not an annotation.
+ * title, heading level, and exactly where it goes — click a heading in the
+ * tree to drop it inside (as the last subsection), or drag the handle onto
+ * the tree and hover the top/bottom third of a row to place it precisely
+ * before/after that heading instead of only "first/last of its parent" —
+ * plus its initial Markdown body. Unlike the notes field, this becomes
+ * real document content, not an annotation.
  */
 export function openAddSectionModal() {
   const { doc } = getState();
   if (!doc) { showToast('Load a document first', { type: 'error' }); return; }
 
   const current = getSelectedNode();
-  let parentId = current ? current.id : doc.id;
+  let target = { referenceId: current ? current.id : doc.id, placement: 'inside-end' };
 
   if (overlayEl) overlayEl.remove();
   overlayEl = h('div', { class: 'overlay insight-overlay', hidden: true });
@@ -39,11 +58,17 @@ export function openAddSectionModal() {
   const pickedLabel = h('div', { class: 'tree-picker-label' });
   const pickerBox = h('div', { class: 'tree-picker-box' });
 
+  const dragHandle = h('div', { class: 'tree-drag-handle', draggable: 'true' }, [
+    '⠿ Drag onto the tree to place it precisely (before/after/inside a heading)',
+  ]);
+  dragHandle.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'new-section');
+  });
+
   const levelSelect = h('select', { class: 'settings-input' });
   function refreshLevelOptions() {
-    const parentNode = parentId === doc.id ? null : findNode(doc, parentId);
-    const parentLevel = parentNode ? parentNode.level : 0;
-    const defaultLevel = Math.min(Math.max(parentLevel + 1, 1), 6);
+    const defaultLevel = defaultLevelFor(doc, target);
     levelSelect.innerHTML = '';
     for (let lvl = 1; lvl <= 6; lvl += 1) {
       const opt = h('option', { value: String(lvl) }, `Heading ${lvl} (${'#'.repeat(lvl)})`);
@@ -52,28 +77,15 @@ export function openAddSectionModal() {
     }
   }
 
-  function updatePickedLabel() {
-    const parentNode = parentId === doc.id ? null : findNode(doc, parentId);
-    pickedLabel.innerHTML = '';
-    pickedLabel.appendChild(document.createTextNode('Adding under: '));
-    const strong = h('strong', {}, parentNode ? parentNode.title : '(top of document)');
-    pickedLabel.appendChild(strong);
-  }
-
-  function onPick(id) {
-    parentId = id;
-    renderTreePicker(pickerBox, doc, parentId, onPick);
-    updatePickedLabel();
+  function setTarget(next) {
+    target = next;
+    renderTreePicker(pickerBox, doc, target, setTarget);
+    pickedLabel.textContent = describeTarget(doc, target);
     refreshLevelOptions();
   }
-  renderTreePicker(pickerBox, doc, parentId, onPick);
-  updatePickedLabel();
+  renderTreePicker(pickerBox, doc, target, setTarget);
+  pickedLabel.textContent = describeTarget(doc, target);
   refreshLevelOptions();
-
-  const positionSelect = h('select', { class: 'settings-input' }, [
-    h('option', { value: 'end' }, 'Last, after its existing subsections'),
-    h('option', { value: 'start' }, 'First, before its existing subsections'),
-  ]);
 
   const contentTextarea = h('textarea', {
     class: 'notes-textarea',
@@ -102,7 +114,7 @@ export function openAddSectionModal() {
       bodyMarkdown: contentTextarea.value.trim(),
       children: [],
     };
-    const ok = insertSection({ parentId, node, position: positionSelect.value });
+    const ok = insertSection({ node, referenceId: target.referenceId, placement: target.placement });
     if (!ok) { showToast('Could not add the section', { type: 'error' }); return; }
     selectSection(node.id);
     closeOverlay(overlayEl);
@@ -123,13 +135,14 @@ export function openAddSectionModal() {
         titleInput,
       ]),
       h('div', { class: 'insight-section' }, [
-        h('h3', {}, 'Nest under'),
+        h('h3', {}, 'Where'),
+        dragHandle,
         pickerBox,
         pickedLabel,
       ]),
-      h('div', { class: 'add-section-grid' }, [
-        h('div', { class: 'insight-section' }, [h('h3', {}, 'Heading level'), levelSelect]),
-        h('div', { class: 'insight-section' }, [h('h3', {}, 'Position'), positionSelect]),
+      h('div', { class: 'insight-section' }, [
+        h('h3', {}, 'Heading level'),
+        levelSelect,
       ]),
       h('div', { class: 'insight-section' }, [
         h('h3', {}, 'Content'),
