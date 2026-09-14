@@ -2,8 +2,10 @@ import { h, svg } from '../utils/dom.js';
 import { paletteFor } from '../utils/colors.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { getState, selectSection } from '../state/store.js';
+import { renderMindMap } from './mindMap.js';
 
 let overlayEl = null;
+let mapMode = 'tree';
 
 const ROW_H = 24;
 const INDENT_W = 18;
@@ -96,14 +98,33 @@ export function openMapView() {
     selectSection(id);
     closeOverlay(overlayEl);
   };
-  scroll.appendChild(buildSvg(doc, selectedId, onPick));
+
+  const treeBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🌳 Tree');
+  const mindBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🧠 Mind map');
+
+  function renderMode() {
+    treeBtn.classList.toggle('map-mode-active', mapMode === 'tree');
+    mindBtn.classList.toggle('map-mode-active', mapMode === 'mind');
+    scroll.innerHTML = '';
+    if (mapMode === 'tree') {
+      scroll.appendChild(buildSvg(doc, selectedId, onPick));
+    } else {
+      const mindContainer = h('div', { class: 'mindmap-container' });
+      scroll.appendChild(mindContainer);
+      // needs real layout dimensions, which only exist once it's in the DOM
+      requestAnimationFrame(() => renderMindMap(mindContainer, doc, selectedId, onPick));
+    }
+  }
+  treeBtn.addEventListener('click', () => { mapMode = 'tree'; renderMode(); });
+  mindBtn.addEventListener('click', () => { mapMode = 'mind'; renderMode(); });
 
   const panel = h('div', { class: 'map-panel', role: 'dialog', 'aria-modal': 'true' }, [
     h('div', { class: 'side-panel-head' }, [
       h('div', {}, [
         h('h2', {}, '🗺️ Document map'),
-        h('div', { class: 'insight-subtitle' }, `${fileName || ''} — click any heading to jump there`),
+        h('div', { class: 'insight-subtitle' }, `${fileName || ''} — click any heading to jump there, or drag a node in Mind map to rearrange it`),
       ]),
+      h('div', { class: 'map-mode-toggle' }, [treeBtn, mindBtn]),
       h('button', { class: 'code-btn code-btn-close', type: 'button', onClick: () => closeOverlay(overlayEl) }, 'Close ✕'),
     ]),
     scroll,
@@ -112,4 +133,5 @@ export function openMapView() {
   overlayEl.appendChild(panel);
   document.body.appendChild(overlayEl);
   openOverlay(overlayEl);
+  renderMode();
 }
