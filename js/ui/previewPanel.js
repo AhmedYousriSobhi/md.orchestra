@@ -17,13 +17,23 @@ export function setPreviewScope(scope) {
   try { localStorage.setItem(SCOPE_KEY, scope); } catch { /* ignore */ }
 }
 
-function renderNoteCard(note) {
-  const card = h('div', { class: 'preview-note-card' });
+// A handful of paper colors, cycling regardless of the app's own accent
+// palette or light/dark theme — real sticky notes don't change color to
+// match dark mode, and part of the point is that they read as a distinct,
+// physical-feeling layer on top of the document rather than blending into
+// its running text (unlike the main content, which does follow the theme).
+const NOTE_COLORS = ['#fef08a', '#fecdd3', '#bbf7d0', '#bfdbfe', '#fed7aa', '#e9d5ff'];
+
+function renderNoteCard(note, index) {
+  const card = h('div', {
+    class: 'preview-sticky-note',
+    style: `--note-bg:${NOTE_COLORS[index % NOTE_COLORS.length]}; --note-tilt:${(index % 2 === 0 ? -1 : 1) * (1.5 + (index % 3))}deg;`,
+  });
   card.innerHTML = renderMarkdownToSafeHtml(note.text);
   return card;
 }
 
-/** Recursively render `node` (and its subsections) as a flowing, GitHub/PDF-style document: real heading tags, each section's own content, and any notes attached to it. */
+/** Recursively render `node` (and its subsections) as a flowing, GitHub/PDF-style document: real heading tags, each section's own content, and — styled distinctly as sticky notes rather than blended into the running text — any notes attached to it. */
 function renderNode(node, opts) {
   const frag = document.createDocumentFragment();
 
@@ -43,7 +53,7 @@ function renderNode(node, opts) {
   const withText = notes.filter((n) => n.text.trim());
   if (withText.length) {
     const notesWrap = h('div', { class: 'preview-notes' });
-    withText.forEach((n) => notesWrap.appendChild(renderNoteCard(n)));
+    withText.forEach((n, i) => notesWrap.appendChild(renderNoteCard(n, i)));
     frag.appendChild(notesWrap);
   }
 
@@ -53,10 +63,10 @@ function renderNode(node, opts) {
 
 /**
  * A clean, read-only, single flowing page — headings, prose, tables, code,
- * mermaid diagrams, notes — as an alternative to the app's card-based
- * editing view, closer to how the file would look rendered on GitHub or
- * exported to PDF. `scope` is 'section' (the given `node` and its own
- * subsections only) or 'document' (the whole thing, from `doc`).
+ * mermaid diagrams, notes as sticky notes — as an alternative to the app's
+ * card-based editing view, closer to how the file would look rendered on
+ * GitHub or exported to PDF. `scope` is 'section' (the given `node` and its
+ * own subsections only) or 'document' (the whole thing, from `doc`).
  */
 export function renderPreviewPanel(container, {
   doc, node, scope, onScopeChange, onClose, onOpenCode, onNavigate, onNavigateFile, fileName,

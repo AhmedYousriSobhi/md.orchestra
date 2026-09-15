@@ -107,13 +107,14 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    to switch between System/Light/Dark appearance.
 8. Toggle **👁 Preview** for a clean, read-only, GitHub/PDF-style view of
    the Markdown — a single flowing page (real headings, tables, code,
-   mermaid, notes) instead of the card-based editing layout — docked on
-   the right so it can stay open alongside the editor rather than
-   blocking it like the other side panels. A "This section" / "Whole
-   document" toggle at its top switches between just what you're
-   currently looking at (plus its subsections) and the entire file, and
-   it updates live as you edit, including mid-keystroke in a note or the
-   content editor.
+   mermaid) instead of the card-based editing layout — docked on the
+   right so it can stay open alongside the editor rather than blocking
+   it like the other side panels. Notes show up too, each styled as its
+   own colored sticky note rather than blended into the running text. A
+   "This section" / "Whole document" toggle at its top switches between
+   just what you're currently looking at (plus its subsections) and the
+   entire file, and it updates live as you edit, including mid-keystroke
+   in a note or the content editor.
 
 ### Working with a directory
 
@@ -561,3 +562,13 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   scope, code blocks' Expand button working from inside the preview,
   live updates while editing, and the full existing regression suite
   (self-tests, mind map, dark mode, undo, recovery, workspace) unaffected.
+- **Stage 28** — Notes in the Preview panel now render as actual sticky
+  notes rather than plain boxed text: a handful of fixed paper colors
+  (yellow/pink/green/blue/…) cycling per note, a slight alternating
+  tilt, and a soft drop shadow that flattens on hover. Deliberately fixed
+  colors regardless of the current light/dark theme — like the code
+  viewer and toasts elsewhere, a real sticky note doesn't switch to a
+  dark palette to match its surroundings, and staying visually distinct
+  from the themed prose around it is rather the point: an annotation
+  layered on the page, not part of the document itself. Verified in both
+  themes with several notes at once (each getting a different color/tilt).

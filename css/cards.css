@@ -121,6 +121,34 @@ pre.code-pre, pre.hljs {
 .callout-ai { background: var(--ai-tint-bg); border: 1px solid var(--ai-tint-border); }
 .callout-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.85rem; color: var(--ai-tint-text); }
 
+/* Sticky notes, as shown in the read-only Preview panel (js/ui/previewPanel.js)
+   — deliberately fixed paper colors regardless of theme, like the code
+   viewer and toasts elsewhere: a real sticky note doesn't switch to a dark
+   palette in dark mode, and staying visually distinct from the surrounding
+   themed prose is the point (an annotation on the page, not part of it). */
+.preview-notes { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0.5rem 0 1.75rem; }
+.preview-sticky-note {
+  background: var(--note-bg, #fef08a);
+  width: 200px; min-height: 130px;
+  padding: 0.9rem 1rem 1rem;
+  border-radius: 2px 2px 8px 8px;
+  box-shadow: 0 8px 18px rgba(20, 15, 0, 0.18), 0 1px 2px rgba(20, 15, 0, 0.12);
+  color: #3a3320;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  transform: rotate(var(--note-tilt, -1.5deg));
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.preview-sticky-note:hover {
+  transform: rotate(0deg) scale(1.04);
+  box-shadow: 0 12px 26px rgba(20, 15, 0, 0.24), 0 2px 4px rgba(20, 15, 0, 0.14);
+  z-index: 1;
+  position: relative;
+}
+.preview-sticky-note p:first-child { margin-top: 0; }
+.preview-sticky-note p:last-child { margin-bottom: 0; }
+.preview-sticky-note a { color: #6b4f00; }
+
 .notes-editor { margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem; }
 .notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.6rem; }
 .notes-editor-title { font-size: 0.82rem; font-weight: 600; color: var(--text-soft); }
