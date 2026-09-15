@@ -1417,3 +1417,25 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   This doesn't rule out the reported bug still being real and
   unreproduced — it removes a very plausible reason a genuine fix
   could look like it never happened.
+
+- **Stage 58** — Found it: the cache fix wasn't the answer, but the
+  error toast the user saw next was — "Can't reopen ... automatically,
+  use 'Open .md file' to pick it again." reopenCleanStandaloneFile()
+  had exactly one way back to a clean standalone file's content:
+  re-reading it from its retained File System Access handle. A file
+  opened through the `<input type=file>` fallback never gets one —
+  and that fallback is Firefox's *only* path, since it doesn't support
+  `showOpenFilePicker()` at all. So on Firefox (or anywhere else the
+  fallback triggers), switching back to an unedited standalone file
+  always failed outright, and the failure handler removed it from
+  Explorer's "Open files" group — which looked exactly like the file
+  disappearing, even though nothing was ever lost.
+
+  Added `standaloneCleanText`, a Map of every open standalone file's
+  own last-known clean (on-disk/saved) content, updated on every fresh
+  load and every save. Reopening now falls back to it whenever there's
+  no handle to re-read from (or the read fails), instead of failing
+  outright — a standalone file only disappears now if explicitly
+  closed. Verified with the fallback path specifically (no handle at
+  all) across repeated cross-directory switches, on both the dev
+  server and Docker.
