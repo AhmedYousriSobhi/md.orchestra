@@ -23,8 +23,11 @@ import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
+import { openRecoveryPanel } from './ui/recoveryPanel.js';
 import { debounce } from './utils/debounce.js';
-import { saveRecoverySnapshot, loadRecoverySnapshot, clearRecoverySnapshot } from './recovery.js';
+import {
+  saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot,
+} from './recovery.js';
 import { getTheme, applyTheme } from './utils/theme.js';
 
 // Belt-and-suspenders: index.html already stamps this inline (synchronously,
@@ -116,11 +119,27 @@ render();
 
 // Crash recovery: while there are unsaved changes, keep a snapshot of the
 // current Markdown in localStorage (debounced — this fires on every store
-// update, including per-keystroke note/content autosaves). If the tab or
-// browser goes away before a real save, the next load offers to restore it.
+// update, including per-keystroke note/content autosaves), one per distinct
+// file (see recovery.js). If the tab or browser goes away before a real
+// save, the next load offers to restore any of them. `currentBaseline`
+// holds whichever file's content is currently active as it was when this
+// editing session of it began (set in loadFromText and after a save) — the
+// snapshot's `baselineMarkdown`, shown in the recovery panel, so a restore
+// prompt can be honest that a snapshot doesn't know about edits made
+// outside the app since.
+let currentBaseline = null;
 const snapshotIfDirty = debounce(() => {
-  const { doc, fileName, dirty } = getState();
-  if (doc && dirty) saveRecoverySnapshot({ fileName, markdown: serializeMarkdown(doc) });
+  const {
+    doc, fileName, dirty, workspaceRelPath,
+  } = getState();
+  if (!doc || !dirty) return;
+  saveRecoverySnapshot({
+    fileName,
+    workspaceRelPath,
+    workspaceRootName: getWorkspace()?.rootName || null,
+    markdown: serializeMarkdown(doc),
+    baselineMarkdown: currentBaseline,
+  });
 }, 1500);
 subscribe(snapshotIfDirty);
 
@@ -157,7 +176,11 @@ function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = nu
       showToast('That file has no headings or content — nothing to show.', { type: 'error' });
       return;
     }
-    clearRecoverySnapshot(); // starting fresh with a (possibly different) file — any older recovery snapshot no longer applies
+    // Starting fresh with this exact file's own content — any recovery
+    // snapshot for it specifically no longer applies (snapshots for other
+    // files are untouched; see recovery.js).
+    clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+    currentBaseline = text;
     loadDocument({
       doc, fileName, fileHandle, workspaceRelPath,
     });
@@ -220,26 +243,34 @@ async function handleWorkspaceOpened({ rootName, files }) {
   await openWorkspaceFile((preferred || sorted[0]).relPath);
 }
 
-/** Offer to restore a crash-recovery snapshot left over from before the app last closed. */
+/** Offer to restore whatever crash-recovery snapshots are left over from before the app last closed cleanly — one panel listing all of them, not a blind prompt for whichever file happened to be edited last. */
 function checkForRecovery() {
-  const snapshot = loadRecoverySnapshot();
-  if (!snapshot || !snapshot.markdown) return;
-  const when = new Date(snapshot.savedAt).toLocaleString();
-  const shouldRestore = window.confirm(
-    `Found unsaved work from last time: "${snapshot.fileName}" (${when}).\n\nRestore it? (Cancel discards it — this can't be undone.)`,
-  );
-  if (!shouldRestore) { clearRecoverySnapshot(); return; }
-  try {
-    const doc = parseMarkdown(snapshot.markdown);
-    loadDocument({
-      doc, fileName: snapshot.fileName, fileHandle: null, dirty: true,
-    });
-    showToast(`Restored unsaved work for "${snapshot.fileName}"`);
-  } catch (err) {
-    console.error(err);
-    showToast('Could not restore the recovered file', { type: 'error' });
-    clearRecoverySnapshot();
-  }
+  const snapshots = listRecoverySnapshots();
+  if (!snapshots.length) return;
+
+  openRecoveryPanel(snapshots, {
+    onRestore(snapshot) {
+      try {
+        const doc = parseMarkdown(snapshot.markdown);
+        currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
+        loadDocument({
+          doc,
+          fileName: snapshot.fileName,
+          fileHandle: null,
+          dirty: true,
+          workspaceRelPath: snapshot.workspaceRelPath,
+        });
+        clearRecoverySnapshot(snapshot);
+        showToast(`Restored unsaved work for "${snapshot.fileName}"`);
+      } catch (err) {
+        console.error(err);
+        showToast(`Could not restore "${snapshot.fileName}"`, { type: 'error' });
+      }
+    },
+    onDiscard(snapshot) {
+      clearRecoverySnapshot(snapshot);
+    },
+  });
 }
 checkForRecovery();
 
@@ -316,15 +347,17 @@ el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
  * "saved" — the in-memory doc is no longer ahead of what the user has.
  */
 async function handleSave() {
-  const { doc, fileName, fileHandle } = getState();
+  const { doc, fileName, fileHandle, workspaceRelPath } = getState();
   if (!doc) return;
   const text = serializeMarkdown(doc);
+  const identity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
 
   if (fileHandle) {
     try {
       await writeToHandle(fileHandle, text);
       setState({ dirty: false });
-      clearRecoverySnapshot();
+      clearRecoverySnapshot(identity);
+      currentBaseline = text;
       showToast(`Saved to ${fileName}`);
     } catch (err) {
       showToast(`Save failed: ${err.message}`, { type: 'error' });
@@ -334,7 +367,8 @@ async function handleSave() {
 
   downloadText(fileName || 'document.md', text);
   setState({ dirty: false });
-  clearRecoverySnapshot();
+  clearRecoverySnapshot(identity);
+  currentBaseline = text;
   showToast(
     supportsFileSystemAccess
       ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`

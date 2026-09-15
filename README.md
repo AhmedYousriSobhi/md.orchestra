@@ -500,3 +500,23 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   first, then the rename), undoing a just-added note removes it again, a
   subsection's undo is independent of its parent's, and switching
   documents leaves a freshly-loaded section's Undo disabled.
+- **Stage 25** — Reported: the crash-recovery cache (Stage 15) only ever
+  kept the single most-recently-edited file, silently overwriting that one
+  slot — dirtying a second file lost any pending recovery for the first —
+  and the restore prompt just trusted its cached copy with no way to tell
+  whether the real file had since changed outside the app. Rewrote
+  `recovery.js` to keep one snapshot per distinct file (keyed by its
+  workspace path, or filename for a standalone file) instead of a single
+  shared slot, and added `ui/recoveryPanel.js`: a proper list, shown on
+  load whenever any snapshots are pending, with independent Restore/
+  Discard per file rather than one blind `window.confirm()` covering
+  whatever was cached last. Each snapshot also now records the file's
+  content as it was when that editing session began; the panel says
+  outright that it can't verify whether a file has changed outside the
+  app since (the browser doesn't let a file handle survive a page
+  reload), so the honest fix here is transparency — a clear timestamp and
+  a content excerpt per file — rather than a false guarantee. Verified:
+  dirtying two different sample files leaves two independent snapshots,
+  discarding one leaves the other untouched, restoring loads the right
+  file with its edits intact, and saving (or freshly loading) a specific
+  file only clears its own entry.
