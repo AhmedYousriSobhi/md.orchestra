@@ -30,7 +30,16 @@ function getMdParser() {
   return mdParser;
 }
 
-/** Render Markdown to sanitized HTML. Safe to drop straight into innerHTML. */
+/**
+ * Render Markdown to sanitized HTML. Safe to drop straight into innerHTML —
+ * markdown-it runs with `html: true` (raw HTML passthrough in the source is
+ * a deliberate feature, e.g. `<details>`), so DOMPurify is not optional
+ * hardening here, it's the only thing standing between a Markdown file's
+ * own content (or a pasted note) and script execution. If it isn't
+ * available (CDN blocked, offline, script failed to load), fail closed:
+ * never hand back the raw, unsanitized HTML just because sanitizing it
+ * wasn't possible.
+ */
 export function renderMarkdownToSafeHtml(mdText) {
   const html = getMdParser().render(mdText || '');
   if (window.DOMPurify) {
@@ -39,8 +48,8 @@ export function renderMarkdownToSafeHtml(mdText) {
       ADD_ATTR: ['data-lang', 'target'],
     });
   }
-  console.warn('DOMPurify not available — rendering unsanitized HTML.');
-  return html;
+  console.error('DOMPurify not available — refusing to render unsanitized HTML.');
+  return `<p class="render-error">Could not safely render this content (DOMPurify failed to load — check network access to the CDN, then reload).</p>`;
 }
 
 /**

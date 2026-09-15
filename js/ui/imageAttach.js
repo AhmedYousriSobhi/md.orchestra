@@ -1,10 +1,19 @@
 import { h } from '../utils/dom.js';
+import { showToast } from './toast.js';
 
 // Images are embedded as data: URIs directly in the Markdown — this app has
 // no backend/asset store to upload to, so a self-contained ![alt](data:...)
 // is what keeps a section portable in one .md file. That does mean a large
 // image meaningfully bloats the file; fine for screenshots/diagrams, worth
 // keeping in mind for anything bigger.
+//
+// A hard cap keeps one oversized paste/drop from silently blowing up
+// every place that content then has to travel through: the recovery
+// snapshot written to localStorage on nearly every keystroke, a browser
+// quota that isn't there to be bloated with images embedded as base64,
+// and the section's own textarea, which now has to hold and re-render
+// megabytes of inline text on every edit.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function readAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -39,6 +48,10 @@ function insertBlock(textarea, block) {
 
 async function insertImageFile(textarea, file) {
   if (!file || !file.type.startsWith('image/')) return;
+  if (file.size > MAX_IMAGE_BYTES) {
+    showToast(`"${file.name}" is too large to embed (${(file.size / (1024 * 1024)).toFixed(1)}MB — limit is ${MAX_IMAGE_BYTES / (1024 * 1024)}MB). Resize it first, or link to it externally instead.`, { type: 'error' });
+    return;
+  }
   try {
     const dataUrl = await readAsDataUrl(file);
     const alt = file.name.replace(/\.[^./\\]+$/, '') || 'image';
