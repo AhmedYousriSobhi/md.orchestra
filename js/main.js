@@ -14,7 +14,7 @@ import {
 import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
-  renderWorkspacesPanel, getWorkspaceViewMode, setWorkspaceViewMode,
+  renderWorkspacesPanel,
 } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
@@ -150,14 +150,12 @@ function renderInner() {
   // heading breakdown) stays below, neither ever reordering or hiding
   // itself based on which file happens to be active.
   const workspaces = getWorkspaces();
-  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && workspaces.length > 0);
+  el.sidebar.classList.toggle('sidebar-graph-mode', workspaces.length > 0);
   el.explorerSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('explorer'));
   el.outlineSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('outline'));
   renderWorkspacesPanel(el.workspaceTree, workspaces, workspaceRootName, workspaceRelPath, {
     onOpenFile: openWorkspaceFile,
     onClose: handleCloseWorkspace,
-    viewMode: getWorkspaceViewMode(),
-    onToggleViewMode: handleToggleWorkspaceViewMode,
     pendingPathsFor: pendingWorkspacePaths,
   });
   renderExplorerStandaloneEntries();
@@ -637,11 +635,6 @@ async function handleCloseStandaloneFile() {
   setState({
     doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
   });
-}
-
-function handleToggleWorkspaceViewMode() {
-  setWorkspaceViewMode(getWorkspaceViewMode() === 'graph' ? 'list' : 'graph');
-  render();
 }
 
 /**
