@@ -352,7 +352,36 @@ async function handleWorkspaceOpened({ rootName, files }) {
   await openWorkspaceFile((preferred || sorted[0]).relPath);
 }
 
-/** Load a crash-recovery snapshot's content as the active document (dirty — it was never actually saved). Shared by the startup recovery flow and the on-demand Changes panel's "Open" action; neither the snapshot's fileHandle (never persisted — can't be) is available here, so it loads without direct save-back until re-saved or re-opened. */
+/**
+ * Find whichever node in `newNode`'s tree was actually edited, by walking
+ * it alongside the equivalent `oldNode` (the baseline) in document order:
+ * ids can't be compared directly between the two — each comes from its
+ * own independent parseMarkdown() call, so they're unrelated numbers —
+ * but the two trees are the same *document*, just before and after an
+ * edit, so corresponding positions almost always line up. Returns the
+ * first node (in reading order) whose own bodyMarkdown differs, or — if a
+ * whole new section was added — that new section's own id. Returns null
+ * if nothing differs (or the shapes diverge enough that position-matching
+ * isn't meaningful), in which case the caller just falls back to whatever
+ * it would otherwise have selected.
+ */
+function findFirstChangedNodeId(newNode, oldNode) {
+  if (!newNode || !oldNode) return null;
+  if ((newNode.bodyMarkdown || '').trim() !== (oldNode.bodyMarkdown || '').trim()) {
+    return newNode.id;
+  }
+  const shared = Math.min(newNode.children.length, oldNode.children.length);
+  for (let i = 0; i < shared; i += 1) {
+    const found = findFirstChangedNodeId(newNode.children[i], oldNode.children[i]);
+    if (found) return found;
+  }
+  if (newNode.children.length > oldNode.children.length) {
+    return newNode.children[shared].id;
+  }
+  return null;
+}
+
+/** Load a crash-recovery snapshot's content as the active document (dirty — it was never actually saved). Shared by the startup recovery flow and the on-demand Changes panel's "Open" action; neither the snapshot's fileHandle (never persisted — can't be) is available here, so it loads without direct save-back until re-saved or re-opened. Lands on whichever section was actually edited (see findFirstChangedNodeId), not just the document's default landing spot. */
 function loadSnapshotAsActive(snapshot) {
   try {
     const doc = parseMarkdown(snapshot.markdown);
@@ -364,6 +393,10 @@ function loadSnapshotAsActive(snapshot) {
       dirty: true,
       workspaceRelPath: snapshot.workspaceRelPath,
     });
+    if (snapshot.baselineMarkdown) {
+      const changedId = findFirstChangedNodeId(doc, parseMarkdown(snapshot.baselineMarkdown));
+      if (changedId) selectSection(changedId);
+    }
     clearRecoverySnapshot(snapshot);
     showToast(`Restored unsaved work for "${snapshot.fileName}"`);
   } catch (err) {

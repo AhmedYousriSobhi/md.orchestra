@@ -109,8 +109,9 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    that too). **📝 Changes**, in the header, lists every one of them — like
    a compact `git status` — with a badge showing how many. Every row —
    click anywhere on it, not just its buttons, for a non-active one — jumps
-   straight to that file, through the same unsaved-changes guard as
-   everywhere else. Each file also gets **💾 Save** (writes it straight to
+   straight to that file *and* lands you on whichever section was actually
+   edited, not just wherever the file happens to open by default, through
+   the same unsaved-changes guard as everywhere else. Each file also gets **💾 Save** (writes it straight to
    disk without switching away from whatever you're currently doing, if it
    still has a live handle — otherwise downloads it, same as the main Save
    button) and **🗑 Discard**: for another file, drops that pending copy
@@ -776,3 +777,20 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   (still just drops the cached copy), and clicking a row's background
   switches files exactly like its Open button already did, guarded by
   the same unsaved-changes confirm.
+- **Stage 38** — Reported: jumping to a file from the Changes panel
+  landed on whatever section the file opens on by default, not the
+  section that was actually edited — for a file you're editing far from
+  its start, "jump to it" didn't feel like it jumped anywhere useful.
+  Node ids can't be compared directly between the loaded document and
+  its snapshot's `baselineMarkdown` (each comes from its own independent
+  parse, so the ids are unrelated numbers), but both parses are the same
+  document just before and after an edit, so `findFirstChangedNodeId()`
+  walks the two trees together by position and returns the first node
+  (in reading order) whose own content actually differs — falling back
+  to the document's normal default if the shapes diverge too much to
+  line up, or nothing differs at all. Shared by both places that load a
+  snapshot back in (the on-demand Changes panel and the startup crash-
+  recovery panel), so restoring after a crash now also lands you back
+  where you actually were. Verified against a section three levels
+  deep, edited, switched away from, and reopened via the Changes
+  panel's row click — landed exactly on it, with the edit visible.
