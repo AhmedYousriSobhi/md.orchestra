@@ -69,7 +69,7 @@ const el = {
   mapViewBtn: document.getElementById('map-view-btn'),
   previewToggleBtn: document.getElementById('preview-edge-toggle'),
   previewPanel: document.getElementById('preview-panel'),
-  noteSeamBtn: document.getElementById('note-seam-btn'),
+  previewResizeHandle: document.getElementById('preview-resize-handle'),
   saveBtn: document.getElementById('save-btn'),
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
@@ -215,6 +215,7 @@ function renderInner() {
   // sits at the preview panel's own edge while open, and the viewport's
   // edge while closed.
   el.appBody.classList.toggle('preview-open', !el.previewPanel.hidden);
+  el.previewResizeHandle.hidden = el.previewPanel.hidden;
 
   if (!doc) {
     el.emptyState.hidden = false;
@@ -1239,74 +1240,79 @@ el.previewToggleBtn.addEventListener('click', () => {
   }
 });
 /**
- * A quick "add a note" button that floats on the seam between the content
- * pane and the preview panel, rather than only living inside the currently
- * focused card's own notes editor — hovering near the shared border from
- * either side reveals it at the cursor's height, right on whichever side
- * you're actually on (a cosmetic mirror, not a different action: it always
- * adds a note to whatever section is currently selected, the same one the
- * card view and the preview are both already showing). Only meaningful
- * when there's actually a seam to hover near — a loaded document, and the
- * preview panel open beside it.
+ * Add a note to whichever section is currently selected — the same action
+ * a card's own "+ Add note" button performs, available globally via
+ * Alt+N (see the keydown listener below) so it doesn't require scrolling
+ * to that button first.
  */
-const SEAM_HOVER_THRESHOLD = 48;
-let seamHideTimer = null;
-
-function positionSeamButton(clientX, clientY, side) {
-  if (seamHideTimer) { clearTimeout(seamHideTimer); seamHideTimer = null; }
-  if (!getState().doc || el.previewPanel.hidden) return;
-  const appBodyRect = el.appBody.getBoundingClientRect();
-  el.noteSeamBtn.hidden = false;
-  el.noteSeamBtn.classList.add('note-seam-btn-visible');
-  el.noteSeamBtn.classList.toggle('note-seam-btn-content', side === 'content');
-  el.noteSeamBtn.classList.toggle('note-seam-btn-preview', side === 'preview');
-  el.noteSeamBtn.style.left = `${clientX - appBodyRect.left}px`;
-  el.noteSeamBtn.style.top = `${clientY - appBodyRect.top}px`;
-}
-
-function scheduleHideSeamButton() {
-  if (seamHideTimer) clearTimeout(seamHideTimer);
-  seamHideTimer = setTimeout(() => {
-    el.noteSeamBtn.classList.remove('note-seam-btn-visible');
-    el.noteSeamBtn.hidden = true;
-    seamHideTimer = null;
-  }, 150);
-}
-
-el.sectionViewWrap.addEventListener('mousemove', (e) => {
-  if (el.previewPanel.hidden) return;
-  const rect = el.sectionViewWrap.getBoundingClientRect();
-  const distFromSeam = rect.right - e.clientX;
-  if (distFromSeam >= 0 && distFromSeam <= SEAM_HOVER_THRESHOLD) {
-    positionSeamButton(rect.right - 6, e.clientY, 'content');
-  } else {
-    scheduleHideSeamButton();
-  }
-});
-el.sectionViewWrap.addEventListener('mouseleave', scheduleHideSeamButton);
-
-el.previewPanel.addEventListener('mousemove', (e) => {
-  const rect = el.previewPanel.getBoundingClientRect();
-  const distFromSeam = e.clientX - rect.left;
-  if (distFromSeam >= 0 && distFromSeam <= SEAM_HOVER_THRESHOLD) {
-    positionSeamButton(rect.left + 6, e.clientY, 'preview');
-  } else {
-    scheduleHideSeamButton();
-  }
-});
-el.previewPanel.addEventListener('mouseleave', scheduleHideSeamButton);
-
-el.noteSeamBtn.addEventListener('mouseenter', () => {
-  if (seamHideTimer) { clearTimeout(seamHideTimer); seamHideTimer = null; }
-});
-el.noteSeamBtn.addEventListener('mouseleave', scheduleHideSeamButton);
-el.noteSeamBtn.addEventListener('click', () => {
+function addNoteToSelected() {
   const node = getSelectedNode();
   if (!node) return;
   updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
   showToast('Note added — open the section to fill it in.');
-  scheduleHideSeamButton();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'n' || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const active = document.activeElement;
+  // Never hijack Alt+N while the user is typing anywhere — a note field, a
+  // section's content editor, a modal input, all of it.
+  if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) return;
+  if (!getState().doc) return;
+  e.preventDefault();
+  addNoteToSelected();
 });
+
+/**
+ * Drag-to-resize for the preview panel, via the dedicated handle sitting
+ * between the content pane and the preview (a real flex sibling, not
+ * absolutely positioned — see its CSS). Width is stored as a CSS variable
+ * on the root element (read by both #preview-panel and the edge-toggle's
+ * own docked position) and persisted, so a chosen width survives reloads
+ * the same way the other sidebar/preview display preferences do.
+ */
+const PREVIEW_WIDTH_KEY = 'mdDashboard.previewWidth';
+const PREVIEW_WIDTH_MIN = 280;
+const PREVIEW_WIDTH_MAX_VW = 0.7;
+
+function applyPreviewWidth(px) {
+  document.documentElement.style.setProperty('--preview-width', `${px}px`);
+}
+
+(function restorePreviewWidth() {
+  const stored = Number(localStorage.getItem(PREVIEW_WIDTH_KEY));
+  if (Number.isFinite(stored) && stored > 0) applyPreviewWidth(stored);
+}());
+
+let previewResizeStartX = null;
+let previewResizeStartWidth = null;
+
+el.previewResizeHandle.addEventListener('pointerdown', (e) => {
+  previewResizeStartX = e.clientX;
+  previewResizeStartWidth = el.previewPanel.getBoundingClientRect().width;
+  el.previewResizeHandle.classList.add('preview-resize-active');
+  el.previewResizeHandle.setPointerCapture(e.pointerId);
+});
+el.previewResizeHandle.addEventListener('pointermove', (e) => {
+  if (previewResizeStartX === null) return;
+  const maxWidth = window.innerWidth * PREVIEW_WIDTH_MAX_VW;
+  const next = Math.min(maxWidth, Math.max(PREVIEW_WIDTH_MIN, previewResizeStartWidth - (e.clientX - previewResizeStartX)));
+  applyPreviewWidth(next);
+});
+function endPreviewResize(e) {
+  if (previewResizeStartX === null) return;
+  previewResizeStartX = null;
+  previewResizeStartWidth = null;
+  el.previewResizeHandle.classList.remove('preview-resize-active');
+  try {
+    localStorage.setItem(PREVIEW_WIDTH_KEY, String(Math.round(el.previewPanel.getBoundingClientRect().width)));
+  } catch { /* ignore */ }
+  if (e) {
+    try { el.previewResizeHandle.releasePointerCapture(e.pointerId); } catch { /* already released, e.g. on pointercancel */ }
+  }
+}
+el.previewResizeHandle.addEventListener('pointerup', endPreviewResize);
+el.previewResizeHandle.addEventListener('pointercancel', endPreviewResize);
 
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);

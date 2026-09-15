@@ -272,9 +272,13 @@ main#main-panel {
 
 /* Preview panel: a docked, always-editable-alongside pane (not a modal
    overlay like Settings/Source) so it can stay open as a live reference
-   while you keep browsing/editing — see js/ui/previewPanel.js. */
+   while you keep browsing/editing — see js/ui/previewPanel.js. Width is a
+   CSS variable (see main.js's resize-handle drag logic) rather than a bare
+   value, so it can be overridden per-session/persisted without touching
+   this rule; the min()/40vw fallback is what shows before any drag ever
+   sets one. */
 aside#preview-panel {
-  width: min(460px, 40vw);
+  width: var(--preview-width, min(460px, 40vw));
   flex-shrink: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);
@@ -290,11 +294,6 @@ aside#preview-panel[hidden] { display: none; }
    the outer edge of the viewport when it's closed. */
 .edge-toggle {
   position: absolute;
-  /* Docked near the top of the seam, not vertically centered — the note
-     quick-add button (see .note-seam-btn) tracks the cursor along the
-     *whole* height of that same seam, so this needs to stay well clear of
-     it rather than sitting in the middle of the area a user would actually
-     hover across. */
   top: 90px;
   right: 0;
   z-index: 25;
@@ -315,32 +314,41 @@ aside#preview-panel[hidden] { display: none; }
 }
 .edge-toggle:hover:not(:disabled) { color: var(--text); background: var(--bg-soft); }
 .edge-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
-#app-body.preview-open .edge-toggle { right: min(460px, 40vw); }
+#app-body.preview-open .edge-toggle { right: var(--preview-width, min(460px, 40vw)); }
 
-/* A quick-add affordance for notes that lives ON the seam between the
-   content and the preview, rather than only inside a section's own notes
-   editor — see main.js's seam-hover wiring. Positioned with inline top/left
-   from JS (tracking the cursor's Y as it hovers near the divider); which
-   side it's rendered on just mirrors whichever pane the cursor is actually
-   over, via .note-seam-btn-content / .note-seam-btn-preview. */
-.note-seam-btn {
-  position: absolute;
-  z-index: 24;
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--accent-default);
-  color: #fff;
-  font-size: 0.85rem;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  transform: translate(-50%, -50%) scale(0.85);
-  opacity: 0;
-  transition: opacity 0.1s ease, transform 0.1s ease;
+/* The actual draggable divider between the content pane and the preview —
+   see main.js's pointerdown/move/up wiring. A real flex sibling (not
+   absolutely positioned), so it takes up genuine layout space between the
+   two panes rather than floating over either one; previously a
+   cursor-tracking "add note" button lived right on this same seam, which
+   is exactly what made it impossible to grab the border to resize
+   anything (there was nothing to grab in the first place — the seam
+   was never actually draggable until this). Widens on hover/while
+   dragging so the hit target is comfortable without the idle state
+   looking like a thick, permanent bar. */
+.preview-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0 -3px;
+  position: relative;
+  z-index: 22;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
 }
-.note-seam-btn-visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-.note-seam-btn[hidden] { display: none; }
+.preview-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.preview-resize-handle:hover::after,
+.preview-resize-handle.preview-resize-active::after {
+  background: var(--accent-default);
+}
+.preview-resize-handle[hidden] { display: none; }
 
 .preview-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem;
