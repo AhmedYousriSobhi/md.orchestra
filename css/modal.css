@@ -107,28 +107,34 @@
 .recovery-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .recovery-row { border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 0.9rem; background: var(--bg-soft); transition: border-color 0.12s ease, background 0.12s ease; }
 .recovery-row-active { border-color: color-mix(in srgb, var(--accent-default) 45%, var(--border)); }
-.recovery-row-clickable { cursor: pointer; }
-.recovery-row-clickable:hover, .recovery-row-clickable:focus-visible {
+.recovery-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; border-radius: 6px; margin: -0.2rem -0.3rem; padding: 0.2rem 0.3rem; }
+.recovery-row-head.recovery-row-clickable { cursor: pointer; }
+.recovery-row-head.recovery-row-clickable:hover, .recovery-row-head.recovery-row-clickable:focus-visible {
   background: color-mix(in srgb, var(--accent-default) 8%, var(--bg-soft));
-  border-color: color-mix(in srgb, var(--accent-default) 35%, var(--border));
   outline: none;
 }
 .recovery-active-badge { color: var(--accent-default); }
-.recovery-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
 .recovery-file { font-weight: 700; font-size: 0.9rem; color: var(--text); word-break: break-all; }
 .recovery-time { font-size: 0.72rem; color: var(--text-faint); flex-shrink: 0; }
 .recovery-excerpt { font-size: 0.82rem; color: var(--text-soft); margin: 0.4rem 0 0.7rem; }
-.recovery-sections { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.7rem; }
-.recovery-section-chip {
-  font-size: 0.76rem; font-weight: 600; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
-  padding: 0.25rem 0.65rem; cursor: pointer; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+/* One stacked sub-row per individually-changed section within a file, each
+   with its own Save/Discard — separate from the file-level "Save all" /
+   "Discard all" pair below the list (see recovery-row-actions). */
+.recovery-sections {
+  display: flex; flex-direction: column; gap: 0.3rem; margin: 0.6rem 0 0.7rem;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0;
 }
-.recovery-section-chip:hover {
-  border-color: color-mix(in srgb, var(--accent-default) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent-default) 8%, var(--surface));
+.recovery-section-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.15rem 0.2rem; border-radius: 6px; }
+.recovery-section-row:hover { background: color-mix(in srgb, var(--accent-default) 6%, transparent); }
+.recovery-section-label {
+  font-size: 0.8rem; font-weight: 600; color: var(--text);
+  background: none; border: none; padding: 0.15rem 0; cursor: pointer; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
 }
+.recovery-section-label:hover { color: var(--accent-default); }
+.recovery-section-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
 .recovery-row-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 /* In-app confirm() replacement */

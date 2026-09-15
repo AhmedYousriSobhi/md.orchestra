@@ -2,6 +2,7 @@ import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
 import { findChangedNodes } from './markdown/diff.js';
+import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection,
 } from './state/store.js';
@@ -559,12 +560,7 @@ function notifyOtherPendingChanges(justSavedIdentity) {
   const savedId = snapshotIdentity(justSavedIdentity);
   const others = listRecoverySnapshots().filter((s) => s.id !== savedId);
   if (!others.length) return;
-  openChangesPanel(others.map(enrichSnapshot), null, {
-    onSave: handleChangesSave,
-    onOpen: handleChangesOpenSnapshot,
-    onOpenSection: handleChangesOpenSection,
-    onDiscard: handleChangesDiscard,
-  });
+  openChangesPanel(others.map(enrichSnapshot), null, changesPanelHandlers);
 }
 
 /**
@@ -620,6 +616,125 @@ async function handleChangesSave(snapshot, isActive) {
     clearRecoverySnapshot(snapshot);
   } catch (err) {
     showToast(`Could not save ${snapshot.fileName}: ${err.message}`, { type: 'error' });
+  }
+}
+
+/** Where a section-level save (see handleChangesSaveSection) should write its merged content: the same file handle a whole-file save would use, active document or not. */
+function resolveWriteHandle(isActive, snapshot) {
+  if (isActive) return getState().fileHandle;
+  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRelPath) : null;
+  return entry?.fileHandle || null;
+}
+
+async function writeMarkdownFor(isActive, snapshot, text) {
+  const fileName = isActive ? getState().fileName : snapshot.fileName;
+  const handle = resolveWriteHandle(isActive, snapshot);
+  if (handle) {
+    await writeToHandle(handle, text);
+    showToast(`Saved to ${fileName}`);
+  } else {
+    downloadText(fileName, text);
+    showToast(`Downloaded ${fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+  }
+}
+
+/**
+ * Save just ONE changed section (from the Changes panel's per-section
+ * controls) straight to disk, leaving every other pending section's edit
+ * exactly as unsaved as it was: builds a Markdown document that's the
+ * file's current on-disk content (its baseline) everywhere *except* this
+ * one section, which comes from the edited version (see
+ * markdown/sectionMerge.js), and writes that. Falls back to a full-file
+ * save if there's no baseline to diff against at all (a legacy snapshot
+ * predating per-section tracking — nothing to merge with).
+ */
+async function handleChangesSaveSection(snapshot, isActive, sectionId) {
+  const baseText = isActive ? currentBaseline : snapshot.baselineMarkdown;
+  if (!baseText) {
+    await handleChangesSave(snapshot, isActive);
+    return;
+  }
+  const editedDoc = isActive ? getState().doc : (snapshot.doc ?? parseMarkdown(snapshot.markdown));
+  const baseDoc = parseMarkdown(baseText);
+  const merged = applySectionToBase(baseDoc, editedDoc, sectionId);
+  if (!merged) return;
+  const mergedText = serializeMarkdown(merged);
+  try {
+    await writeMarkdownFor(isActive, snapshot, mergedText);
+  } catch (err) {
+    showToast(`Save failed: ${err.message}`, { type: 'error' });
+    return;
+  }
+  // Everything else still pending is whatever the live/edited doc still
+  // disagrees with the file we just wrote — i.e. every OTHER section that
+  // was changed, since this one now matches on disk.
+  const remaining = findChangedNodes(editedDoc, merged);
+  if (isActive) {
+    currentBaseline = mergedText;
+    if (!remaining.length) {
+      setState({ dirty: false });
+      clearRecoverySnapshot(snapshot);
+    } else {
+      snapshotNow();
+    }
+  } else {
+    const identity = { fileName: snapshot.fileName, workspaceRelPath: snapshot.workspaceRelPath, workspaceRootName: snapshot.workspaceRootName };
+    if (!remaining.length) {
+      clearRecoverySnapshot(identity);
+    } else {
+      saveRecoverySnapshot({ ...identity, markdown: snapshot.markdown, baselineMarkdown: mergedText });
+      updateChangesBadge();
+    }
+  }
+}
+
+/**
+ * Discard just ONE changed section's edit (from the Changes panel),
+ * reverting it back to the file's baseline while leaving every other
+ * pending section's edit untouched (see markdown/sectionMerge.js). For the
+ * active document this mutates the live in-memory doc directly (not via
+ * loadDocument, which would reset the current selection/undo history —
+ * unwanted for reverting a single section elsewhere in the tree); confirms
+ * first, same as discarding the whole active file, since it's just as
+ * irreversible for that one section. Non-active files skip the confirm,
+ * matching handleChangesDiscard's reasoning: nothing currently open is at
+ * risk, just a cached pending edit.
+ */
+async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
+  const baseText = isActive ? currentBaseline : snapshot.baselineMarkdown;
+  if (!baseText) return;
+  const baseDoc = parseMarkdown(baseText);
+
+  if (isActive) {
+    const ok = await confirmDialog({
+      title: 'Discard this section\'s changes?',
+      message: 'This reverts just this section back to its last saved version, discarding everything changed in it since. This can\'t be undone.',
+      confirmLabel: 'Discard section',
+      danger: true,
+    });
+    if (!ok) return;
+    const reverted = revertSectionToBase(baseDoc, getState().doc, sectionId);
+    if (!reverted) return;
+    const remaining = findChangedNodes(reverted, baseDoc);
+    setState({ doc: reverted, dirty: Boolean(remaining.length) });
+    if (!remaining.length) {
+      clearRecoverySnapshot(snapshot);
+    } else {
+      snapshotNow();
+    }
+    return;
+  }
+
+  const editedDoc = snapshot.doc ?? parseMarkdown(snapshot.markdown);
+  const reverted = revertSectionToBase(baseDoc, editedDoc, sectionId);
+  if (!reverted) return;
+  const remaining = findChangedNodes(reverted, baseDoc);
+  const identity = { fileName: snapshot.fileName, workspaceRelPath: snapshot.workspaceRelPath, workspaceRootName: snapshot.workspaceRootName };
+  if (!remaining.length) {
+    clearRecoverySnapshot(identity);
+  } else {
+    saveRecoverySnapshot({ ...identity, markdown: serializeMarkdown(reverted), baselineMarkdown: baseText });
+    updateChangesBadge();
   }
 }
 
@@ -695,16 +810,20 @@ async function handleChangesDiscard(snapshot, isActive) {
   }
 }
 
+const changesPanelHandlers = {
+  onSaveFile: handleChangesSave,
+  onSaveSection: handleChangesSaveSection,
+  onOpen: handleChangesOpenSnapshot,
+  onOpenSection: handleChangesOpenSection,
+  onDiscardFile: handleChangesDiscard,
+  onDiscardSection: handleChangesDiscardSection,
+};
+
 function handleOpenChanges() {
   const { doc, fileName, workspaceRelPath } = getState();
   const activeId = doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
   const enriched = listRecoverySnapshots().map((snap) => (snap.id === activeId ? enrichActiveSnapshot(snap) : enrichSnapshot(snap)));
-  openChangesPanel(enriched, activeId, {
-    onSave: handleChangesSave,
-    onOpen: handleChangesOpenSnapshot,
-    onOpenSection: handleChangesOpenSection,
-    onDiscard: handleChangesDiscard,
-  });
+  openChangesPanel(enriched, activeId, changesPanelHandlers);
 }
 
 el.saveBtn.addEventListener('click', handleSave);

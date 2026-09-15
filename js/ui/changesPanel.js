@@ -26,17 +26,20 @@ function excerptOf(markdown, max = 110) {
  * tracked purely from memory. `activeId` marks whichever snapshot (if any)
  * corresponds to the live document. Each snapshot's `changedSections`
  * (from main.js's enrichSnapshot()/enrichActiveSnapshot(), a list of
- * {id, title, level}) is rendered as individually-clickable chips — one
- * *file* can hold several independent changes, each jumpable on its own,
- * rather than the row only ever representing "this whole file changed".
+ * {id, title, level}) is rendered as its own stacked sub-row under that
+ * file — one *file* can hold several independently-edited sections, each
+ * with its own Save/Discard, rather than the row only ever offering an
+ * all-or-nothing confirm for the whole file.
  *
- * Every row offers Save (write straight to disk — for the active row
- * that's just the normal save; for any other, without switching away from
- * what you're doing) and Discard (for the active row, revert it back to
- * its last-saved baseline; for any other, drop that pending snapshot for
- * good). Non-active rows are also clickable anywhere on the row — not only
- * their explicit Open button — to switch to that file. `handlers` is
- * `{ onSave(snapshot, isActive), onOpen(snapshot), onOpenSection(snapshot, sectionId), onDiscard(snapshot, isActive) }`.
+ * Every file group also keeps a file-level Save all / Discard all pair (for
+ * the active row: the normal save, and reverting the whole document back to
+ * its baseline; for any other file: writing everything pending straight to
+ * disk, or dropping the pending snapshot entirely) alongside each section's
+ * own controls. Non-active rows are also clickable anywhere on the head —
+ * not only their explicit Open button — to switch to that file. `handlers`
+ * is `{ onSaveFile(snapshot, isActive), onSaveSection(snapshot, isActive, sectionId),
+ * onOpen(snapshot), onOpenSection(snapshot, sectionId),
+ * onDiscardFile(snapshot, isActive), onDiscardSection(snapshot, isActive, sectionId) }`.
  */
 export function openChangesPanel(snapshots, activeId, handlers) {
   if (panelEl) panelEl.remove();
@@ -66,53 +69,87 @@ export function openChangesPanel(snapshots, activeId, handlers) {
       const isActive = snap.id === activeId;
       const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
       const sections = snap.changedSections || [];
+      const hasSections = sections.length > 0;
 
-      const actions = [
+      /** Drop one already-resolved section from this file's row in place, and drop the whole row once none are left — without waiting on a full re-fetch from main.js. */
+      function removeSectionLocally(sectionId) {
+        snap.changedSections = sections.filter((s) => s.id !== sectionId);
+        if (!snap.changedSections.length) {
+          pending = pending.filter((s) => s.id !== snap.id);
+        }
+        renderList();
+      }
+
+      const fileActions = [
         h('button', {
           class: 'btn btn-primary',
           type: 'button',
           onClick: stop(async () => {
-            await handlers.onSave(snap, isActive);
+            await handlers.onSaveFile(snap, isActive);
             if (!isActive) { pending = pending.filter((s) => s.id !== snap.id); renderList(); }
           }),
-        }, '💾 Save'),
+        }, hasSections ? '💾 Save all' : '💾 Save'),
       ];
       if (!isActive) {
-        actions.push(h('button', {
+        fileActions.push(h('button', {
           class: 'btn btn-ghost',
           type: 'button',
           onClick: stop(() => { handlers.onOpen(snap); handleClose(); }),
         }, '↪ Open'));
       }
-      actions.push(h('button', {
+      fileActions.push(h('button', {
         class: 'btn btn-ghost',
         type: 'button',
         onClick: stop(() => {
-          handlers.onDiscard(snap, isActive);
+          handlers.onDiscardFile(snap, isActive);
           pending = pending.filter((s) => s.id !== snap.id);
           renderList();
         }),
-      }, isActive ? '🗑 Discard changes' : '🗑 Discard'));
+      }, hasSections ? '🗑 Discard all' : (isActive ? '🗑 Discard changes' : '🗑 Discard')));
 
-      const changesContent = sections.length
-        ? h('div', { class: 'recovery-sections' }, sections.map((sec) => h('button', {
-          class: 'recovery-section-chip',
-          type: 'button',
-          title: `Jump to "${sec.title}"`,
-          onClick: stop(() => { handlers.onOpenSection(snap, sec.id); handleClose(); }),
-        }, sec.title)))
+      const changesContent = hasSections
+        ? h('div', { class: 'recovery-sections' }, sections.map((sec) => h('div', { class: 'recovery-section-row' }, [
+          h('button', {
+            class: 'recovery-section-label',
+            type: 'button',
+            title: `Jump to "${sec.title}"`,
+            onClick: stop(() => { handlers.onOpenSection(snap, sec.id); handleClose(); }),
+          }, `${'#'.repeat(sec.level)} ${sec.title}`),
+          h('div', { class: 'recovery-section-actions' }, [
+            h('button', {
+              class: 'code-btn',
+              type: 'button',
+              title: `Save just "${sec.title}"`,
+              onClick: stop(async () => {
+                await handlers.onSaveSection(snap, isActive, sec.id);
+                removeSectionLocally(sec.id);
+              }),
+            }, '💾'),
+            h('button', {
+              class: 'code-btn code-btn-danger',
+              type: 'button',
+              title: `Discard changes to "${sec.title}"`,
+              onClick: stop(async () => {
+                await handlers.onDiscardSection(snap, isActive, sec.id);
+                removeSectionLocally(sec.id);
+              }),
+            }, '↩'),
+          ]),
+        ])))
         : h('p', { class: 'recovery-excerpt' }, excerptOf(snap.markdown));
 
       const row = h('div', {
-        class: `recovery-row${isActive ? ' recovery-row-active' : ' recovery-row-clickable'}`,
-        ...(isActive ? {} : {
-          role: 'button',
-          tabindex: '0',
-          onClick: () => { handlers.onOpen(snap); handleClose(); },
-          onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlers.onOpen(snap); handleClose(); } },
-        }),
+        class: `recovery-row${isActive ? ' recovery-row-active' : ''}`,
       }, [
-        h('div', { class: 'recovery-row-head' }, [
+        h('div', {
+          class: `recovery-row-head${isActive ? '' : ' recovery-row-clickable'}`,
+          ...(isActive ? {} : {
+            role: 'button',
+            tabindex: '0',
+            onClick: () => { handlers.onOpen(snap); handleClose(); },
+            onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlers.onOpen(snap); handleClose(); } },
+          }),
+        }, [
           h('span', { class: 'recovery-file' }, [
             isActive ? h('span', { class: 'recovery-active-badge', title: 'Currently open' }, '● ') : null,
             snap.workspaceRelPath || snap.fileName,
@@ -120,7 +157,7 @@ export function openChangesPanel(snapshots, activeId, handlers) {
           h('span', { class: 'recovery-time' }, timeAgo(snap.savedAt)),
         ]),
         changesContent,
-        h('div', { class: 'recovery-row-actions' }, actions),
+        h('div', { class: 'recovery-row-actions' }, fileActions),
       ]);
       list.appendChild(row);
     });
