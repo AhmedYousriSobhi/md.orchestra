@@ -13,8 +13,9 @@ import {
 } from './state/workspace.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
-  renderWorkspacesPanel,
+  renderWorkspacesPanel, forgetWorkspaceCollapsed,
 } from './ui/filesPanel.js';
+import { forgetWorkspaceViewState } from './ui/focalGraph.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
@@ -586,6 +587,8 @@ async function handleCloseWorkspace(rootName) {
     });
   }
   removeWorkspace(rootName);
+  forgetWorkspaceViewState(rootName);
+  forgetWorkspaceCollapsed(rootName);
   render();
 }
 

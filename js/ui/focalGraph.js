@@ -54,6 +54,11 @@ function getViewState(rootName) {
   return vs;
 }
 
+/** Drop a closed workspace's own navigation state — see main.js's handleCloseWorkspace. Without this, every distinct folder ever opened in a session stays in viewStateByWorkspace for good, even long after it's been closed. */
+export function forgetWorkspaceViewState(rootName) {
+  viewStateByWorkspace.delete(rootName);
+}
+
 function dirname(relPath) {
   return relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
 }

@@ -24,6 +24,11 @@ function setWorkspaceCollapsed(rootName, collapsed) {
   try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
 }
 
+/** Drop a closed workspace's own fold preference — see main.js's handleCloseWorkspace. Without this, every distinct folder name ever opened stays in this persisted set for good, even long after it's been closed. */
+export function forgetWorkspaceCollapsed(rootName) {
+  setWorkspaceCollapsed(rootName, false);
+}
+
 /**
  * Render one open workspace's contents (the focal-neighborhood graph — see
  * focalGraph.js) into `container`. `activeRelPath` highlights whichever
@@ -44,7 +49,7 @@ function setWorkspaceCollapsed(rootName, collapsed) {
  * discarded — see loadFromText) still leaves a visible trail of what's
  * been touched.
  */
-export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
+function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
   const { pendingPaths = new Set() } = options;
   container.innerHTML = '';
   if (!workspace) return;
