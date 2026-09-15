@@ -845,3 +845,53 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   switching files via this panel never prompts even when the edit is
   only milliseconds old, and every other discard/confirm path is
   unaffected.
+- **Stage 40** — Reported: Stage 39 made the Changes panel list each
+  changed section as its own clickable chip, but Save/Discard were
+  still per-*file* — clicking Save on a row wrote the whole file's
+  content, chip or no chip. The actual ask: each changed section
+  should be its own separate, independently-confirmable panel, stacked
+  under its file, so the user picks exactly which edits to apply.
+
+  Each chip became a stacked sub-row with its own Save (💾) and Discard
+  (↩) — the file-level "Save all" / "Discard all" pair from before is
+  still there for acting on everything in a file at once. The hard
+  part was storage, not UI: a recovery snapshot only ever held one
+  file's full pending Markdown, with no notion of "apply this one
+  section, leave the rest pending." `markdown/sectionMerge.js` (new)
+  builds that: `applySectionToBase(baseDoc, editedDoc, sectionId)`
+  clones the file's current on-disk tree (`baseDoc`, i.e. the
+  snapshot's `baselineMarkdown`) and splices in just the one edited
+  section's content from `editedDoc` by position — the same
+  position-based node matching diff.js already relies on for listing
+  changed sections in the first place, since ids aren't comparable
+  across separate parses. `revertSectionToBase()` is the mirror image,
+  for discarding one section while leaving every other pending edit in
+  place. After a partial save, whatever the edited doc still disagrees
+  with the newly-written file is exactly the sections still pending —
+  no separate bookkeeping needed, the existing diff just gets re-run
+  against the merged result.
+
+  For the currently-open file, a partial save updates its baseline in
+  place (`currentBaseline`) without touching the live in-memory doc at
+  all — nothing else pending is disturbed, dirty only clears once
+  nothing's left. Discarding one section in the active file mutates the
+  in-memory tree directly rather than going through the usual full
+  reload path, specifically so it doesn't reset the current
+  selection/undo history for the *other* section you might be sitting
+  on. For a file that isn't currently open, both actions read/write its
+  recovery snapshot directly (write the merged file, or re-save the
+  snapshot with an updated baseline) without switching anything. Saving
+  the active file's own section still needs a live handle or download,
+  same as any other save; discarding it still confirms first (as
+  destructive as discarding the whole file, just smaller in scope) —
+  discarding a section of a file that isn't even open doesn't, matching
+  the reasoning already established for whole-file discards. Verified:
+  saving one of two changed sections in a file downloads content with
+  only that section's edit and leaves the other listed as still
+  pending; discarding the other afterwards cleanly resolves the row to
+  "Everything is saved"; discarding one section while a second stays
+  pending reverts only the first in the live document and leaves the
+  second's undo history and edit intact; the same save/discard-one
+  flows work identically for a file that isn't the currently open one,
+  without disturbing whatever *is* open. No native dialogs, no console
+  errors.
