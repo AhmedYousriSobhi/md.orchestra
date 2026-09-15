@@ -46,8 +46,8 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
 
 1. Load a document: use **Open .md file** (grants direct save-back on
    Chrome/Edge), drag/drop, or load one of the bundled samples (`sample.md`,
-   `sample2.md`, `sample3.md`) — or use **📁 Open folder** to load a whole
-   directory of them at once (see "Working with a directory" below).
+   `sample3.md`) — or use **📁 Open folder** to load a whole directory of
+   them at once (see "Working with a directory" below).
 2. Browse the heading tree in the sidebar — collapsed to just the active
    path by default, click the ▸ chevrons to expand others — or open
    **🗺️ Map** for a whole-document diagram, either the indented **🌳 Tree**
@@ -229,7 +229,7 @@ rest of the app.
 ## Progress log
 
 - **Stage 0** — Repo initialized, existing assets (`doc_flowchart.html`,
-  `sample.md`, `sample2.md`) committed as-is.
+  `sample.md`) committed as-is.
 - **Stage 1** — Markdown core: heading-tree parser, serializer, note/AI-insert
   marker storage, sanitized renderer, and the pub/sub state store.
 - **Stage 2** — AI layer: Claude client, prompt templates, localStorage-only
@@ -572,3 +572,11 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   from the themed prose around it is rather the point: an annotation
   layered on the page, not part of the document itself. Verified in both
   themes with several notes at once (each getting a different color/tilt).
+- **Stage 29** — Removed `sample2.md` from the project entirely, at the
+  user's request — including scrubbing it from every prior commit's
+  history (it was only ever added once, in Stage 0, and never modified
+  again, so this was a straightforward `git filter-branch` across all 44
+  commits rather than a per-commit content edit). The old history is kept
+  intact on a `backup/pre-sample2-removal` branch/tag rather than
+  discarded outright. Updated the Samples menu and the self-test suite's
+  round-trip check to stop referencing the removed file.
