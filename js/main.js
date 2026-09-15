@@ -144,6 +144,19 @@ const standaloneHandles = new Map();
 // referencing it can't ever hit the temporal dead zone a `const` further
 // down in this file would.
 const openStandaloneFileNames = new Set();
+// Every open standalone file's own last-known clean (saved/on-disk)
+// content, by fileName — the fallback for switching back to one that has
+// no pending recovery snapshot (nothing edited since) AND no live handle
+// to re-read from disk (a file opened through the <input type=file>
+// fallback never grants one at all, and this is Firefox's *only* path —
+// it doesn't support the File System Access API showOpenFilePicker() relies
+// on). Without this, reopening such a file after switching away had no
+// route back to its content whatsoever: reopenCleanStandaloneFile() could
+// only fail outright, showing an error and removing it from
+// openStandaloneFileNames — which looked exactly like it had silently
+// "disappeared," when nothing was actually lost. Updated on every fresh
+// load and every save.
+const standaloneCleanText = new Map();
 
 /**
  * A thin, never-throwing wrapper around the real render logic below. This
@@ -493,6 +506,7 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
       return;
     }
     currentBaseline = text;
+    if (!workspaceRelPath) standaloneCleanText.set(fileName, text);
     loadDocument({
       doc, fileName, fileHandle, workspaceRelPath, workspaceRootName,
     });
@@ -635,6 +649,7 @@ function renderExplorerStandaloneEntries() {
         onClick: () => {
           if (snap) handleChangesDiscard(snap, false);
           openStandaloneFileNames.delete(name);
+          standaloneCleanText.delete(name);
           render();
         },
       }, '✕'),
@@ -670,6 +685,7 @@ async function handleCloseStandaloneFile() {
     if (!ok) return;
   }
   openStandaloneFileNames.delete(fileName);
+  standaloneCleanText.delete(fileName);
   currentBaseline = null;
   setState({
     doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
@@ -679,28 +695,36 @@ async function handleCloseStandaloneFile() {
 /**
  * Switch back to a standalone file that's open (see
  * openStandaloneFileNames) but currently neither active nor dirty — there's
- * no recovery snapshot to restore (nothing to preserve), so this re-reads
+ * no recovery snapshot to restore (nothing to preserve). Prefers re-reading
  * it fresh from its retained file-picker handle, the same live-handle
- * guarantee a workspace file always has via getWorkspaceFile(). A file
- * opened through the <input type=file> fallback (no handle at all in this
- * browser) can't be re-read this way; asks the user to pick it again
- * instead of pretending to reopen it.
+ * guarantee a workspace file always has via getWorkspaceFile() — but a file
+ * opened through the <input type=file> fallback never grants one at all
+ * (Firefox's *only* path, since it doesn't support the File System Access
+ * API showOpenFilePicker() relies on), so this falls back to its own
+ * last-known clean content (standaloneCleanText) rather than failing
+ * outright — which used to look exactly like the file had silently
+ * vanished, when nothing was actually lost.
  */
 async function reopenCleanStandaloneFile(fileName) {
   const handle = standaloneHandles.get(fileName);
-  if (!handle) {
+  if (handle) {
+    try {
+      const file = await handle.getFile();
+      const text = await file.text();
+      loadFromText(text, fileName, handle);
+      return;
+    } catch (err) {
+      showToast(`Could not re-read ${fileName} from disk (${err.message}) — showing its last-known content instead.`, { type: 'error' });
+    }
+  }
+  const cached = standaloneCleanText.get(fileName);
+  if (cached === undefined) {
     showToast(`Can't reopen "${fileName}" automatically — use "Open .md file" to pick it again.`, { type: 'error' });
     openStandaloneFileNames.delete(fileName);
     render();
     return;
   }
-  try {
-    const file = await handle.getFile();
-    const text = await file.text();
-    loadFromText(text, fileName, handle);
-  } catch (err) {
-    showToast(`Could not reopen ${fileName}: ${err.message}`, { type: 'error' });
-  }
+  loadFromText(cached, fileName, null);
 }
 
 /**
@@ -886,6 +910,7 @@ async function handleSave() {
       setState({ dirty: false });
       clearRecoverySnapshot(identity);
       currentBaseline = text;
+      if (!workspaceRelPath) standaloneCleanText.set(fileName, text);
       showToast(`Saved to ${fileName}`);
     } catch (err) {
       showToast(`Save failed: ${err.message}`, { type: 'error' });
@@ -899,6 +924,7 @@ async function handleSave() {
   setState({ dirty: false });
   clearRecoverySnapshot(identity);
   currentBaseline = text;
+  if (!workspaceRelPath) standaloneCleanText.set(fileName, text);
   showToast(
     supportsFileSystemAccess
       ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
