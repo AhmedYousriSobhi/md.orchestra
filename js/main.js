@@ -242,11 +242,25 @@ function snapshotNow() {
     doc, fileName, dirty, workspaceRelPath,
   } = getState();
   if (!doc || !dirty) return;
+  const identity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+  const serialized = serializeMarkdown(doc);
+  // `dirty` only means "something touched this doc since it loaded" — it
+  // doesn't know whether that edit actually left the content any different
+  // from what's on disk. An edit immediately undone (or one that otherwise
+  // round-trips back to the exact same content, e.g. regenerating a ToC
+  // and then undoing it) still sets dirty:true, since updateNode/undoNode
+  // have no notion of "baseline" to check against — only this function
+  // does. Catching that here, rather than blindly re-persisting a snapshot
+  // that would diff to zero real changes, is what keeps the Changes badge
+  // from reporting a change that no longer exists.
+  if (currentBaseline !== null && serialized === currentBaseline) {
+    setState({ dirty: false });
+    clearRecoverySnapshot(identity);
+    return;
+  }
   saveRecoverySnapshot({
-    fileName,
-    workspaceRelPath,
-    workspaceRootName: getWorkspace()?.rootName || null,
-    markdown: serializeMarkdown(doc),
+    ...identity,
+    markdown: serialized,
     baselineMarkdown: currentBaseline,
   });
   // Writing a snapshot is a side effect, not a setState() — nothing else
@@ -264,19 +278,28 @@ function updateChangesBadge() {
   el.changesBadge.textContent = String(pendingCount);
 }
 
-/** The list of {id, title, level} sections a snapshot actually touched, vs. its own baseline — see markdown/diff.js. Empty (not thrown) if there's no baseline to compare against, or either parse fails. */
+/**
+ * The list of {id, title, level} sections a snapshot actually touched, vs.
+ * its own baseline — see markdown/diff.js. `null` (not an empty array) when
+ * there's no baseline to compare against or either parse fails — a real,
+ * successfully-computed diff can legitimately be an empty array (every
+ * edit since baseline got undone again), and that must stay distinguishable
+ * from "couldn't tell": countChangedSections() below treats them very
+ * differently.
+ */
 function diffSnapshot(snap) {
-  if (!snap.baselineMarkdown) return [];
+  if (!snap.baselineMarkdown) return null;
   try {
     return findChangedNodes(parseMarkdown(snap.markdown), parseMarkdown(snap.baselineMarkdown));
   } catch {
-    return [];
+    return null;
   }
 }
 
-/** How many individual sections (not files) a snapshot represents — at least 1, even for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section). */
+/** How many individual sections (not files) a snapshot represents — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero). */
 function countChangedSections(snap) {
-  return diffSnapshot(snap).length || 1;
+  const diff = diffSnapshot(snap);
+  return diff === null ? 1 : diff.length;
 }
 
 /** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
@@ -606,10 +629,13 @@ function notifyOtherPendingChanges(justSavedIdentity) {
 function enrichSnapshot(snap) {
   try {
     const doc = parseMarkdown(snap.markdown);
-    const changedSections = snap.baselineMarkdown ? findChangedNodes(doc, parseMarkdown(snap.baselineMarkdown)) : [];
+    // `null` (not `[]`) when there's no baseline to diff against — the
+    // Changes panel needs to tell "couldn't determine what changed" apart
+    // from "diffed it, genuinely nothing did" (see diffSnapshot() above).
+    const changedSections = snap.baselineMarkdown ? findChangedNodes(doc, parseMarkdown(snap.baselineMarkdown)) : null;
     return { ...snap, doc, changedSections };
   } catch {
-    return { ...snap, doc: null, changedSections: [] };
+    return { ...snap, doc: null, changedSections: null };
   }
 }
 

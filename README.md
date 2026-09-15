@@ -937,7 +937,36 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   preview side mirrors it there instead, moving away hides it again,
   and clicking it adds a note to the selected section's own notes list
   — all with no console errors.
-- **Stage 42** (branch `feature/focal-neighborhood-graph`, not yet merged)
+- **Stage 42** — Reported: regenerating a section's ToC and then
+  clicking Undo left the Changes badge/panel still reporting a pending
+  change, even though the content was back to exactly what it was
+  before. Two compounding bugs: `countChangedSections()` (and the
+  Changes panel's own subtitle tally) computed `diff.length || 1` —
+  meant as a fallback of "count as at least 1" for a legacy snapshot
+  with no baseline to diff against at all, but `||` also silently
+  caught the *legitimate* case of a real diff coming back genuinely
+  empty (0 is falsy), forcing it to 1 either way; and even past that,
+  the debounced snapshot writer kept re-persisting a "pending" snapshot
+  for a file that had, in fact, gone right back to matching its own
+  baseline, since `updateNode()`/`undoNode()` always set `dirty: true`
+  unconditionally (they have no notion of "baseline" — only main.js
+  does) and nothing ever rechecked that afterward. Fixed by having
+  `diffSnapshot()`/`enrichSnapshot()` return `null` (not `[]`)
+  specifically for "couldn't diff", so the two cases stay
+  distinguishable, switching the panel's own tally to `??` instead of
+  `||`, and having `snapshotNow()` compare the serialized doc against
+  the baseline before persisting anything — an exact match clears
+  `dirty` and drops any stale pending snapshot instead of re-saving
+  one, which also fixed the header's dirty indicator getting stuck on
+  "unsaved changes" in the same scenario. Verified: regenerating a ToC
+  section shows a real pending change (badge = 1); undoing it and
+  waiting for the debounce to settle clears the badge, the dirty
+  indicator reads "up to date" again, and the Changes panel reports
+  nothing to save or discard. (Landed directly on `master`, not this
+  branch — an unrelated, pre-existing issue found while testing this
+  feature, fixed where it actually affects the deployed app, then
+  merged back into this branch.)
+- **Stage 43** (branch `feature/focal-neighborhood-graph`, not yet merged)
   — A proposed "Best-Practice View Mode: Focal Neighborhood Graph" for
   navigating a whole workspace (a directory of Markdown files), rather
   than a single document's headings: instead of always showing the

@@ -54,7 +54,12 @@ export function openChangesPanel(snapshots, activeId, handlers) {
   const subtitle = h('div', { class: 'insight-subtitle' }, '');
 
   function renderList() {
-    const totalChanges = pending.reduce((sum, s) => sum + (s.changedSections?.length || 1), 0);
+    // ?? (not ||): a snapshot that WAS diffable and genuinely has zero
+    // remaining changed sections (e.g. an edit that got undone right back
+    // to baseline) must count as 0, not fall back to "at least 1" — that
+    // fallback is only for changedSections being null/undefined (couldn't
+    // diff at all, a legacy snapshot with no baseline).
+    const totalChanges = pending.reduce((sum, s) => sum + (s.changedSections?.length ?? 1), 0);
     subtitle.textContent = pending.length
       ? `${totalChanges} change${totalChanges === 1 ? '' : 's'} across ${pending.length} file${pending.length === 1 ? '' : 's'}`
       : 'Everything is saved';
