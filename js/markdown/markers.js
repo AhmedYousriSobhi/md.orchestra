@@ -1,3 +1,5 @@
+import { nextId } from '../utils/id.js';
+
 // User notes and Claude-inserted suggestions live inside a section's raw
 // bodyMarkdown, wrapped in HTML-comment markers so they can be pulled back
 // out into their own editor slots on reload instead of being duplicated.
@@ -82,4 +84,10 @@ export function withAiInsert(bodyMarkdown, insertText) {
   const parts = splitBody(bodyMarkdown);
   parts.aiInsert = insertText;
   return joinBody(parts);
+}
+
+/** Append a brand-new, empty note to a section's bodyMarkdown — the one "add a note" action, whether triggered from within the section's own notes editor (ui/notesPanel.js) or the quick-add button on the content/preview divider (main.js). */
+export function addNote(bodyMarkdown) {
+  const parts = splitBody(bodyMarkdown);
+  return joinBody({ ...parts, notes: [...parts.notes, { id: nextId('note'), text: '' }] });
 }

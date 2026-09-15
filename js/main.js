@@ -4,8 +4,9 @@ import { buildSlugIndex } from './markdown/slug.js';
 import { findChangedNodes } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
-  getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection,
+  getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
 } from './state/store.js';
+import { addNote } from './markdown/markers.js';
 import {
   getWorkspace, setWorkspace, clearWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
@@ -50,6 +51,7 @@ const el = {
   headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
+  sectionViewWrap: document.getElementById('section-view-wrap'),
   sectionView: document.getElementById('section-view'),
   emptyState: document.getElementById('empty-state'),
   fileInput: document.getElementById('file-input'),
@@ -63,6 +65,7 @@ const el = {
   mapViewBtn: document.getElementById('map-view-btn'),
   previewToggleBtn: document.getElementById('preview-edge-toggle'),
   previewPanel: document.getElementById('preview-panel'),
+  noteSeamBtn: document.getElementById('note-seam-btn'),
   saveBtn: document.getElementById('save-btn'),
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
@@ -855,6 +858,76 @@ el.previewToggleBtn.addEventListener('click', () => {
   }
   render();
 });
+/**
+ * A quick "add a note" button that floats on the seam between the content
+ * pane and the preview panel, rather than only living inside the currently
+ * focused card's own notes editor — hovering near the shared border from
+ * either side reveals it at the cursor's height, right on whichever side
+ * you're actually on (a cosmetic mirror, not a different action: it always
+ * adds a note to whatever section is currently selected, the same one the
+ * card view and the preview are both already showing). Only meaningful
+ * when there's actually a seam to hover near — a loaded document, and the
+ * preview panel open beside it.
+ */
+const SEAM_HOVER_THRESHOLD = 48;
+let seamHideTimer = null;
+
+function positionSeamButton(clientX, clientY, side) {
+  if (seamHideTimer) { clearTimeout(seamHideTimer); seamHideTimer = null; }
+  if (!getState().doc || el.previewPanel.hidden) return;
+  const appBodyRect = el.appBody.getBoundingClientRect();
+  el.noteSeamBtn.hidden = false;
+  el.noteSeamBtn.classList.add('note-seam-btn-visible');
+  el.noteSeamBtn.classList.toggle('note-seam-btn-content', side === 'content');
+  el.noteSeamBtn.classList.toggle('note-seam-btn-preview', side === 'preview');
+  el.noteSeamBtn.style.left = `${clientX - appBodyRect.left}px`;
+  el.noteSeamBtn.style.top = `${clientY - appBodyRect.top}px`;
+}
+
+function scheduleHideSeamButton() {
+  if (seamHideTimer) clearTimeout(seamHideTimer);
+  seamHideTimer = setTimeout(() => {
+    el.noteSeamBtn.classList.remove('note-seam-btn-visible');
+    el.noteSeamBtn.hidden = true;
+    seamHideTimer = null;
+  }, 150);
+}
+
+el.sectionViewWrap.addEventListener('mousemove', (e) => {
+  if (el.previewPanel.hidden) return;
+  const rect = el.sectionViewWrap.getBoundingClientRect();
+  const distFromSeam = rect.right - e.clientX;
+  if (distFromSeam >= 0 && distFromSeam <= SEAM_HOVER_THRESHOLD) {
+    positionSeamButton(rect.right - 6, e.clientY, 'content');
+  } else {
+    scheduleHideSeamButton();
+  }
+});
+el.sectionViewWrap.addEventListener('mouseleave', scheduleHideSeamButton);
+
+el.previewPanel.addEventListener('mousemove', (e) => {
+  const rect = el.previewPanel.getBoundingClientRect();
+  const distFromSeam = e.clientX - rect.left;
+  if (distFromSeam >= 0 && distFromSeam <= SEAM_HOVER_THRESHOLD) {
+    positionSeamButton(rect.left + 6, e.clientY, 'preview');
+  } else {
+    scheduleHideSeamButton();
+  }
+});
+el.previewPanel.addEventListener('mouseleave', scheduleHideSeamButton);
+
+el.noteSeamBtn.addEventListener('mouseenter', () => {
+  if (seamHideTimer) { clearTimeout(seamHideTimer); seamHideTimer = null; }
+});
+el.noteSeamBtn.addEventListener('mouseleave', scheduleHideSeamButton);
+el.noteSeamBtn.addEventListener('click', () => {
+  const node = getSelectedNode();
+  if (!node) return;
+  updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
+  showToast('Note added — open the section to fill it in.');
+  scheduleHideSeamButton();
+});
+
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);
 el.sidebarToggle.addEventListener('click', () => {

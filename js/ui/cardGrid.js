@@ -1,7 +1,9 @@
 import { h } from '../utils/dom.js';
 import { paletteFor } from '../utils/colors.js';
 import { analyzeContent, toPlainExcerpt } from '../markdown/analyze.js';
-import { splitBody, joinBody, withAiInsert } from '../markdown/markers.js';
+import {
+  splitBody, joinBody, withAiInsert, addNote,
+} from '../markdown/markers.js';
 import { renderMarkdownToSafeHtml, enhanceRenderedContent } from '../markdown/render.js';
 import { getPath, getTopLevelIndex } from '../markdown/parser.js';
 import { buildSlugIndex } from '../markdown/slug.js';
@@ -16,7 +18,6 @@ import { showToast } from './toast.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 import { confirmDialog } from './confirmDialog.js';
-import { nextId } from '../utils/id.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 
@@ -127,8 +128,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
       updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === id ? { ...n, text } : n)) }) });
     },
     onAdd: () => {
-      const parts = currentParts();
-      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: [...parts.notes, { id: nextId('note'), text: '' }] }) });
+      updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
     },
     onDelete: (id) => {
       const parts = currentParts();
