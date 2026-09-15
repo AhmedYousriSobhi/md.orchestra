@@ -10,6 +10,7 @@ import { addNote } from './markdown/markers.js';
 import {
   getWorkspace, setWorkspace, clearWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
+import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
 import { renderFilesTree, getSidebarActiveOnTop, setSidebarActiveOnTop } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
@@ -320,6 +321,10 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
     // snapshot for it specifically no longer applies (snapshots for other
     // files are untouched; see recovery.js).
     clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+    // A free ride on content we're already parsing: whatever this file
+    // links to elsewhere in the workspace is now known, for the focal
+    // graph's link-edge overlay — see state/linkIndex.js.
+    if (workspaceRelPath) recordLinksFor(workspaceRelPath, doc);
     currentBaseline = text;
     loadDocument({
       doc, fileName, fileHandle, workspaceRelPath,
@@ -368,6 +373,7 @@ function handleNavigateFile(href) {
 
 function handleCloseWorkspace() {
   clearWorkspace();
+  clearLinkIndex();
   render();
 }
 
@@ -382,6 +388,7 @@ async function handleWorkspaceOpened({ rootName, files }) {
     return;
   }
   setWorkspace({ rootName, files });
+  clearLinkIndex();
   showToast(`Opened "${rootName}" — ${files.length} Markdown file${files.length === 1 ? '' : 's'} found.`);
   const sorted = files.slice().sort((a, b) => a.relPath.localeCompare(b.relPath));
   const preferred = sorted.find((f) => !f.relPath.includes('/') && /^(README|INDEX)\.(md|markdown)$/i.test(f.name));
