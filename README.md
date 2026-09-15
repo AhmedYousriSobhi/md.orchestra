@@ -65,9 +65,10 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
 3. Click a card's insight icon to open the AI popup: get a Claude summary,
    clarity suggestions, and optionally insert the suggestion straight into
    that section.
-4. Use **+ Add note** on a card to jot down as many separate notes as you
-   want on that section — each is its own field with its own delete button.
-   Paste an image, drag one in, or use the **📎 Image** button to attach it
+4. Use **+ Add note** on a card (or press **Alt+N** from anywhere, as long
+   as you're not typing in a field) to jot down as many separate notes as
+   you want on that section — each is its own field with its own delete
+   button. Paste an image, drag one in, or use the **📎 Image** button to attach it
    (works in notes and while editing section content — it's embedded as a
    `data:` URI, so the section stays portable in one `.md` file). Use
    **✎ Edit content** / the pencil next to the
@@ -146,7 +147,9 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    editor the card view's own "Edit content" uses, just reachable
    without leaving the preview, and Save writes straight back to that
    exact section of the document (Whole document scope included — you
-   can edit any section shown, not only the one you started on).
+   can edit any section shown, not only the one you started on). Drag the
+   handle on its left edge to resize it (280px–70% of the viewport); your
+   chosen width is remembered across reloads.
 
 ### Working with a directory
 
