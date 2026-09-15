@@ -1285,3 +1285,30 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   parent node, was updated to use the breadcrumb instead — an
   expected test update, not a regression). Both fixes are on
   `feature/multi-document-workspace`, not merged or deployed.
+
+- **Stage 51** — Merged `feature/multi-document-workspace` into
+  `master` and redeployed Docker (it had been sitting unmerged since
+  Stage 49, which is why a report of "the standalone file vanishes
+  when I open a directory file" turned out to already be fixed —
+  just not on the branch actually running at `localhost:8080`).
+
+  Then added the actual next ask: opening a second folder used to
+  silently replace whichever workspace was already open.
+  `state/workspace.js` now keeps a Map of every open workspace, keyed
+  by its own root folder name, instead of a single slot — each
+  directory is its own independent identity (files, tree, link
+  index), the same way a VSCode multi-root workspace treats them,
+  and "Open folder" (now labeled "Add folder" once one is open) adds
+  to that set rather than replacing it. The sidebar renders one block
+  per open folder; only the one owning the active file expands, every
+  other one collapses to its header (still peekable); closing one (✕
+  on its own block) only ever affects that folder's own active file.
+  `state/linkIndex.js`'s cross-file link tracking now namespaces by
+  root name too, so two open folders with a same-named file can't be
+  conflated.
+
+  Also: removed the "Samples" menu and "Try sample.md" button (the
+  bundled sample.md/sample3.md/doc_flowchart.html files were removed
+  from the repo — they were scratch content, not part of the app),
+  and moved fileIO.js/workspaceIO.js/recovery.js into js/core/ so
+  every module lives in a purpose-named subfolder.
