@@ -92,7 +92,15 @@ export function enhanceRenderedContent(container, {
 
   if (mermaidBlocks.length && window.mermaid) {
     try {
-      window.mermaid.run({ nodes: container.querySelectorAll('.mermaid') });
+      // mermaid.run() is async and returns a promise — a plain try/catch
+      // only ever catches a *synchronous* throw from calling it, not a
+      // later rejection (e.g. its target nodes getting removed from the
+      // DOM mid-render because the user already switched to a different
+      // document, which switching documents fast enough now makes a real
+      // race rather than a hypothetical one). Left uncaught, that surfaces
+      // as an unhandled promise rejection instead of this same warning.
+      Promise.resolve(window.mermaid.run({ nodes: container.querySelectorAll('.mermaid') }))
+        .catch((err) => console.warn('mermaid render failed', err));
     } catch (err) {
       console.warn('mermaid render failed', err);
     }
