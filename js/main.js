@@ -24,6 +24,7 @@ import { openSourcePanel } from './ui/sourcePanel.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
+import { confirmDialog } from './ui/confirmDialog.js';
 import { debounce } from './utils/debounce.js';
 import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot,
@@ -163,12 +164,16 @@ window.addEventListener('beforeunload', (e) => {
  * — a heading slug — jumps straight to that section once loaded, for a
  * cross-file link like `[...](other.md#some-heading)`.
  */
-function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, anchor = null } = {}) {
+async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, anchor = null } = {}) {
   const current = getState();
-  if (current.dirty && !window.confirm(
-    `"${current.fileName}" has unsaved changes that will be lost. Load "${fileName}" anyway?`,
-  )) {
-    return;
+  if (current.dirty) {
+    const ok = await confirmDialog({
+      title: 'Discard unsaved changes?',
+      message: `"${current.fileName}" has unsaved changes that will be lost. Load "${fileName}" anyway?`,
+      confirmLabel: 'Discard & load',
+      danger: true,
+    });
+    if (!ok) return;
   }
   try {
     const doc = parseMarkdown(text);

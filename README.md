@@ -520,3 +520,17 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   discarding one leaves the other untouched, restoring loads the right
   file with its edits intact, and saving (or freshly loading) a specific
   file only clears its own entry.
+- **Stage 26** — Fixed a reported bug: after opening a directory, using
+  the Samples menu appeared to do nothing at all — no dialog, no
+  switching, no error. Root cause: the unsaved-changes guard (Stage 20)
+  relies on `window.confirm()`, and repeated same-page `confirm()`/
+  `alert()` calls are a well-known browser footgun — after enough of them
+  fire in a short session, some browsers start silently returning `false`
+  immediately with no dialog shown at all (a "prevent this page from
+  creating additional dialogs" safeguard), which looks exactly like the
+  button doing nothing. Added `ui/confirmDialog.js`, a small in-app modal
+  that returns a Promise the same way, and replaced every `window.confirm`
+  in the app with it (the unsaved-changes guard, deleting a section,
+  deleting a note) — a page-owned dialog has no such suppression, and it
+  looks consistent with the rest of the app instead of a native browser
+  prompt besides.

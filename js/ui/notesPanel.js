@@ -2,6 +2,7 @@ import { h } from '../utils/dom.js';
 import { debounce } from '../utils/debounce.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
+import { confirmDialog } from './confirmDialog.js';
 
 const EDITING_HINT = 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in';
 
@@ -64,8 +65,9 @@ function createNoteCard(note, { onUpdate, onDelete }) {
     type: 'button',
     'aria-label': 'Delete this note',
     title: 'Delete this note',
-    onClick: () => {
-      if (window.confirm('Delete this note?')) onDelete(note.id);
+    onClick: async () => {
+      const ok = await confirmDialog({ title: 'Delete this note?', confirmLabel: 'Delete', danger: true });
+      if (ok) onDelete(note.id);
     },
   }, '🗑');
 

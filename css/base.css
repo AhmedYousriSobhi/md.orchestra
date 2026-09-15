@@ -114,6 +114,7 @@ button {
 .btn-primary { background: var(--accent-default); border-color: var(--accent-default); color: #fff; }
 .btn-ghost { background: transparent; }
 .btn-insight { background: var(--accent-default); color: #fff; border: none; }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .code-btn {

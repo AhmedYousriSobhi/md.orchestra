@@ -15,6 +15,7 @@ import { openInsightModal } from './insightModal.js';
 import { showToast } from './toast.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
+import { confirmDialog } from './confirmDialog.js';
 import { nextId } from '../utils/id.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
@@ -153,9 +154,15 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     actions.push(h('button', {
       class: 'code-btn code-btn-danger',
       type: 'button',
-      onClick: () => {
+      onClick: async () => {
         const count = 1 + countAllDescendants(node);
-        if (!window.confirm(`Delete "${node.title}"${count > 1 ? ` and its ${count - 1} subsection(s)` : ''}? This can't be undone.`)) return;
+        const ok = await confirmDialog({
+          title: `Delete "${node.title}"?`,
+          message: count > 1 ? `This will also delete its ${count - 1} subsection(s). This can't be undone.` : "This can't be undone.",
+          confirmLabel: 'Delete',
+          danger: true,
+        });
+        if (!ok) return;
         const parentId = removeSection(node.id);
         if (parentId) selectSection(parentId);
         showToast(`Deleted "${node.title}"`);
