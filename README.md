@@ -1165,3 +1165,27 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   to the empty state, and with a clean one closes straight away with
   no prompt. Full regression suite (self-test, focal graph, preview UX,
   per-section Changes) unaffected.
+- **Stage 48** — Follow-up on Stage 47's second fix: opening a folder
+  now keeps an already-open standalone file active, but clicking one
+  of the *folder's own* files afterward still silently discarded it
+  with no warning and no listing to reopen it from — the fix only
+  covered the moment of opening the folder, not navigating into it.
+  Two changes:
+  - `loadFromText()` now also confirms before replacing a standalone
+    file that's coexisting with an open workspace — a plain "continue?"
+    prompt, not a danger one, since nothing is actually unsaved; a
+    workspace file never needs this (always still listed in the
+    sidebar, so switching away from it never loses access), only a
+    standalone file has nothing to click back to once replaced.
+  - The sidebar now visibly treats the standalone file and the open
+    folder as two separate entities: the standalone file gets its own
+    small header (📄 filename, with its own ✕ to close just it) above
+    its heading outline, mirroring the folder's own header row instead
+    of reading like an unlabeled part of whatever's underneath it.
+
+  Verified: the confirm appears switching from a clean standalone file
+  into a workspace file, and correctly does *not* appear switching
+  between two files in the same open workspace, or between two
+  standalone files with no workspace open (both pre-existing, both
+  unaffected); closing the standalone file via its own ✕ leaves the
+  workspace fully intact. Full regression suite unaffected.
