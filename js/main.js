@@ -213,6 +213,12 @@ function handlePreviewScopeChange(scope) {
 function handleClosePreview() {
   el.previewPanel.hidden = true;
   el.previewPanel.innerHTML = '';
+  // Without this, closing via the preview panel's own "✕" (as opposed to
+  // the edge-toggle tab, whose click handler renders itself afterward)
+  // never re-syncs #app-body's preview-open class — see renderInner() —
+  // leaving the edge-toggle tab docked at its "open" position instead of
+  // sliding back out to the collapsed one.
+  render();
 }
 
 /** Drag-and-drop reordering/relocating in the sidebar — see sidebar.js. */
@@ -895,11 +901,11 @@ el.previewToggleBtn.addEventListener('click', () => {
   if (el.previewPanel.hidden) {
     el.previewPanel.hidden = false;
     setPreviewOpen(true);
+    render();
   } else {
     setPreviewOpen(false);
-    handleClosePreview();
+    handleClosePreview(); // renders itself
   }
-  render();
 });
 /**
  * A quick "add a note" button that floats on the seam between the content
