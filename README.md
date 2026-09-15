@@ -683,3 +683,15 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   deliberately-corrupted recovery list throws zero errors now and the
   app loads and works normally (openable, clickable, a document loads
   fine afterward), and the full regression suite is unaffected.
+- **Stage 33** — Fixed: a section titled "Table of Content" (the easy,
+  easy-to-leave-uncorrected singular typo) wasn't recognized as a Table
+  of Contents section, so it never got the **🔄 Regenerate from
+  headings** button or the auto-draft-on-title-entry behavior — only the
+  exact phrase "Table of Contents" (or "TOC") qualified. `toc.js`'s
+  heuristic now accepts an optional trailing "s", and also recognizes a
+  heading titled exactly "Contents" alone (another common convention),
+  while still requiring "toc"/"contents" to be the *entire* title rather
+  than a substring — so "Stock" or "Package Contents" (an unrelated
+  hardware-manual heading) still correctly don't count. Added two
+  regression assertions to the self-test suite (now 18/18) covering both
+  the accepted spellings and the still-rejected ones.

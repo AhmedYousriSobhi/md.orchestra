@@ -26,6 +26,7 @@ import { parseMarkdown } from '../js/markdown/parser.js';
 import { serializeMarkdown } from '../js/markdown/serializer.js';
 import { splitBody, joinBody, withAiInsert } from '../js/markdown/markers.js';
 import { analyzeContent } from '../js/markdown/analyze.js';
+import { looksLikeTocSection } from '../js/markdown/toc.js';
 
 const results = [];
 function check(name, condition, detail) {
@@ -116,7 +117,23 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   check('analyzeContent detects a <details> block', stats.hasDetails === true);
 }
 
-// 7. Optional: round-trip check against the bundled sample files, if served over HTTP
+// 7. toc.js: which heading titles are recognized as a Table of Contents section
+{
+  const yes = ['Table of Contents', 'Table of Content', 'table of content', 'My Table of Contents (draft)', 'TOC', 'toc', 'Contents'];
+  const no = ['Stock', 'Package Contents', 'Table of Figures', 'Overview'];
+  check(
+    'looksLikeTocSection recognizes common spellings/typos, including the singular "Table of Content"',
+    yes.every((title) => looksLikeTocSection({ title })),
+    yes.filter((title) => !looksLikeTocSection({ title })).join(', '),
+  );
+  check(
+    'looksLikeTocSection does not fire on unrelated titles, including ones that merely contain "toc"/"contents"',
+    no.every((title) => !looksLikeTocSection({ title })),
+    no.filter((title) => looksLikeTocSection({ title })).join(', '),
+  );
+}
+
+// 8. Optional: round-trip check against the bundled sample files, if served over HTTP
 async function checkSampleFile(path) {
   try {
     const res = await fetch(`../${path}`, { cache: 'no-store' });
