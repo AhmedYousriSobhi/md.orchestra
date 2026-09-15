@@ -994,6 +994,30 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   that was never directly opened) show up afterward. No console
   errors. Not yet merged to `master` or deployed to the running
   container — left on its own branch until it's actually wanted for
-  daily use; deferred for a later phase: smooth expand transitions
-  beyond a plain CSS transition, and a breadcrumb strip synced to the
-  graph's current focus.
+  daily use.
+
+  Phase 2 (same branch): after trying Phase 1, the graph became the
+  sidebar's *default* view (the plain tree is still one click away,
+  and whichever is explicitly chosen persists from then on) — and the
+  two things Phase 1 had deferred are done: a breadcrumb strip
+  (`testws › guide › advanced`) above the graph, letting you jump
+  straight to any higher ancestor in one step instead of walking up
+  one parent-click at a time; and real animation. Phase 1's CSS
+  transition on each node's transform turned out to be inert in
+  practice — every render tears the whole SVG down and rebuilds it
+  from scratch, so a "new" DOM node never has an old position to
+  transition from. `positionNode()` fixes that with a small FLIP
+  implementation: a node matched to the same one on the previous
+  render (by its own stable path, not its row index, which shifts
+  constantly as siblings above it expand/collapse) is dropped back at
+  its last position with transitions suppressed, then released to its
+  real position on the next frame so the CSS transition animates the
+  difference; a genuinely new node has no earlier position to FLIP
+  from, so it fades in instead. Verified: the root breadcrumb reads
+  just the workspace name; centering on a nested directory shows the
+  full ancestor chain with only the last step non-interactive; clicking
+  an ancestor several levels up jumps there directly rather than one
+  hop at a time; repeatedly expanding/collapsing/re-expanding the same
+  directory (exercising both the FLIP "already seen" path and the
+  fade-in "brand new" path back to back) never throws and always ends
+  up showing the right nodes. No console errors.
