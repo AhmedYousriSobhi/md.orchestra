@@ -180,7 +180,6 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .focal-node-pending-dot { fill: var(--accent-default); }
 .focal-node-dir .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 8%, var(--surface)); stroke-dasharray: 3 2; }
 .focal-node-dir.focal-node-expanded .focal-node-bg { stroke-dasharray: none; }
-.focal-node-parent .focal-node-bg { fill: var(--bg-soft); }
 .focal-node-active .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 16%, var(--surface)); stroke: var(--accent-default); stroke-width: 1.5; }
 .focal-node-active .focal-node-label { font-weight: 700; }
 .focal-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }

@@ -9,11 +9,13 @@ import { showToast } from './toast.js';
 // the *current* directory's own contents — one hop — with every deeper
 // subdirectory collapsed into a "+N" ghost node until explicitly expanded,
 // so a deep/wide repo never dumps hundreds of nodes on screen at once. The
-// directory a step up is always shown too (click it to re-center the whole
-// view one level up, or use the breadcrumb strip to jump straight to any
-// higher ancestor in one step), and a small tray below surfaces cross-file
-// Markdown links to/from the active file that aren't already visible as
-// filesystem neighbors — see state/linkIndex.js.
+// breadcrumb strip above the graph body is the only way up — click any
+// ancestor in it to re-center there directly, however many levels that is
+// — rather than a separate "parent" node duplicating just the immediate
+// step of that in the graph body itself, on top of the sidebar's own
+// folder-name header right above it. A small tray below surfaces
+// cross-file Markdown links to/from the active file that aren't already
+// visible as filesystem neighbors — see state/linkIndex.js.
 //
 // Deliberately no physics/force layout: this is a hierarchy, not an organic
 // cluster, so a fixed depth-first stack (same layout style as mapView.js's
@@ -232,17 +234,21 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   if (focalCenter === null) focalCenter = activeDir;
 
   const centerNode = findDirNode(workspace.tree, focalCenter) || workspace.tree;
-  const hasParent = focalCenter !== '';
-  const parentPath = hasParent ? dirname(focalCenter) : null;
 
   function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths); }
   function jumpTo(path) { focalCenter = path; focalExpanded = new Set(); rerender(); }
 
+  // Jumping to any ancestor — including the immediate parent — is what the
+  // breadcrumb strip above the graph is for; a separate "parent" ghost node
+  // in the graph body itself used to duplicate exactly that (Phase 1,
+  // before the breadcrumb existed in Phase 2), stacking a third repeat of
+  // the same path information on top of the sidebar's own folder-name
+  // header and the breadcrumb right above it — removed rather than kept
+  // as a redundant, taller-than-it-needs-to-be third copy of it.
   container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
 
   const rows = layoutRows(centerNode, focalExpanded, activeRelPath, pendingPaths);
-  const bodyRowCount = rows.length + (hasParent ? 1 : 0);
-  const height = Math.max(bodyRowCount, 1) * ROW_H + 6;
+  const height = Math.max(rows.length, 1) * ROW_H + 6;
 
   const svgRoot = svg('svg', {
     width: GRAPH_WIDTH, height, viewBox: `0 0 ${GRAPH_WIDTH} ${height}`, class: 'focal-graph-svg',
@@ -251,23 +257,9 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   const nodeLayer = svg('g', { class: 'focal-graph-nodes' });
 
   let rowIndex = 0;
-  let parentPos = null;
-
-  if (hasParent) {
-    const y = rowIndex * ROW_H + 3;
-    const label = parentPath ? basename(parentPath) : workspace.rootName;
-    const { group } = buildNodeGroup({
-      label, isDir: true, isActive: false, isExpanded: false, count: 0, onClick: () => jumpTo(parentPath),
-    });
-    group.classList.add('focal-node-parent');
-    nodeLayer.appendChild(group);
-    positionNode(group, `parent:${focalCenter}`, PAD_X, y);
-    parentPos = { x: PAD_X, y: y + (ROW_H - 6) / 2 };
-    rowIndex += 1;
-  }
 
   rows.forEach((row) => {
-    const x = PAD_X + row.depth * INDENT_W + (hasParent ? INDENT_W : 0);
+    const x = PAD_X + row.depth * INDENT_W;
     const y = rowIndex * ROW_H + 3;
     const onClick = row.isDir
       ? () => {
@@ -283,7 +275,10 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
     nodeLayer.appendChild(group);
     positionNode(group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
 
-    const fromPos = row.parentRow ? row.parentRow._pos : parentPos;
+    // Only nested rows (a directory's own children, revealed by expanding
+    // it) connect to anything — a top-level row has no parent node to draw
+    // a line from anymore (see above), so it just sits on its own.
+    const fromPos = row.parentRow ? row.parentRow._pos : null;
     if (fromPos) {
       edgeLayer.appendChild(svg('path', {
         d: `M ${fromPos.x} ${fromPos.y} V ${y + (ROW_H - 6) / 2} H ${x - 6}`,
