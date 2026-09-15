@@ -1312,3 +1312,16 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   from the repo — they were scratch content, not part of the app),
   and moved fileIO.js/workspaceIO.js/recovery.js into js/core/ so
   every module lives in a purpose-named subfolder.
+
+- **Stage 52** — Follow-up: with several directories now open at once
+  (Stage 51), the sidebar's old behavior — the workspace tree collapsing
+  to a bare header, and the active file's heading outline swapping
+  above or below it, whenever the active file changed — made the whole
+  sidebar visibly jump around on every switch. Replaced with a fixed
+  VSCode-style two-pane layout: **Explorer** always shows every open
+  directory/standalone file, fully expanded, regardless of which one is
+  active; **Outline** always shows the active document's own heading
+  breakdown underneath it. Neither reorders or auto-collapses anymore.
+  Each pane collapses independently via its own header, a persisted
+  preference. Dropped the "keep active file on top" pin and the
+  per-workspace auto-collapse/peek mechanic it required.
