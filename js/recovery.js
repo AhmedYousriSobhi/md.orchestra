@@ -24,6 +24,11 @@ function identityFor({ fileName, workspaceRelPath, workspaceRootName }) {
   return workspaceRelPath ? `ws::${workspaceRootName || ''}::${workspaceRelPath}` : `file::${fileName}`;
 }
 
+/** The same identity a snapshot is keyed/looked up by — exported so callers (e.g. the Changes panel) can tell whether a given snapshot corresponds to the currently active document without duplicating this logic. */
+export function snapshotIdentity(info) {
+  return identityFor(info);
+}
+
 function readAll() {
   try {
     const raw = localStorage.getItem(KEY);

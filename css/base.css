@@ -111,6 +111,12 @@ button {
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .btn:hover { border-color: color-mix(in srgb, var(--accent-default) 40%, var(--border)); }
+.changes-badge {
+  display: inline-block; margin-left: 0.4rem; min-width: 1.1rem; padding: 0 0.35rem;
+  border-radius: 999px; background: var(--accent-default); color: #fff;
+  font-size: 0.68rem; font-weight: 700; line-height: 1.3rem; text-align: center;
+}
+.changes-badge[hidden] { display: none; }
 .btn-primary { background: var(--accent-default); border-color: var(--accent-default); color: #fff; }
 .btn-ghost { background: transparent; }
 .btn-insight { background: var(--accent-default); color: #fff; border: none; }

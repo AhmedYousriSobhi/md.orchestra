@@ -98,9 +98,26 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
 6. Click **💾 Save** any time — it writes straight back to the file if it
    was opened with **Open .md file** (or a workspace folder, on a browser
    that grants live handles — see below), otherwise it downloads the
-   current Markdown. It's the only save control in the app, and it glows
-   while there are unsaved changes. The **Source** panel is read-only, for
-   double-checking the generated Markdown or copying it elsewhere.
+   current Markdown. It's the only save control for the *active* document,
+   and it glows while there are unsaved changes. The **Source** panel is
+   read-only, for double-checking the generated Markdown or copying it
+   elsewhere.
+
+   Only one document is ever open for editing at a time, but you can still
+   accumulate unsaved changes in more than one file across a session (e.g.
+   edit a workspace file, switch to a sample without saving first, edit
+   that too). **📝 Changes**, in the header, lists every one of them — like
+   a compact `git status` — with a badge showing how many. Each file gets
+   **💾 Save** (writes it straight to disk without switching away from
+   whatever you're currently doing, if it still has a live handle —
+   otherwise downloads it, same as the main Save button), **↪ Open**
+   (switches to it, through the same unsaved-changes guard as everywhere
+   else), and **🗑 Discard** (drops that pending copy for good); the
+   currently active document appears in the list too when it's dirty,
+   marked "●", with just Save. Saving normally (the main Save button)
+   also opens this list automatically afterward if anything *else* still
+   has unsaved changes, so a save is never quietly assumed to have
+   covered everything.
 7. Open **Settings** to provide your Anthropic API key and pick a Claude
    model (the key is stored only in `localStorage` on your machine and is
    sent directly to `api.anthropic.com` — never to any other service), and
@@ -175,12 +192,16 @@ js/
                      and relative-link resolution against it
   workspaceIO.js       reads a directory (File System Access on Chrome/Edge,
                      an <input webkitdirectory> fallback elsewhere)
-  recovery.js          crash-recovery snapshot in localStorage
+  recovery.js          per-file crash-recovery snapshots in localStorage
   ai/                 client.js (Claude fetch), prompts.js, settings.js
   ui/                 sidebar (drag-and-drop to relocate sections),
-                     filesPanel.js (the open workspace's folder/file tree),
-                     breadcrumb, card grid (incl. inline title/content
-                     editing), insight modal, code viewer, notes panel
+                     filesPanel.js (the open workspace's folder/file tree,
+                     reordering around whichever file is active),
+                     recoveryPanel.js (offered on load) / changesPanel.js
+                     (on demand, from the header) — both list recovery.js's
+                     per-file snapshots, save/open/discard, breadcrumb, card
+                     grid (incl. inline title/content editing), insight
+                     modal, code viewer, notes panel
                      (multiple independent notes per section), imageAttach.js
                      (paste/drag/button -> data: URI image, used by notes and
                      section-content editing), settings/source panels,
@@ -606,3 +627,30 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   tree where it is. Verified all four combinations (workspace file
   active/collapsed, peeking, switching back, and the pin disabling
   reordering entirely) plus the existing regression suite.
+- **Stage 31** — Asked: what happens to saving when more than one file's
+  worth of unsaved changes exists at once (only one document is ever
+  live in memory, but a workspace file left dirty and then switched away
+  from keeps its pending edits as a crash-recovery snapshot — Stage 25 —
+  even once it's no longer the active document)? Added a **📝 Changes**
+  button (badge showing the count) that lists every one of them, git-
+  status style, reusing that same per-file snapshot tracking rather than
+  building a second system to answer "what's unsaved right now": each
+  row gets Save (writes straight to disk without switching away, via a
+  live handle when one's resolvable — e.g. a still-open workspace file
+  — or a download otherwise), Open (switch to it, through the same
+  unsaved-changes guard as everywhere else), and Discard; the active
+  document appears in the same list when it's dirty, marked "●", with
+  just Save. The ordinary Save button now also opens this list
+  automatically afterward if anything *else* is still unsaved, so a save
+  is never quietly assumed to have covered every pending file. Found
+  and fixed a real staleness bug along the way: saving a crash-recovery
+  snapshot is a side effect (not a `setState()`), so nothing was
+  re-rendering the badge to reflect a just-written snapshot until some
+  unrelated state change happened to trigger a render — the badge could
+  sit stale for an arbitrary stretch. Fixed by refreshing it directly
+  from the same debounced snapshot-save path, and routed every snapshot-
+  clearing call through one wrapper so this can't quietly regress at a
+  future call site. Verified: two files dirtied independently both show
+  up with correct active-marking, Save/Open/Discard each work from the
+  list, and the post-save "anything else pending?" panel opens exactly
+  when it should.

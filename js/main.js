@@ -24,12 +24,13 @@ import { openSourcePanel } from './ui/sourcePanel.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
+import { openChangesPanel } from './ui/changesPanel.js';
 import { confirmDialog } from './ui/confirmDialog.js';
 import { renderPreviewPanel, getPreviewScope, setPreviewScope } from './ui/previewPanel.js';
 import { openCodeViewer } from './ui/codeViewer.js';
 import { debounce } from './utils/debounce.js';
 import {
-  saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot,
+  saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot as clearRecoverySnapshotRaw, snapshotIdentity,
 } from './recovery.js';
 import { getTheme, applyTheme } from './utils/theme.js';
 
@@ -58,6 +59,8 @@ const el = {
   previewToggleBtn: document.getElementById('preview-toggle-btn'),
   previewPanel: document.getElementById('preview-panel'),
   saveBtn: document.getElementById('save-btn'),
+  changesBtn: document.getElementById('changes-btn'),
+  changesBadge: document.getElementById('changes-badge'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
@@ -68,6 +71,8 @@ let lastPathLength = 0;
 
 function render() {
   const { doc, fileName, dirty, workspaceRelPath } = getState();
+
+  updateChangesBadge();
 
   const workspace = getWorkspace();
   const activeOnTop = getSidebarActiveOnTop();
@@ -193,8 +198,24 @@ const snapshotIfDirty = debounce(() => {
     markdown: serializeMarkdown(doc),
     baselineMarkdown: currentBaseline,
   });
+  // Writing a snapshot is a side effect, not a setState() — nothing else
+  // would otherwise re-render the Changes button's badge to reflect it
+  // until some unrelated state change happened to trigger render() again.
+  updateChangesBadge();
 }, 1500);
 subscribe(snapshotIfDirty);
+
+function updateChangesBadge() {
+  const pendingCount = listRecoverySnapshots().length;
+  el.changesBadge.hidden = pendingCount === 0;
+  el.changesBadge.textContent = String(pendingCount);
+}
+
+/** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
+function clearRecoverySnapshot(identity) {
+  clearRecoverySnapshotRaw(identity);
+  updateChangesBadge();
+}
 
 // The standard "leave site?" browser confirmation — works the same whether
 // this is a normal tab or a window opened from an installed PWA shortcut.
@@ -305,30 +326,33 @@ async function handleWorkspaceOpened({ rootName, files }) {
   await openWorkspaceFile((preferred || sorted[0]).relPath);
 }
 
+/** Load a crash-recovery snapshot's content as the active document (dirty — it was never actually saved). Shared by the startup recovery flow and the on-demand Changes panel's "Open" action; neither the snapshot's fileHandle (never persisted — can't be) is available here, so it loads without direct save-back until re-saved or re-opened. */
+function loadSnapshotAsActive(snapshot) {
+  try {
+    const doc = parseMarkdown(snapshot.markdown);
+    currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
+    loadDocument({
+      doc,
+      fileName: snapshot.fileName,
+      fileHandle: null,
+      dirty: true,
+      workspaceRelPath: snapshot.workspaceRelPath,
+    });
+    clearRecoverySnapshot(snapshot);
+    showToast(`Restored unsaved work for "${snapshot.fileName}"`);
+  } catch (err) {
+    console.error(err);
+    showToast(`Could not restore "${snapshot.fileName}"`, { type: 'error' });
+  }
+}
+
 /** Offer to restore whatever crash-recovery snapshots are left over from before the app last closed cleanly — one panel listing all of them, not a blind prompt for whichever file happened to be edited last. */
 function checkForRecovery() {
   const snapshots = listRecoverySnapshots();
   if (!snapshots.length) return;
 
   openRecoveryPanel(snapshots, {
-    onRestore(snapshot) {
-      try {
-        const doc = parseMarkdown(snapshot.markdown);
-        currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
-        loadDocument({
-          doc,
-          fileName: snapshot.fileName,
-          fileHandle: null,
-          dirty: true,
-          workspaceRelPath: snapshot.workspaceRelPath,
-        });
-        clearRecoverySnapshot(snapshot);
-        showToast(`Restored unsaved work for "${snapshot.fileName}"`);
-      } catch (err) {
-        console.error(err);
-        showToast(`Could not restore "${snapshot.fileName}"`, { type: 'error' });
-      }
-    },
+    onRestore: loadSnapshotAsActive,
     onDiscard(snapshot) {
       clearRecoverySnapshot(snapshot);
     },
@@ -423,7 +447,9 @@ async function handleSave() {
       showToast(`Saved to ${fileName}`);
     } catch (err) {
       showToast(`Save failed: ${err.message}`, { type: 'error' });
+      return;
     }
+    notifyOtherPendingChanges(identity);
     return;
   }
 
@@ -437,10 +463,75 @@ async function handleSave() {
       : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
     { duration: 5000 },
   );
+  notifyOtherPendingChanges(identity);
+}
+
+/**
+ * After a save, surface anything ELSE still unsaved (a different file
+ * edited earlier in this browser and never saved) rather than letting it
+ * sit silently out of view — this is the "which are saving/pending" visibility
+ * the Save flow lacked when more than one file's worth of changes exist.
+ */
+function notifyOtherPendingChanges(justSavedIdentity) {
+  const savedId = snapshotIdentity(justSavedIdentity);
+  const others = listRecoverySnapshots().filter((s) => s.id !== savedId);
+  if (!others.length) return;
+  openChangesPanel(others, null, {
+    onSave: handleChangesSave,
+    onOpen: handleChangesOpenSnapshot,
+    onDiscard: (snap) => clearRecoverySnapshot(snap),
+  });
+}
+
+/** Save one pending snapshot (from the Changes panel) directly to disk, without switching away from whatever's currently open. `isActive` means this row IS the live document, so it just goes through the normal save path. */
+async function handleChangesSave(snapshot, isActive) {
+  if (isActive) {
+    await handleSave();
+    return;
+  }
+  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRelPath) : null;
+  try {
+    if (entry && entry.fileHandle) {
+      await writeToHandle(entry.fileHandle, snapshot.markdown);
+      showToast(`Saved to ${snapshot.fileName}`);
+    } else {
+      downloadText(snapshot.fileName, snapshot.markdown);
+      showToast(`Downloaded ${snapshot.fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+    }
+    clearRecoverySnapshot(snapshot);
+  } catch (err) {
+    showToast(`Could not save ${snapshot.fileName}: ${err.message}`, { type: 'error' });
+  }
+}
+
+/** "Open" a pending snapshot from the Changes panel: switch to it as the active document, guarded by the same unsaved-changes confirm as every other document-load path. */
+async function handleChangesOpenSnapshot(snapshot) {
+  const current = getState();
+  if (current.dirty) {
+    const ok = await confirmDialog({
+      title: 'Discard unsaved changes?',
+      message: `"${current.fileName}" has unsaved changes that will be lost. Open "${snapshot.fileName}" anyway?`,
+      confirmLabel: 'Discard & open',
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  loadSnapshotAsActive(snapshot);
+}
+
+function handleOpenChanges() {
+  const { fileName, workspaceRelPath } = getState();
+  const activeId = getState().doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
+  openChangesPanel(listRecoverySnapshots(), activeId, {
+    onSave: handleChangesSave,
+    onOpen: handleChangesOpenSnapshot,
+    onDiscard: (snap) => clearRecoverySnapshot(snap),
+  });
 }
 
 el.saveBtn.addEventListener('click', handleSave);
 el.dirtyIndicator.addEventListener('click', handleSave);
+el.changesBtn.addEventListener('click', handleOpenChanges);
 
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', openMapView);
