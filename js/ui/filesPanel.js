@@ -70,11 +70,16 @@ let peeking = false;
  * between that behavior and always leaving the tree where it is.
  * `options.viewMode` ('list' | 'graph') / `options.onToggleViewMode` switch
  * between this plain always-expanded tree and the focal-neighborhood graph
- * (see focalGraph.js) — same header, different body.
+ * (see focalGraph.js) — same header, different body. `options.pendingPaths`
+ * (a Set of relPaths) marks which files have unsaved changes waiting (see
+ * main.js's recovery-snapshot tracking) with a small dot, so switching
+ * freely between files (nothing is ever discarded — see loadFromText)
+ * still leaves a visible trail of what's been touched, without needing the
+ * Changes panel open to see it.
  */
 export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
   const {
-    collapsed = false, activeOnTop = true, onToggleActiveOnTop, viewMode = 'list', onToggleViewMode,
+    collapsed = false, activeOnTop = true, onToggleActiveOnTop, viewMode = 'list', onToggleViewMode, pendingPaths = new Set(),
   } = options;
   container.innerHTML = '';
   if (!workspace) return;
@@ -123,18 +128,18 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
   if (viewMode === 'graph') {
     const graphWrap = h('div', { class: 'focal-graph-wrap' });
     container.appendChild(graphWrap);
-    renderFocalGraph(graphWrap, workspace, activeRelPath, onOpenFile);
+    renderFocalGraph(graphWrap, workspace, activeRelPath, onOpenFile, pendingPaths);
     return;
   }
 
   const list = h('ul', { class: 'nav-tree nav-tree-root files-tree' });
   workspace.tree.children.forEach((node) => {
-    list.appendChild(buildNode(node, activeRelPath, onOpenFile, rerender));
+    list.appendChild(buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths));
   });
   container.appendChild(list);
 }
 
-function buildNode(node, activeRelPath, onOpenFile, rerender) {
+function buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths) {
   if (node.type === 'dir') {
     const collapsed = manualCollapse.has(node.path);
     const li = h('li', { class: 'nav-item files-dir' });
@@ -155,23 +160,26 @@ function buildNode(node, activeRelPath, onOpenFile, rerender) {
     li.appendChild(row);
     if (!collapsed) {
       const sublist = h('ul', { class: 'nav-tree' });
-      node.children.forEach((child) => sublist.appendChild(buildNode(child, activeRelPath, onOpenFile, rerender)));
+      node.children.forEach((child) => sublist.appendChild(buildNode(child, activeRelPath, onOpenFile, rerender, pendingPaths)));
       li.appendChild(sublist);
     }
     return li;
   }
 
   const isCurrent = node.path === activeRelPath;
+  const isPending = pendingPaths.has(node.path);
   const li = h('li', { class: 'nav-item' });
   const row = h('div', { class: 'nav-row' });
   row.appendChild(h('span', { class: 'nav-chevron nav-chevron-spacer' }));
   row.appendChild(h('button', {
     class: `nav-link${isCurrent ? ' nav-link-current' : ''}`,
     type: 'button',
+    title: isPending ? `${node.name} — unsaved changes` : node.name,
     onClick: () => onOpenFile(node.path),
   }, [
     h('span', { class: 'nav-icon' }, '📄'),
     h('span', { class: 'nav-label' }, node.name),
+    isPending ? h('span', { class: 'nav-pending-dot', title: 'Unsaved changes' }) : null,
   ]));
   li.appendChild(row);
   return li;

@@ -9,11 +9,13 @@ import { showToast } from './toast.js';
 // the *current* directory's own contents — one hop — with every deeper
 // subdirectory collapsed into a "+N" ghost node until explicitly expanded,
 // so a deep/wide repo never dumps hundreds of nodes on screen at once. The
-// directory a step up is always shown too (click it to re-center the whole
-// view one level up, or use the breadcrumb strip to jump straight to any
-// higher ancestor in one step), and a small tray below surfaces cross-file
-// Markdown links to/from the active file that aren't already visible as
-// filesystem neighbors — see state/linkIndex.js.
+// breadcrumb strip above the graph body is the only way up — click any
+// ancestor in it to re-center there directly, however many levels that is
+// — rather than a separate "parent" node duplicating just the immediate
+// step of that in the graph body itself, on top of the sidebar's own
+// folder-name header right above it. A small tray below surfaces
+// cross-file Markdown links to/from the active file that aren't already
+// visible as filesystem neighbors — see state/linkIndex.js.
 //
 // Deliberately no physics/force layout: this is a hierarchy, not an organic
 // cluster, so a fixed depth-first stack (same layout style as mapView.js's
@@ -77,7 +79,7 @@ function countFiles(dirNode) {
 }
 
 /** Depth-first, pre-order flatten of `centerNode`'s children — a directory only recurses into its own children when its path is in `expanded`; otherwise it's a single collapsed row with a file count. */
-function layoutRows(centerNode, expanded, activeRelPath) {
+function layoutRows(centerNode, expanded, activeRelPath, pendingPaths) {
   const rows = [];
   function place(node, depth, parentRow) {
     const isDir = node.type === 'dir';
@@ -87,6 +89,7 @@ function layoutRows(centerNode, expanded, activeRelPath) {
       parentRow,
       isDir,
       isActive: !isDir && node.path === activeRelPath,
+      isPending: !isDir && pendingPaths.has(node.path),
       count: isDir ? countFiles(node) : 0,
       isExpanded: isDir && expanded.has(node.path),
     };
@@ -142,7 +145,7 @@ function positionNode(group, key, x, y) {
 }
 
 function buildNodeGroup({
-  label, isDir, isActive, isExpanded, count, onClick,
+  label, isDir, isActive, isExpanded, isPending, count, onClick,
 }) {
   const w = nodeWidth(label);
   const classes = ['focal-node'];
@@ -168,8 +171,15 @@ function buildNodeGroup({
     group.appendChild(svg('text', {
       x: w - 8, y: (ROW_H - 6) / 2, class: 'focal-node-badge', 'dominant-baseline': 'middle', 'text-anchor': 'end',
     }, isExpanded ? '−' : `+${count}`));
+  } else if (isPending) {
+    // A file with unsaved changes waiting (see main.js's recovery-snapshot
+    // tracking) — nothing is ever lost switching away from it now, but this
+    // is the only visual trail of that once you've navigated elsewhere.
+    group.appendChild(svg('circle', {
+      class: 'focal-node-pending-dot', cx: w - 9, cy: (ROW_H - 6) / 2, r: 3.5,
+    }));
   }
-  group.appendChild(svg('title', {}, label));
+  group.appendChild(svg('title', {}, isPending ? `${label} — unsaved changes` : label));
   return { group, width: w };
 }
 
@@ -210,7 +220,7 @@ function renderGraphHead(workspace, centerPath, onJump) {
  * main.js). `onOpenFile(relPath)` opens a clicked file node exactly like
  * the plain tree's own file rows do.
  */
-export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile) {
+export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths = new Set()) {
   container.innerHTML = '';
   if (!workspace) return;
 
@@ -224,17 +234,21 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   if (focalCenter === null) focalCenter = activeDir;
 
   const centerNode = findDirNode(workspace.tree, focalCenter) || workspace.tree;
-  const hasParent = focalCenter !== '';
-  const parentPath = hasParent ? dirname(focalCenter) : null;
 
-  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile); }
+  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths); }
   function jumpTo(path) { focalCenter = path; focalExpanded = new Set(); rerender(); }
 
+  // Jumping to any ancestor — including the immediate parent — is what the
+  // breadcrumb strip above the graph is for; a separate "parent" ghost node
+  // in the graph body itself used to duplicate exactly that (Phase 1,
+  // before the breadcrumb existed in Phase 2), stacking a third repeat of
+  // the same path information on top of the sidebar's own folder-name
+  // header and the breadcrumb right above it — removed rather than kept
+  // as a redundant, taller-than-it-needs-to-be third copy of it.
   container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
 
-  const rows = layoutRows(centerNode, focalExpanded, activeRelPath);
-  const bodyRowCount = rows.length + (hasParent ? 1 : 0);
-  const height = Math.max(bodyRowCount, 1) * ROW_H + 6;
+  const rows = layoutRows(centerNode, focalExpanded, activeRelPath, pendingPaths);
+  const height = Math.max(rows.length, 1) * ROW_H + 6;
 
   const svgRoot = svg('svg', {
     width: GRAPH_WIDTH, height, viewBox: `0 0 ${GRAPH_WIDTH} ${height}`, class: 'focal-graph-svg',
@@ -243,23 +257,9 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   const nodeLayer = svg('g', { class: 'focal-graph-nodes' });
 
   let rowIndex = 0;
-  let parentPos = null;
-
-  if (hasParent) {
-    const y = rowIndex * ROW_H + 3;
-    const label = parentPath ? basename(parentPath) : workspace.rootName;
-    const { group } = buildNodeGroup({
-      label, isDir: true, isActive: false, isExpanded: false, count: 0, onClick: () => jumpTo(parentPath),
-    });
-    group.classList.add('focal-node-parent');
-    nodeLayer.appendChild(group);
-    positionNode(group, `parent:${focalCenter}`, PAD_X, y);
-    parentPos = { x: PAD_X, y: y + (ROW_H - 6) / 2 };
-    rowIndex += 1;
-  }
 
   rows.forEach((row) => {
-    const x = PAD_X + row.depth * INDENT_W + (hasParent ? INDENT_W : 0);
+    const x = PAD_X + row.depth * INDENT_W;
     const y = rowIndex * ROW_H + 3;
     const onClick = row.isDir
       ? () => {
@@ -270,12 +270,15 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
       : () => onOpenFile(row.node.path);
 
     const { group } = buildNodeGroup({
-      label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, count: row.count, onClick,
+      label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, isPending: row.isPending, count: row.count, onClick,
     });
     nodeLayer.appendChild(group);
     positionNode(group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
 
-    const fromPos = row.parentRow ? row.parentRow._pos : parentPos;
+    // Only nested rows (a directory's own children, revealed by expanding
+    // it) connect to anything — a top-level row has no parent node to draw
+    // a line from anymore (see above), so it just sits on its own.
+    const fromPos = row.parentRow ? row.parentRow._pos : null;
     if (fromPos) {
       edgeLayer.appendChild(svg('path', {
         d: `M ${fromPos.x} ${fromPos.y} V ${y + (ROW_H - 6) / 2} H ${x - 6}`,

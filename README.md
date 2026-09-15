@@ -1189,3 +1189,99 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   standalone files with no workspace open (both pre-existing, both
   unaffected); closing the standalone file via its own ✕ leaves the
   workspace fully intact. Full regression suite unaffected.
+- **Stage 49** (branch `feature/multi-document-workspace`, not yet
+  merged) — Follow-up on Stage 48: "that's not fully correct" — the
+  confirm dialog didn't actually fix anything, it just made the same
+  data loss explicit instead of silent, and the same issue turned out
+  to apply generally (switching to *any* other file — a nested
+  subdirectory file included, not just the standalone-vs-folder case),
+  not just the one path Stage 48 covered. What was actually wanted
+  (VSCode-style): every opened file keeps its own state independently,
+  switching between them is instant and lossless, and the sidebar
+  marks which ones are open/pending directly rather than needing a
+  separate list. Scoped this properly before writing code (comparable
+  in size to the focal-graph work) — asked how the sidebar should
+  represent multiple open files, whether there should be a cap on how
+  many, and branch vs. `master` — then built it on its own branch:
+
+  - **Lossless switching, no confirm**: rather than rearchitecting the
+    store to hold multiple documents at once (a much larger change),
+    `loadFromText()` reuses the recovery-snapshot system already built
+    for crash recovery — force-flushing whatever's currently active
+    into its own snapshot first if it's dirty (the same
+    non-destructive pattern the Changes panel's own "Open" action
+    already used, just applied to every switch now), and preferring a
+    pending snapshot over a fresh on-disk read when switching to a
+    file that already has one waiting. Nothing is ever actually
+    discarded by navigating away anymore, so every confirm-before-
+    switch dialog (Stage 48's included) is gone; an explicit ✕-to-close
+    still confirms, since that genuinely does discard on purpose.
+    `standaloneHandles` keeps a standalone file's own File System
+    Access handle by name across switches (a workspace file's is
+    always available again via `getWorkspaceFile()`, but a standalone
+    file has nowhere else to keep it) so restoring its pending edit can
+    still Save directly instead of falling back to a download.
+  - **Changes panel/badge timing gap**: restoring a pending file as
+    active clears its snapshot the instant it's restored, which would
+    otherwise leave the Changes badge/panel showing nothing for it
+    until the next debounce tick — `activeGapChangedCount()`/
+    `activeGapSnapshot()` close that gap.
+  - **Sidebar marking**: a small dot now appears next to any workspace
+    file (plain list and focal graph both) with a pending recovery
+    snapshot, sourced from the same tracking the Changes panel already
+    uses — chosen over a separate "open files" list, per the review.
+  - **Incidental find**: testing this exposed a real, unrelated latent
+    bug — `mermaid.run()` returns a promise that was only ever wrapped
+    in a synchronous try/catch (which never catches a later rejection,
+    only a throw from the call itself); switching away from a document
+    while its diagrams were still mid-render removed the DOM nodes
+    mermaid was targeting, rejecting that promise with nothing to catch
+    it. Always possible in principle, but only became an easily-hit
+    race once switching got this fast. Fixed with an explicit `.catch()`.
+
+  Verified: editing a file and switching to another (standalone-to-
+  workspace, workspace-to-standalone, and workspace file to a nested
+  subdirectory file) never confirms and never loses the edit, switching
+  back shows it exactly as left, with the Changes panel/badge reflecting
+  it immediately rather than after a debounce delay; re-clicking the
+  already-active file is a no-op; pending-file dots show correctly in
+  both sidebar view modes. Full regression suite unaffected.
+
+- **Stage 50** (branch `feature/multi-document-workspace`, not yet
+  merged) — Two more issues found while using Stage 49's rebuild:
+  "the title tree in project are not correct or maybe correct but too
+  long... under it it mention the original whole project name instead
+  of the parent" and "I'm still losing an old opened md alone, when I
+  open a new directory... it shows in the changes, but not on the side
+  bar."
+
+  - **Redundant parent node in the focal graph**: a screenshot of a
+    nested directory showed the same path repeated three times —
+    the sidebar's own folder-name header, the breadcrumb strip above
+    the graph, and a "parent" ghost node inside the graph body itself
+    (a leftover from Phase 1 of the focal graph, before the breadcrumb
+    existed). The breadcrumb already covers every ancestor including
+    the immediate parent, so the ghost node was pure duplication, not
+    a naming bug — removed it entirely from `focalGraph.js` rather
+    than trying to shorten or reconcile three overlapping displays;
+    layout math simplified accordingly (nested rows still draw a
+    connecting line back to their own parent row, top-level rows no
+    longer reserve space for one that no longer exists).
+  - **Standalone file vanishing from the sidebar**: a standalone
+    file's header row was only ever rendered while it was the active
+    document — its recovery snapshot was genuinely preserved when
+    switching away (Stage 49 already guaranteed that), but nothing in
+    the sidebar pointed back to it, so opening a new directory made it
+    look gone even though the Changes panel still listed it correctly.
+    `renderStandalonePendingHeads()` replaces the old
+    active-file-only block: it still shows the active standalone
+    file's header, plus a clickable row (with the same pending dot
+    used elsewhere) for every *other* standalone file with a pending
+    snapshot, so switching to a workspace — or a second, different
+    workspace — no longer erases the way back to it.
+
+  Verified with dedicated Playwright tests plus the full existing
+  regression suite (one test's selector, referencing the now-removed
+  parent node, was updated to use the breadcrumb instead — an
+  expected test update, not a regression). Both fixes are on
+  `feature/multi-document-workspace`, not merged or deployed.

@@ -96,6 +96,15 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .files-tree-pin { font-size: 0.8rem; }
 .files-tree-pin-active { color: var(--accent-default); }
 .files-tree-close { font-size: 0.75rem; }
+/* A pending standalone file's own row when it's NOT the active document
+   (see main.js's renderStandalonePendingHeads) — same head styling as the
+   active one, but the name itself is a button (switch to it) with its own
+   pending dot, since this row exists specifically to get back to it. */
+.standalone-file-switch {
+  display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0;
+  background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left;
+}
+.standalone-file-switch:hover .files-tree-name { color: var(--accent-default); }
 .files-dir-label { cursor: default; color: var(--text-soft); font-weight: 600; }
 
 .nav-tree { list-style: none; margin: 0; padding: 0; }
@@ -148,6 +157,13 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
   background: color-mix(in srgb, var(--accent, var(--border)) 16%, var(--surface));
   padding: 0.05rem 0.4rem; border-radius: 999px; flex-shrink: 0;
 }
+/* A file with unsaved changes waiting (see main.js's recovery-snapshot
+   tracking) — switching away from it never discards anything, so this is
+   the one visual trail of that once you've navigated elsewhere. */
+.nav-pending-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent-default);
+  margin-left: auto; flex-shrink: 0;
+}
 
 /* Focal-neighborhood graph — see js/ui/focalGraph.js. */
 .focal-graph-wrap { padding: 0.25rem 0 1rem; }
@@ -169,9 +185,10 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .focal-node:focus-visible .focal-node-bg { stroke: color-mix(in srgb, var(--accent-default) 45%, var(--border)); }
 .focal-node-label { font-size: 11px; fill: var(--text); }
 .focal-node-badge { font-size: 10px; font-weight: 700; fill: var(--text-faint); }
+/* A file with unsaved changes waiting — see .nav-pending-dot's own comment (filesPanel.js's plain-list twin of this marker). */
+.focal-node-pending-dot { fill: var(--accent-default); }
 .focal-node-dir .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 8%, var(--surface)); stroke-dasharray: 3 2; }
 .focal-node-dir.focal-node-expanded .focal-node-bg { stroke-dasharray: none; }
-.focal-node-parent .focal-node-bg { fill: var(--bg-soft); }
 .focal-node-active .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 16%, var(--surface)); stroke: var(--accent-default); stroke-width: 1.5; }
 .focal-node-active .focal-node-label { font-weight: 700; }
 .focal-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
