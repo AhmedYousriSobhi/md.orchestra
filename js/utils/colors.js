@@ -6,7 +6,7 @@
 // against the theme's own surface color, rather than stored here as a fixed
 // hex — a fixed light pastel wouldn't adapt when the page switches to dark
 // mode.
-export const PALETTE = [
+const PALETTE = [
   { accent: '#6C5CE7' }, // violet
   { accent: '#0EA5A5' }, // teal
   { accent: '#E0793C' }, // copper

@@ -31,7 +31,3 @@ export function saveAiSettings(settings) {
 export function clearAiSettings() {
   localStorage.removeItem(STORAGE_KEY);
 }
-
-export function hasApiKey() {
-  return Boolean(getAiSettings().apiKey);
-}

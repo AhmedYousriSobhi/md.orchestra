@@ -83,7 +83,3 @@ export function clearRecoverySnapshot({ fileName, workspaceRelPath = null, works
   const id = identityFor({ fileName, workspaceRelPath, workspaceRootName });
   writeAll(readAll().filter((s) => s.id !== id));
 }
-
-export function clearAllRecoverySnapshots() {
-  writeAll([]);
-}

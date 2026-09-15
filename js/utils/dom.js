@@ -41,10 +41,6 @@ export function svg(tag, attrs = {}, children = []) {
   return el;
 }
 
-export function clear(el) {
-  while (el.firstChild) el.removeChild(el.firstChild);
-}
-
 export function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

@@ -1,5 +1,3 @@
-import { writeToHandle } from './fileIO.js';
-
 export const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
 const MD_RE = /\.(md|markdown)$/i;
@@ -72,9 +70,4 @@ export async function readWorkspaceFileText(entry) {
   if (entry.fileHandle) return (await entry.fileHandle.getFile()).text();
   if (entry.webkitFile) return entry.webkitFile.text();
   throw new Error('No readable handle for this file.');
-}
-
-export async function writeWorkspaceFile(entry, text) {
-  if (!entry.fileHandle) throw new Error('This file has no live write access in this browser — use Save to download it instead.');
-  await writeToHandle(entry.fileHandle, text);
 }
