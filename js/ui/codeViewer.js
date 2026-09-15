@@ -1,6 +1,6 @@
 import { h, escapeHtml } from '../utils/dom.js';
 import { openOverlay, closeOverlay } from './transitions.js';
-import { downloadText, guessCodeFileExtension } from '../fileIO.js';
+import { downloadText, guessCodeFileExtension } from '../core/fileIO.js';
 import { showToast } from './toast.js';
 
 let overlayEl = null;

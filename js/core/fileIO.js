@@ -7,12 +7,6 @@ export function readFile(file) {
   });
 }
 
-export async function fetchSample(path) {
-  const res = await fetch(path, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Could not load ${path} (${res.status}). Serve this folder over HTTP, not file://.`);
-  return res.text();
-}
-
 export const supportsFileSystemAccess = typeof window !== 'undefined' && 'showOpenFilePicker' in window;
 
 export async function openFilePicker() {
