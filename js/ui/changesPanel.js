@@ -24,10 +24,13 @@ function excerptOf(markdown, max = 110) {
  * crash-recovery snapshot elsewhere (see recovery.js's per-file tracking)
  * — so having more than one file's worth of unsaved work never has to be
  * tracked purely from memory. `activeId` marks whichever snapshot (if any)
- * corresponds to the live document: that row only offers Save (it's
- * already open); every other row offers Save (write straight to disk
- * without switching away from what you're doing), Open (switch to it),
- * and Discard. `handlers` is `{ onSave(snapshot, isActive), onOpen(snapshot), onDiscard(snapshot) }`.
+ * corresponds to the live document. Every row offers Save (write straight
+ * to disk — for the active row that's just the normal save; for any other,
+ * without switching away from what you're doing) and Discard (for the
+ * active row, revert it back to its last-saved baseline; for any other,
+ * drop that pending snapshot for good). Non-active rows are also clickable
+ * anywhere on the row — not only their explicit Open button — to switch to
+ * that file. `handlers` is `{ onSave(snapshot, isActive), onOpen(snapshot), onDiscard(snapshot, isActive) }`.
  */
 export function openChangesPanel(snapshots, activeId, handlers) {
   if (panelEl) panelEl.remove();
@@ -54,34 +57,44 @@ export function openChangesPanel(snapshots, activeId, handlers) {
     const list = h('div', { class: 'recovery-list' });
     pending.forEach((snap) => {
       const isActive = snap.id === activeId;
+      const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+
       const actions = [
         h('button', {
           class: 'btn btn-primary',
           type: 'button',
-          onClick: async () => {
+          onClick: stop(async () => {
             await handlers.onSave(snap, isActive);
             if (!isActive) { pending = pending.filter((s) => s.id !== snap.id); renderList(); }
-          },
+          }),
         }, '💾 Save'),
       ];
       if (!isActive) {
         actions.push(h('button', {
           class: 'btn btn-ghost',
           type: 'button',
-          onClick: () => { handlers.onOpen(snap); handleClose(); },
+          onClick: stop(() => { handlers.onOpen(snap); handleClose(); }),
         }, '↪ Open'));
-        actions.push(h('button', {
-          class: 'btn btn-ghost',
-          type: 'button',
-          onClick: () => {
-            handlers.onDiscard(snap);
-            pending = pending.filter((s) => s.id !== snap.id);
-            renderList();
-          },
-        }, '🗑 Discard'));
       }
+      actions.push(h('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        onClick: stop(() => {
+          handlers.onDiscard(snap, isActive);
+          pending = pending.filter((s) => s.id !== snap.id);
+          renderList();
+        }),
+      }, isActive ? '🗑 Discard changes' : '🗑 Discard'));
 
-      list.appendChild(h('div', { class: `recovery-row${isActive ? ' recovery-row-active' : ''}` }, [
+      const row = h('div', {
+        class: `recovery-row${isActive ? ' recovery-row-active' : ' recovery-row-clickable'}`,
+        ...(isActive ? {} : {
+          role: 'button',
+          tabindex: '0',
+          onClick: () => { handlers.onOpen(snap); handleClose(); },
+          onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlers.onOpen(snap); handleClose(); } },
+        }),
+      }, [
         h('div', { class: 'recovery-row-head' }, [
           h('span', { class: 'recovery-file' }, [
             isActive ? h('span', { class: 'recovery-active-badge', title: 'Currently open' }, '● ') : null,
@@ -91,7 +104,8 @@ export function openChangesPanel(snapshots, activeId, handlers) {
         ]),
         h('p', { class: 'recovery-excerpt' }, excerptOf(snap.markdown)),
         h('div', { class: 'recovery-row-actions' }, actions),
-      ]));
+      ]);
+      list.appendChild(row);
     });
     body.appendChild(list);
   }

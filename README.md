@@ -107,14 +107,17 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    accumulate unsaved changes in more than one file across a session (e.g.
    edit a workspace file, switch to a sample without saving first, edit
    that too). **📝 Changes**, in the header, lists every one of them — like
-   a compact `git status` — with a badge showing how many. Each file gets
-   **💾 Save** (writes it straight to disk without switching away from
-   whatever you're currently doing, if it still has a live handle —
-   otherwise downloads it, same as the main Save button), **↪ Open**
-   (switches to it, through the same unsaved-changes guard as everywhere
-   else), and **🗑 Discard** (drops that pending copy for good); the
-   currently active document appears in the list too when it's dirty,
-   marked "●", with just Save. Saving normally (the main Save button)
+   a compact `git status` — with a badge showing how many. Every row —
+   click anywhere on it, not just its buttons, for a non-active one — jumps
+   straight to that file, through the same unsaved-changes guard as
+   everywhere else. Each file also gets **💾 Save** (writes it straight to
+   disk without switching away from whatever you're currently doing, if it
+   still has a live handle — otherwise downloads it, same as the main Save
+   button) and **🗑 Discard**: for another file, drops that pending copy
+   for good; for the currently active document — which appears in the
+   same list when it's dirty, marked "●" — reverts it back to its last
+   saved version instead, since there's a real in-memory edit to throw
+   away, not just a cached copy. Saving normally (the main Save button)
    also opens this list automatically afterward if anything *else* still
    has unsaved changes, so a save is never quietly assumed to have
    covered everything.
@@ -756,3 +759,20 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   individual note now a clean surface-colored card floating on that
   tinted background instead of blending into it. Checked in both
   light and dark themes.
+- **Stage 37** — Two requests for the Changes panel. First, the active
+  document's own row only ever offered Save — there was no way to throw
+  away its unsaved edits from there, only a cached copy elsewhere could
+  be dropped. It now gets a "🗑 Discard changes" button too, which
+  reverts it back to `currentBaseline` (the content this editing session
+  actually started from — the same value the crash-recovery snapshot
+  already tracks) rather than just clearing a safety-net snapshot and
+  leaving the in-memory edit untouched; guarded by the same in-app
+  confirm dialog as every other discard-style action. Second, every
+  other row is now clickable anywhere on it — not only its small "↪
+  Open" button — to jump straight to that file, a bigger and more
+  obvious target for what's really the row's main action. Verified:
+  discarding the active document's changes reverts it and clears its
+  badge count, discarding a different file's snapshot is unaffected
+  (still just drops the cached copy), and clicking a row's background
+  switches files exactly like its Open button already did, guarded by
+  the same unsaved-changes confirm.

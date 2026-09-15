@@ -515,7 +515,7 @@ function notifyOtherPendingChanges(justSavedIdentity) {
   openChangesPanel(others, null, {
     onSave: handleChangesSave,
     onOpen: handleChangesOpenSnapshot,
-    onDiscard: (snap) => clearRecoverySnapshot(snap),
+    onDiscard: handleChangesDiscard,
   });
 }
 
@@ -555,13 +555,48 @@ async function handleChangesOpenSnapshot(snapshot) {
   loadSnapshotAsActive(snapshot);
 }
 
+/**
+ * Discard a pending snapshot from the Changes panel. For any other file,
+ * that's just dropping the cached copy — nothing currently loaded is
+ * affected. For the *active* document, there's a real in-memory edit to
+ * throw away too: revert it back to currentBaseline (the content this
+ * editing session started from — set on load and after every save) rather
+ * than just clearing the safety-net snapshot and leaving the unsaved edit
+ * sitting in memory unchanged.
+ */
+async function handleChangesDiscard(snapshot, isActive) {
+  if (!isActive) {
+    clearRecoverySnapshot(snapshot);
+    return;
+  }
+  const ok = await confirmDialog({
+    title: 'Discard unsaved changes?',
+    message: `This reverts "${snapshot.fileName}" back to its last saved version, discarding everything changed since. This can't be undone.`,
+    confirmLabel: 'Discard changes',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const { fileHandle, workspaceRelPath } = getState();
+    const doc = parseMarkdown(currentBaseline);
+    loadDocument({
+      doc, fileName: snapshot.fileName, fileHandle, dirty: false, workspaceRelPath,
+    });
+    clearRecoverySnapshot(snapshot);
+    showToast(`Discarded unsaved changes to "${snapshot.fileName}"`);
+  } catch (err) {
+    console.error(err);
+    showToast(`Could not discard changes: ${err.message}`, { type: 'error' });
+  }
+}
+
 function handleOpenChanges() {
   const { fileName, workspaceRelPath } = getState();
   const activeId = getState().doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
   openChangesPanel(listRecoverySnapshots(), activeId, {
     onSave: handleChangesSave,
     onOpen: handleChangesOpenSnapshot,
-    onDiscard: (snap) => clearRecoverySnapshot(snap),
+    onDiscard: handleChangesDiscard,
   });
 }
 
