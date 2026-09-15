@@ -96,6 +96,15 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .files-tree-pin { font-size: 0.8rem; }
 .files-tree-pin-active { color: var(--accent-default); }
 .files-tree-close { font-size: 0.75rem; }
+/* A pending standalone file's own row when it's NOT the active document
+   (see main.js's renderStandalonePendingHeads) — same head styling as the
+   active one, but the name itself is a button (switch to it) with its own
+   pending dot, since this row exists specifically to get back to it. */
+.standalone-file-switch {
+  display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0;
+  background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left;
+}
+.standalone-file-switch:hover .files-tree-name { color: var(--accent-default); }
 .files-dir-label { cursor: default; color: var(--text-soft); font-weight: 600; }
 
 .nav-tree { list-style: none; margin: 0; padding: 0; }

@@ -200,25 +200,7 @@ function renderInner() {
   }
 
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
-  // The active document and an open folder are two independent things you
-  // opened separately — when both are around at once (see Stage 47's
-  // folder-open fix), give the standalone one the same kind of clearly-
-  // labeled header row the folder already gets (.files-tree-head), rather
-  // than just an unlabeled heading outline that reads as if it belongs to
-  // the folder underneath it.
-  if (!workspaceRelPath && getWorkspace()) {
-    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
-      h('span', { class: 'files-tree-icon' }, '📄'),
-      h('span', { class: 'files-tree-name', title: fileName }, fileName),
-      h('button', {
-        class: 'icon-btn files-tree-close',
-        type: 'button',
-        title: 'Close this file',
-        'aria-label': 'Close this file',
-        onClick: handleCloseStandaloneFile,
-      }, '✕'),
-    ]));
-  }
+  renderStandalonePendingHeads();
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
@@ -539,6 +521,67 @@ async function handleCloseWorkspace() {
   clearWorkspace();
   clearLinkIndex();
   render();
+}
+
+/**
+ * Every standalone file (not part of any workspace) with pending unsaved
+ * changes gets its own small header row prepended above the heading tree —
+ * the currently active one (if it's a standalone file) plus any *other*
+ * standalone file edited earlier in this session and since navigated away
+ * from. Without this, a standalone file's only trace once it stops being
+ * the active document was the Changes panel — switching to a workspace (or
+ * a different workspace entirely) made it look like it had vanished, even
+ * though nothing was actually lost. A workspace file never needs this: it
+ * always has its own permanent row in the tree/graph (with the same
+ * pending-changes dot) regardless of which file is currently active.
+ */
+function renderStandalonePendingHeads() {
+  const { doc, fileName, workspaceRelPath } = getState();
+  const activeIsStandalone = Boolean(doc) && !workspaceRelPath;
+  const activeGap = activeIsStandalone ? activeGapSnapshot() : null;
+  const activeId = activeIsStandalone
+    ? (activeGap ? activeGap.id : snapshotIdentity({ fileName, workspaceRelPath: null, workspaceRootName: null }))
+    : null;
+  const others = listRecoverySnapshots().filter((s) => !s.workspaceRelPath && s.id !== activeId);
+
+  if (activeIsStandalone && getWorkspace()) {
+    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
+      h('span', { class: 'files-tree-icon' }, '📄'),
+      h('span', { class: 'files-tree-name', title: fileName }, fileName),
+      h('button', {
+        class: 'icon-btn files-tree-close',
+        type: 'button',
+        title: 'Close this file',
+        'aria-label': 'Close this file',
+        onClick: handleCloseStandaloneFile,
+      }, '✕'),
+    ]));
+  }
+
+  // Reversed so the row closest to the top of the sidebar is whichever was
+  // touched most recently — savedAt is only set once a snapshot is actually
+  // persisted, which is exactly the order a user would expect to scan them in.
+  others.slice().reverse().forEach((snap) => {
+    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
+      h('button', {
+        class: 'standalone-file-switch',
+        type: 'button',
+        title: `Switch to "${snap.fileName}" — unsaved changes waiting`,
+        onClick: () => handleChangesOpenSnapshot(snap),
+      }, [
+        h('span', { class: 'files-tree-icon' }, '📄'),
+        h('span', { class: 'files-tree-name' }, snap.fileName),
+        h('span', { class: 'nav-pending-dot' }),
+      ]),
+      h('button', {
+        class: 'icon-btn files-tree-close',
+        type: 'button',
+        title: 'Discard these changes',
+        'aria-label': 'Discard these changes',
+        onClick: () => { handleChangesDiscard(snap, false); render(); },
+      }, '✕'),
+    ]));
+  });
 }
 
 /** The ✕ on a standalone file's own sidebar header (see renderInner) — closes just that file, leaving an open workspace (if any) untouched, same confirm-if-dirty treatment as everything else that can discard unsaved work. */
