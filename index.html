@@ -48,14 +48,6 @@
     <button id="open-folder-btn" class="btn" type="button" title="Open a whole directory of Markdown files">📁 Open folder</button>
     <input id="folder-input" type="file" webkitdirectory multiple />
 
-    <div class="samples-menu">
-      <button id="samples-btn" class="btn" type="button">Samples ▾</button>
-      <div id="samples-dropdown" class="samples-dropdown" hidden>
-        <button type="button" data-sample="sample.md">sample.md — onboarding checklist</button>
-        <button type="button" data-sample="sample3.md">sample3.md — feature showcase</button>
-      </div>
-    </div>
-
     <div class="spacer"></div>
 
     <button id="dirty-indicator" class="dirty-indicator" type="button" title="Click to save">
@@ -80,8 +72,7 @@
       <div id="section-view-wrap">
         <div id="empty-state">
           <h2>No document loaded yet</h2>
-          <p>Open a Markdown file, drop one anywhere on this page, or load a bundled sample to see it broken into cards you can browse, annotate, and ask Claude about.</p>
-          <button id="empty-sample-btn" class="btn btn-primary" type="button">Try sample.md</button>
+          <p>Open a Markdown file or a whole folder of them, or drop one anywhere on this page, to see it broken into cards you can browse, annotate, and ask Claude about.</p>
           <span id="drop-hint">…or drag a .md file here</span>
         </div>
         <div id="section-view" hidden></div>
