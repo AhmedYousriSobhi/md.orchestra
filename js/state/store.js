@@ -20,8 +20,23 @@ export function subscribe(fn) {
   return () => listeners.delete(fn);
 }
 
+// Isolated per listener: main.js's render() is one of several subscribers
+// (crash-recovery snapshotting is another), and a single one throwing —
+// from a bad render given some edge-case document/localStorage state —
+// used to abort the whole notify() loop, silently skipping every other
+// subscriber for that update and, since render() runs on every future
+// state change too, potentially wedging the entire UI into looking
+// unresponsive from that point on. Logged, not swallowed, so a real bug is
+// still visible in the console — it just can't cascade into every other
+// subscriber (and everything downstream of them) breaking with it.
 function notify() {
-  for (const fn of listeners) fn(state);
+  for (const fn of listeners) {
+    try {
+      fn(state);
+    } catch (err) {
+      console.error('A store subscriber threw; continuing with the others.', err);
+    }
+  }
 }
 
 export function setState(patch) {

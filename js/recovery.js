@@ -33,7 +33,16 @@ function readAll() {
   try {
     const raw = localStorage.getItem(KEY);
     const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    // Silently drop anything that isn't a well-formed entry (a stray
+    // null/primitive, or an object some now-removed older version of this
+    // feature — or something entirely unrelated — happened to write under
+    // this key) rather than let it reach every consumer (listing,
+    // saving, clearing) as a landmine: one throw here, at startup, before
+    // this app's own button handlers are even wired up, used to be able to
+    // take the whole page down with it. The next write naturally leaves
+    // the bad entry out of localStorage for good.
+    return list.filter((s) => s && typeof s === 'object' && typeof s.id === 'string');
   } catch {
     return [];
   }

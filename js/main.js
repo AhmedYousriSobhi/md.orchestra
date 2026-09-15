@@ -69,7 +69,26 @@ const el = {
 
 let lastPathLength = 0;
 
+/**
+ * A thin, never-throwing wrapper around the real render logic below. This
+ * runs on every state change (and is called directly in several places
+ * besides), so one bad render — triggered by some edge-case document or
+ * leftover localStorage state — must never take the rest of the app down
+ * with it: without this, an uncaught exception here would abort whichever
+ * caller invoked it, which for the very first call (right after this
+ * function is defined) means every line after it in this file — all of
+ * the addEventListener() calls that make the buttons work at all — would
+ * simply never run.
+ */
 function render() {
+  try {
+    renderInner();
+  } catch (err) {
+    console.error('render() failed; the UI may be out of date until the next update.', err);
+  }
+}
+
+function renderInner() {
   const { doc, fileName, dirty, workspaceRelPath } = getState();
 
   updateChangesBadge();
@@ -358,7 +377,17 @@ function checkForRecovery() {
     },
   });
 }
-checkForRecovery();
+// Called directly (not through the store), so — same reasoning as render()
+// above — it's guarded here too: whatever's sitting in localStorage from a
+// much earlier version of this feature (or another one entirely) must
+// never be able to stop every line below this one, all of the
+// addEventListener() calls that make the rest of the app work, from
+// running at all.
+try {
+  checkForRecovery();
+} catch (err) {
+  console.error('Crash-recovery check failed on startup.', err);
+}
 
 el.openFileBtn.addEventListener('click', async () => {
   if (supportsFileSystemAccess) {

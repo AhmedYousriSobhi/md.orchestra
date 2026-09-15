@@ -654,3 +654,32 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   up with correct active-marking, Save/Open/Discard each work from the
   list, and the post-save "anything else pending?" panel opens exactly
   when it should.
+- **Stage 32** — Reported: "no button is clickable" after a fresh
+  container restart and reload — not fixed by restarting the server.
+  Isolated it (a fresh Incognito window worked; clearing site data in
+  the regular browser fixed it there too) to leftover browser-side state
+  for this origin, not a code or serving issue. While the *exact*
+  original trigger couldn't be pinned down after the fact, deliberately
+  corrupting `recovery.js`'s localStorage entry (a stray non-object item
+  in the list — plausible after nearly a month of iterating on that
+  feature's shape) reliably reproduced the *symptom* exactly: `.sort()`
+  over the snapshot list threw immediately inside the very first
+  `render()` call, before this file's own button `addEventListener()`
+  calls further down ever got to run — so every button appeared
+  permanently dead, from one single bad record.
+
+  Fixed at the source: `recovery.js` now filters out anything that isn't
+  a well-formed entry the moment it's read, so one corrupt or
+  unrecognized record can never reach any consumer — and, in depth,
+  three more layers so this whole *class* of failure is structurally
+  harder to reintroduce: `store.js`'s `notify()` now isolates each
+  subscriber (one throwing no longer silently skips every other one,
+  including for every future update afterward), `render()` itself is a
+  never-throwing wrapper around the real rendering logic, and the
+  startup crash-recovery check is similarly guarded — all logging
+  clearly to the console rather than swallowing anything. Bumped the
+  service worker's cache version too, as a proactive flush for anyone
+  still on a stale cached copy from before any of this. Verified: a
+  deliberately-corrupted recovery list throws zero errors now and the
+  app loads and works normally (openable, clickable, a document loads
+  fine afterward), and the full regression suite is unaffected.

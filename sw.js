@@ -5,7 +5,7 @@
 // cross-origin responses here would mean opaque responses we can't safely
 // reason about, for no real benefit (those URLs are already versioned/pinned
 // and cache well on their own).
-const CACHE_NAME = 'md-dashboard-v2';
+const CACHE_NAME = 'md-dashboard-v3';
 const PRECACHE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
