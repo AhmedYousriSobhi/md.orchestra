@@ -895,3 +895,45 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   flows work identically for a file that isn't the currently open one,
   without disturbing whatever *is* open. No native dialogs, no console
   errors.
+- **Stage 41** — Three UI/UX requests for how the preview relates to the
+  main content view. First: the "👁 Preview" button was one more item
+  in an already-crowded header row. Second: it started closed every
+  session, so browsing sections showed nothing alongside them until
+  toggled on. Third: adding a note meant opening the current section's
+  card and hunting for its own "+ Add note" button, even though the
+  preview right next to it was already showing that same section.
+
+  The header button is gone; a slim tab now docks to the edge of the
+  content area instead (`.edge-toggle` in `css/layout.css`), sitting at
+  the preview panel's own left edge while it's open and at the
+  viewport's edge while it's closed — a CSS transition slides it
+  between the two rather than the button just appearing in a different
+  spot. Preview also now defaults to open rather than closed
+  (`getPreviewOpen()`/`setPreviewOpen()` in `previewPanel.js`, mirroring
+  the existing preview-scope preference), only remembered once actually
+  toggled, so every newly-selected section previews live beside it from
+  the very first load.
+
+  A small round button now floats directly on the seam between the
+  content pane and the preview panel — hovering within 48px of the
+  shared border from either side reveals it at the cursor's height,
+  mirrored onto whichever side triggered it (`.note-seam-btn-content` /
+  `.note-seam-btn-preview`) purely as a visual cue, not a different
+  action: it always adds a note to whatever section is currently
+  selected, since both views already show that same one. The one real
+  wrinkle was that the edge-toggle tab from the first two changes and
+  this new seam button both wanted the same vertical-center real
+  estate on that border; docking the tab near the top of the seam
+  instead (rather than centered) keeps it clear of the area a user
+  would actually hover across looking for the note button. The
+  "append a new empty note" logic itself moved into `markdown/
+  markers.js`'s new `addNote()`, so this and the card view's own
+  "+ Add note" button share one implementation instead of duplicating
+  it. Verified: the header no longer has a preview button and the edge
+  tab is there instead; loading a file opens the preview without an
+  extra click and switching sections updates it live; toggling the
+  edge tab closed persists across a reload; hovering near the seam from
+  the content side shows the button mirrored on that side, from the
+  preview side mirrors it there instead, moving away hides it again,
+  and clicking it adds a note to the selected section's own notes list
+  — all with no console errors.
