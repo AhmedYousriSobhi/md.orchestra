@@ -86,13 +86,21 @@ function finalizeNode(node) {
  * leading, truly-empty H1(s) contribute their titles to the next H1's own
  * (joined with " — "), and are otherwise dropped from the tree — the
  * surviving node keeps its own id, level, body and children unchanged.
- * Deliberately scoped tight to avoid swallowing real structure: only H1s
- * (level 1 is the closest thing this format has to "the document's own
- * title"), only at the very start of the document, and only when the
- * leading one has neither body text nor a nested heading of its own — a
- * placeholder section someone's mid-drafting (even an empty one) always has
- * *something* under it eventually, but never sits fused to the next H1 with
- * literally nothing in between.
+ *
+ * Deliberately restricted to a leading H1 with *neither* body text *nor* a
+ * nested heading of its own — not just "H1 immediately followed by H1" in
+ * general, which was tried and rejected: allowing the first H1 to carry
+ * real content (so it could merge into the second one too) turned out not
+ * to be idempotent. A document with three real, separate chapters
+ * (`# Chapter 1` / text / `# Chapter 2` / text / `# Chapter 3` / text)
+ * would merge chapters 1 and 2 into one on first open — reasonable on its
+ * own — but that merged node is then indistinguishable, once saved back to
+ * plain Markdown, from a fresh "H1 followed by content-bearing H1" case:
+ * reopening it would merge chapter 3 in too, and so on, silently eating one
+ * more real chapter every save/reload cycle. Restricting to *empty*
+ * leading H1s avoids this entirely — a merged node always ends up with
+ * real content, so it can never look "empty" again on a later parse, and
+ * this rule is provably stable across repeated save/reload.
  */
 function mergeLeadingEmptyH1s(root) {
   const mergedTitles = [];

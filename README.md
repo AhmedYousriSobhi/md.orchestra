@@ -1012,8 +1012,7 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   its collapsed position; the edge-toggle's own open/close cycle still
   works as before. (Also landed directly on `master`, same reasoning as
   Stage 42/43, then merged back into this branch.)
-- **Stage 45** (branch `feature/focal-neighborhood-graph`, not yet merged)
-  — A proposed "Best-Practice View Mode: Focal Neighborhood Graph" for
+- **Stage 45** — A proposed "Best-Practice View Mode: Focal Neighborhood Graph" for
   navigating a whole workspace (a directory of Markdown files), rather
   than a single document's headings: instead of always showing the
   entire recursive folder tree at once (the sidebar's existing plain
@@ -1067,9 +1066,9 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   chip opens the file and re-centers the graph there; the manual
   workspace-wide scan makes a previously-unknown backlink (from a file
   that was never directly opened) show up afterward. No console
-  errors. Not yet merged to `master` or deployed to the running
-  container — left on its own branch until it's actually wanted for
-  daily use.
+  errors. (Built on its own branch, `feature/focal-neighborhood-graph`,
+  through both phases below — merged into `master` once Phase 2 and
+  the bug fixes found along the way were settled.)
 
   Phase 2 (same branch): after trying Phase 1, the graph became the
   sidebar's *default* view (the plain tree is still one click away,
@@ -1096,3 +1095,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   directory (exercising both the FLIP "already seen" path and the
   fade-in "brand new" path back to back) never throws and always ends
   up showing the right nodes. No console errors.
+- **Stage 46** — Follow-up report: "the two-H1 merge from Stage 43
+  isn't working" — turned out Stage 43's fix (still live and verified
+  working for its own exact case) only ever covered a leading H1 with
+  *no* content of its own at all; the actual ask, restated, was for
+  *any* two consecutive leading H1s to merge, even when the first one
+  has its own body text. Implemented that broader version — and found,
+  before shipping it, that it isn't idempotent: a real multi-chapter
+  document (`# Chapter 1` / text / `# Chapter 2` / text / `# Chapter 3`
+  / text) merges chapters 1 and 2 on first open, reasonably enough, but
+  the merged node is then indistinguishable — once written back to
+  plain Markdown — from a fresh "H1 followed by a content-bearing H1"
+  case. Reopening that saved file merges chapter 3 in too, and so on:
+  every save/reload cycle would silently eat one more real chapter,
+  with no way to tell from the file alone that a merge had already
+  happened. Confirmed this concretely (round-tripping the chapter
+  example through serialize → re-parse produces a *different* structure
+  than the original parse) before asking which way to go, rather than
+  shipping something that quietly corrupts real documents over time.
+  Reverted to Stage 43's narrow rule (leading H1 must have neither body
+  text nor a nested heading) — it already fully covers the originally
+  reported case and is provably stable across repeated save/reload,
+  since a merged node always ends up with real content and can never
+  look "empty" again on a later parse. No code changed from what Stage
+  43 shipped; only the comment explaining why the broader rule was
+  tried and rejected.
