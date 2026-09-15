@@ -200,6 +200,35 @@ aside#preview-panel {
 }
 aside#preview-panel[hidden] { display: none; }
 
+/* A slim docked tab on the edge of the content area — replaces a plain
+   header button so opening/closing the preview doesn't compete for space in
+   the already-busy top toolbar. Sits right where the preview panel's own
+   left edge is when it's open (see #app-body.preview-open below), and at
+   the outer edge of the viewport when it's closed. */
+.edge-toggle {
+  position: absolute;
+  top: 90px;
+  right: 0;
+  z-index: 25;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.6rem 0.35rem;
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: right 0.2s ease, color 0.15s ease, background 0.15s ease;
+}
+.edge-toggle:hover:not(:disabled) { color: var(--text); background: var(--bg-soft); }
+.edge-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+#app-body.preview-open .edge-toggle { right: min(460px, 40vw); }
+
 .preview-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem;
   padding-bottom: 0.85rem; margin-bottom: 1.1rem; border-bottom: 1px solid var(--border);

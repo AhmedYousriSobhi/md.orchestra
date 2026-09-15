@@ -7,6 +7,7 @@ import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 
 const SCOPE_KEY = 'mdDashboard.previewScope';
+const OPEN_KEY = 'mdDashboard.previewOpen';
 
 export function getPreviewScope() {
   try {
@@ -18,6 +19,19 @@ export function getPreviewScope() {
 
 export function setPreviewScope(scope) {
   try { localStorage.setItem(SCOPE_KEY, scope); } catch { /* ignore */ }
+}
+
+/** Whether the preview panel should be open — on by default (every newly-selected section previews live alongside it), remembered per-browser once the user has explicitly toggled it via the edge tab. */
+export function getPreviewOpen() {
+  try {
+    return localStorage.getItem(OPEN_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setPreviewOpen(open) {
+  try { localStorage.setItem(OPEN_KEY, open ? 'true' : 'false'); } catch { /* ignore */ }
 }
 
 // A handful of paper colors, cycling regardless of the app's own accent

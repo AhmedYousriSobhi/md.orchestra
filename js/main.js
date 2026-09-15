@@ -28,7 +28,9 @@ import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
 import { openChangesPanel } from './ui/changesPanel.js';
 import { confirmDialog } from './ui/confirmDialog.js';
-import { renderPreviewPanel, getPreviewScope, setPreviewScope } from './ui/previewPanel.js';
+import {
+  renderPreviewPanel, getPreviewScope, setPreviewScope, getPreviewOpen, setPreviewOpen,
+} from './ui/previewPanel.js';
 import { openCodeViewer } from './ui/codeViewer.js';
 import { debounce } from './utils/debounce.js';
 import {
@@ -42,6 +44,7 @@ import { getTheme, applyTheme } from './utils/theme.js';
 applyTheme(getTheme());
 
 const el = {
+  appBody: document.getElementById('app-body'),
   sidebar: document.getElementById('sidebar'),
   workspaceTree: document.getElementById('workspace-tree'),
   headingTree: document.getElementById('heading-tree'),
@@ -58,7 +61,7 @@ const el = {
   emptySampleBtn: document.getElementById('empty-sample-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
-  previewToggleBtn: document.getElementById('preview-toggle-btn'),
+  previewToggleBtn: document.getElementById('preview-edge-toggle'),
   previewPanel: document.getElementById('preview-panel'),
   saveBtn: document.getElementById('save-btn'),
   changesBtn: document.getElementById('changes-btn'),
@@ -68,6 +71,12 @@ const el = {
   dirtyIndicator: document.getElementById('dirty-indicator'),
   dirtyText: document.getElementById('dirty-text'),
 };
+
+// Preview defaults to open (every newly-selected section previews live
+// alongside it) rather than starting collapsed every session — see
+// ui/previewPanel.js's getPreviewOpen/setPreviewOpen and the edge-toggle
+// wiring below, which persists it once the user actually flips it.
+el.previewPanel.hidden = !getPreviewOpen();
 
 let lastPathLength = 0;
 
@@ -122,6 +131,10 @@ function renderInner() {
   el.mapViewBtn.disabled = !doc;
   el.previewToggleBtn.disabled = !doc;
   el.saveBtn.disabled = !doc;
+  // Drives the edge-toggle tab's docked position (see css/layout.css) — it
+  // sits at the preview panel's own edge while open, and the viewport's
+  // edge while closed.
+  el.appBody.classList.toggle('preview-open', !el.previewPanel.hidden);
 
   if (!doc) {
     el.emptyState.hidden = false;
@@ -835,10 +848,12 @@ el.mapViewBtn.addEventListener('click', openMapView);
 el.previewToggleBtn.addEventListener('click', () => {
   if (el.previewPanel.hidden) {
     el.previewPanel.hidden = false;
-    render();
+    setPreviewOpen(true);
   } else {
+    setPreviewOpen(false);
     handleClosePreview();
   }
+  render();
 });
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);
