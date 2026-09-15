@@ -1396,3 +1396,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   extensive alternating cross-directory switching (dirty and clean
   standalone files, root-level and deeply-nested workspace files, 10+
   switches in sequence) against both the dev server and Docker.
+
+- **Stage 57** — The disappearing-file report persisted with an exact
+  repro (two directories, then a standalone file, switch to a
+  directory file, switch back). Could not reproduce it directly even
+  with that literal sequence, across many variations, on either the
+  dev server or a freshly rebuilt Docker container — which, combined
+  with Stage 56's real fix having apparently made no visible
+  difference, pointed at the browser not actually loading the latest
+  deployed code at all. Found two real gaps: nginx only ever set
+  Cache-Control on sw.js itself, leaving every other file (index.html,
+  js/*, css/*) cacheable by the browser's own HTTP cache with no
+  request ever reaching the server; and sw.js's "network-first" fetch
+  handler called plain `fetch(request)`, which is itself still subject
+  to that same browser cache — network-first was never actually
+  guaranteed to reach the network. nginx now sends
+  `Cache-Control: no-cache, no-store, must-revalidate` on every path,
+  sw.js passes `{ cache: 'no-store' }`, and the SW cache name was
+  bumped to purge whatever an already-registered worker had stashed.
+  This doesn't rule out the reported bug still being real and
+  unreproduced — it removes a very plausible reason a genuine fix
+  could look like it never happened.
