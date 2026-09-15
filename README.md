@@ -1120,3 +1120,48 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   look "empty" again on a later parse. No code changed from what Stage
   43 shipped; only the comment explaining why the broader rule was
   tried and rejected.
+- **Stage 47** — Three reported bugs around workspaces (open folders),
+  all in `main.js`:
+  1. The focal graph's "🔍 Scan for links" button only ever worked
+     once — after a full scan it hid itself permanently
+     (`indexedCount() >= workspace.files.size`, a one-way flag), and
+     `indexWorkspaceLinks()` itself skipped any file already indexed,
+     so even a visible button wouldn't have refreshed a file that
+     changed after its first scan. A file's own outgoing links were
+     previously only ever refreshed by *reopening* it — never by
+     saving it while it stayed open, which is the common case. Fixed:
+     the button is unconditionally there now, `indexWorkspaceLinks()`
+     always does a full re-read of every file, and `handleSave()` now
+     also calls `recordLinksFor()` for whatever it just wrote, so the
+     common case stays fresh automatically and a manual re-scan is
+     always available as a fallback regardless.
+  2. With a standalone file open, using "Open folder" silently
+     replaced it with one of the new folder's own files, discarding it
+     with no trace — the reverse order (folder first, then a
+     standalone file) already worked correctly, collapsing the folder
+     to a peekable sidebar header while the new file became active.
+     `handleWorkspaceOpened()` now only auto-opens a default file into
+     a genuinely empty workspace; with something already active, the
+     folder just becomes browsable in the sidebar and the current
+     document stays put — needed an explicit `render()` call alongside
+     that, since `setWorkspace()` is separate module state that never
+     triggers one on its own (previously masked by the auto-open,
+     which indirectly triggered one via `loadDocument`'s own
+     `setState`).
+  3. Removing an open folder from the sidebar (its ✕) left whatever
+     file was open from it fully loaded and editable, with no link
+     back to any folder anymore and no warning even with unsaved
+     changes pending. `handleCloseWorkspace()` now also closes that
+     document (confirming first if it's dirty, same as every other
+     path that can lose unsaved work, and clearing its pending
+     recovery snapshot on a confirmed discard) — a document that
+     doesn't belong to the folder being closed is left untouched.
+
+  Verified each in isolation and together: the scan button survives
+  repeated use; opening a folder after a standalone file keeps that
+  file active with the folder shown collapsed; opening a folder after
+  another folder (existing behavior) is unaffected; closing a folder
+  with a dirty active file from it prompts to confirm before returning
+  to the empty state, and with a clean one closes straight away with
+  no prompt. Full regression suite (self-test, focal graph, preview UX,
+  per-section Changes) unaffected.
