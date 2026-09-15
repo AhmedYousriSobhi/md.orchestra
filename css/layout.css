@@ -152,12 +152,15 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 /* Focal-neighborhood graph — see js/ui/focalGraph.js. */
 .focal-graph-wrap { padding: 0.25rem 0 1rem; }
 .focal-graph-head {
-  display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
+  display: flex; align-items: flex-start; gap: 0.35rem;
   padding: 0.2rem 0.4rem 0.6rem;
 }
+.focal-graph-icon { font-size: 0.85rem; margin-top: 0.1rem; }
+.focal-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem; }
+.focal-breadcrumb .crumb { font-size: 0.78rem; font-weight: 700; padding: 0.1rem 0.25rem; }
 .focal-graph-svg { display: block; overflow: visible; }
-.focal-node { cursor: pointer; transition: transform 0.22s ease; }
+.focal-node { cursor: pointer; transition: transform 0.22s ease, opacity 0.18s ease; }
+.focal-node-enter { opacity: 0; }
 .focal-node-bg {
   fill: var(--surface); stroke: var(--border); stroke-width: 1;
   transition: fill 0.15s ease, stroke 0.15s ease;

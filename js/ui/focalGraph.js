@@ -10,16 +10,18 @@ import { showToast } from './toast.js';
 // subdirectory collapsed into a "+N" ghost node until explicitly expanded,
 // so a deep/wide repo never dumps hundreds of nodes on screen at once. The
 // directory a step up is always shown too (click it to re-center the whole
-// view one level up), and a small tray below surfaces cross-file Markdown
-// links to/from the active file that aren't already visible as filesystem
-// neighbors — see state/linkIndex.js.
+// view one level up, or use the breadcrumb strip to jump straight to any
+// higher ancestor in one step), and a small tray below surfaces cross-file
+// Markdown links to/from the active file that aren't already visible as
+// filesystem neighbors — see state/linkIndex.js.
 //
 // Deliberately no physics/force layout: this is a hierarchy, not an organic
 // cluster, so a fixed depth-first stack (same layout style as mapView.js's
 // document tree) reads more predictably than anything that jiggles or
-// resettles. Re-centering and expanding are still smooth, just via a plain
-// CSS transition on each node's SVG transform (see css/layout.css) rather
-// than a running simulation.
+// resettles. Re-centering and expanding still animate, just via a FLIP
+// transform (see positionNode) — a node that was already visible slides
+// from its last known spot to its new one; a genuinely new node fades in
+// instead, since it has no "last known spot" to slide from.
 
 const ROW_H = 28;
 const INDENT_W = 18;
@@ -37,6 +39,13 @@ const GRAPH_WIDTH = 280;
 let focalCenter = null;
 let focalExpanded = new Set();
 let lastActiveRelPath = undefined;
+
+// FLIP bookkeeping: each node's last-rendered (x, y), keyed by something
+// stable across renders (a file/dir's own path — not array position, which
+// shifts whenever a row above it expands/collapses). Read before laying out
+// the new frame, written after, so positionNode() can tell "moved" from
+// "brand new" for every node on every render.
+let lastKnownPos = new Map();
 
 function dirname(relPath) {
   return relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
@@ -94,11 +103,48 @@ function nodeWidth(label) {
   return Math.min(160, Math.max(64, label.length * 6.4 + 22));
 }
 
+/**
+ * Move `group` to (x, y) — smoothly, via a FLIP transform, if it occupied a
+ * different spot on the previous render (same `key` as last time: a node
+ * that only shifted because a row above it expanded/collapsed slides to its
+ * new spot instead of jumping); a `key` never seen before fades+grows in
+ * instead, since there's no earlier position to animate from. `key` must be
+ * stable across renders for the same conceptual node — a file/dir's own
+ * path, not its row index (which changes constantly as siblings
+ * expand/collapse above it).
+ */
+function positionNode(group, key, x, y) {
+  const prev = lastKnownPos.get(key);
+  lastKnownPos.set(key, { x, y });
+
+  if (!prev) {
+    group.setAttribute('transform', `translate(${x}, ${y})`);
+    group.classList.add('focal-node-enter');
+    requestAnimationFrame(() => {
+      group.getBoundingClientRect(); // commit the enter state before transitioning away from it
+      group.classList.remove('focal-node-enter');
+    });
+    return;
+  }
+
+  if (prev.x === x && prev.y === y) {
+    group.setAttribute('transform', `translate(${x}, ${y})`);
+    return;
+  }
+
+  group.style.transition = 'none';
+  group.setAttribute('transform', `translate(${prev.x}, ${prev.y})`);
+  group.getBoundingClientRect(); // commit the "first" position before animating to "last"
+  requestAnimationFrame(() => {
+    group.style.transition = '';
+    group.setAttribute('transform', `translate(${x}, ${y})`);
+  });
+}
+
 function buildNodeGroup({
-  x, y, label, isDir, isActive, isExpanded, count, onClick,
+  label, isDir, isActive, isExpanded, count, onClick,
 }) {
   const w = nodeWidth(label);
-  const cy = y + ROW_H / 2;
   const classes = ['focal-node'];
   if (isDir) classes.push('focal-node-dir');
   if (isActive) classes.push('focal-node-active');
@@ -106,7 +152,6 @@ function buildNodeGroup({
 
   const group = svg('g', {
     class: classes.join(' '),
-    transform: `translate(${x}, ${cy - ROW_H / 2 + 3})`,
     tabindex: '0',
     role: 'button',
     'aria-label': label,
@@ -128,6 +173,37 @@ function buildNodeGroup({
   return { group, width: w };
 }
 
+/** Root down to `centerPath`, as {label, path} steps — path '' is the workspace root itself. Each step (but the last) is a clickable jump straight to that ancestor, without stepping through every level in between. */
+function buildBreadcrumbSteps(workspace, centerPath) {
+  const steps = [{ label: workspace.rootName, path: '' }];
+  if (centerPath) {
+    let cumulative = '';
+    centerPath.split('/').forEach((part) => {
+      cumulative = cumulative ? `${cumulative}/${part}` : part;
+      steps.push({ label: part, path: cumulative });
+    });
+  }
+  return steps;
+}
+
+function renderGraphHead(workspace, centerPath, onJump) {
+  const steps = buildBreadcrumbSteps(workspace, centerPath);
+  const crumbs = [];
+  steps.forEach((step, i) => {
+    if (i > 0) crumbs.push(h('span', { class: 'crumb-sep' }, '›'));
+    const isLast = i === steps.length - 1;
+    crumbs.push(isLast
+      ? h('span', { class: 'crumb crumb-current' }, step.label)
+      : h('button', {
+        class: 'crumb', type: 'button', onClick: () => onJump(step.path),
+      }, step.label));
+  });
+  return h('div', { class: 'focal-graph-head' }, [
+    h('span', { class: 'focal-graph-icon' }, '📂'),
+    h('div', { class: 'focal-breadcrumb' }, crumbs),
+  ]);
+}
+
 /**
  * Render the focal-neighborhood graph into `container` — a sibling mode to
  * filesPanel.js's plain tree, toggled from the same sidebar header (see
@@ -143,6 +219,7 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
     lastActiveRelPath = activeRelPath;
     focalCenter = activeDir;
     focalExpanded = new Set();
+    lastKnownPos = new Map();
   }
   if (focalCenter === null) focalCenter = activeDir;
 
@@ -151,14 +228,9 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   const parentPath = hasParent ? dirname(focalCenter) : null;
 
   function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile); }
+  function jumpTo(path) { focalCenter = path; focalExpanded = new Set(); rerender(); }
 
-  container.appendChild(h('div', { class: 'focal-graph-head' }, [
-    h('span', { class: 'focal-graph-icon' }, '📂'),
-    h('span', {
-      class: 'focal-graph-dirname',
-      title: focalCenter || workspace.rootName,
-    }, focalCenter ? basename(focalCenter) : workspace.rootName),
-  ]));
+  container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
 
   const rows = layoutRows(centerNode, focalExpanded, activeRelPath);
   const bodyRowCount = rows.length + (hasParent ? 1 : 0);
@@ -170,33 +242,25 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   const edgeLayer = svg('g', { class: 'focal-graph-edges' });
   const nodeLayer = svg('g', { class: 'focal-graph-nodes' });
 
-  const rowMeta = []; // parallel to `rows`, filled in as we place each node — {x, y, parentPos}
   let rowIndex = 0;
   let parentPos = null;
 
   if (hasParent) {
-    const y = rowIndex * ROW_H;
+    const y = rowIndex * ROW_H + 3;
     const label = parentPath ? basename(parentPath) : workspace.rootName;
     const { group } = buildNodeGroup({
-      x: PAD_X,
-      y,
-      label,
-      isDir: true,
-      isActive: false,
-      isExpanded: false,
-      count: 0,
-      onClick: () => { focalCenter = parentPath; focalExpanded = new Set(); rerender(); },
+      label, isDir: true, isActive: false, isExpanded: false, count: 0, onClick: () => jumpTo(parentPath),
     });
     group.classList.add('focal-node-parent');
     nodeLayer.appendChild(group);
-    parentPos = { x: PAD_X, y: y + ROW_H / 2 };
+    positionNode(group, `parent:${focalCenter}`, PAD_X, y);
+    parentPos = { x: PAD_X, y: y + (ROW_H - 6) / 2 };
     rowIndex += 1;
   }
 
   rows.forEach((row) => {
     const x = PAD_X + row.depth * INDENT_W + (hasParent ? INDENT_W : 0);
-    const y = rowIndex * ROW_H;
-    const label = row.isDir ? row.node.name : row.node.name;
+    const y = rowIndex * ROW_H + 3;
     const onClick = row.isDir
       ? () => {
         if (focalExpanded.has(row.node.path)) focalExpanded.delete(row.node.path);
@@ -206,20 +270,20 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
       : () => onOpenFile(row.node.path);
 
     const { group } = buildNodeGroup({
-      x, y, label, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, count: row.count, onClick,
+      label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, count: row.count, onClick,
     });
     nodeLayer.appendChild(group);
+    positionNode(group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
 
     const fromPos = row.parentRow ? row.parentRow._pos : parentPos;
     if (fromPos) {
       edgeLayer.appendChild(svg('path', {
-        d: `M ${fromPos.x} ${fromPos.y} V ${y + ROW_H / 2} H ${x - 6}`,
+        d: `M ${fromPos.x} ${fromPos.y} V ${y + (ROW_H - 6) / 2} H ${x - 6}`,
         class: 'focal-edge',
       }));
     }
     // eslint-disable-next-line no-underscore-dangle
-    row._pos = { x, y: y + ROW_H / 2 };
-    rowMeta.push(row);
+    row._pos = { x, y: y + (ROW_H - 6) / 2 };
     rowIndex += 1;
   });
 
