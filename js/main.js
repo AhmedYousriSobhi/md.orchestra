@@ -429,6 +429,22 @@ async function handleWorkspaceOpened({ rootName, files }) {
   setWorkspace({ rootName, files });
   clearLinkIndex();
   showToast(`Opened "${rootName}" — ${files.length} Markdown file${files.length === 1 ? '' : 's'} found.`);
+  // Only auto-open a default file into an empty workspace: if something's
+  // already open (a standalone file, or a file from a previously-open
+  // folder), opening a new folder alongside it shouldn't silently replace
+  // it — the folder becomes browsable in the sidebar and the current
+  // document stays exactly where it was, same as the reverse order
+  // (opening a standalone file while a folder's already open leaves that
+  // folder in place too, just no longer the active context).
+  if (getState().doc) {
+    // setWorkspace() (state/workspace.js) is its own module state, not
+    // part of the store — it never triggers a re-render on its own the
+    // way setState() does, so without this the sidebar just wouldn't pick
+    // up the newly-opened folder at all until some unrelated change
+    // happened to re-render it.
+    render();
+    return;
+  }
   const sorted = files.slice().sort((a, b) => a.relPath.localeCompare(b.relPath));
   const preferred = sorted.find((f) => !f.relPath.includes('/') && /^(README|INDEX)\.(md|markdown)$/i.test(f.name));
   await openWorkspaceFile((preferred || sorted[0]).relPath);
