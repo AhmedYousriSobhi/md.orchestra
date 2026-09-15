@@ -12,7 +12,9 @@ import {
 } from './state/workspace.js';
 import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
-import { renderFilesTree, getSidebarActiveOnTop, setSidebarActiveOnTop } from './ui/filesPanel.js';
+import {
+  renderFilesTree, getSidebarActiveOnTop, setSidebarActiveOnTop, getWorkspaceViewMode, setWorkspaceViewMode,
+} from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
@@ -122,10 +124,13 @@ function renderInner() {
     workspaceCollapsed ? el.workspaceTree : el.headingTree,
   );
 
+  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && Boolean(workspace) && !workspaceCollapsed);
   renderFilesTree(el.workspaceTree, workspace, workspaceRelPath, (relPath) => openWorkspaceFile(relPath), handleCloseWorkspace, {
     collapsed: workspaceCollapsed,
     activeOnTop,
     onToggleActiveOnTop: handleToggleSidebarOrder,
+    viewMode: getWorkspaceViewMode(),
+    onToggleViewMode: handleToggleWorkspaceViewMode,
   });
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
@@ -374,6 +379,11 @@ function handleNavigateFile(href) {
 function handleCloseWorkspace() {
   clearWorkspace();
   clearLinkIndex();
+  render();
+}
+
+function handleToggleWorkspaceViewMode() {
+  setWorkspaceViewMode(getWorkspaceViewMode() === 'graph' ? 'list' : 'graph');
   render();
 }
 

@@ -78,6 +78,11 @@ aside#sidebar.sidebar-collapsed {
   overflow: hidden;
   border-right: none;
 }
+/* The focal-neighborhood graph (see focalGraph.js) needs a bit more room
+   than the plain text tree to lay its nodes out legibly — widens the same
+   sidebar rather than opening a separate panel, so it stays exactly where
+   the plain tree was. */
+aside#sidebar.sidebar-graph-mode { width: 320px; }
 .sidebar-empty { color: var(--text-faint); font-size: 0.85rem; padding: 0.5rem; }
 
 #workspace-tree:not(:empty) {
@@ -143,6 +148,45 @@ aside#sidebar.sidebar-collapsed {
   background: color-mix(in srgb, var(--accent, var(--border)) 16%, var(--surface));
   padding: 0.05rem 0.4rem; border-radius: 999px; flex-shrink: 0;
 }
+
+/* Focal-neighborhood graph — see js/ui/focalGraph.js. */
+.focal-graph-wrap { padding: 0.25rem 0 1rem; }
+.focal-graph-head {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
+  padding: 0.2rem 0.4rem 0.6rem;
+}
+.focal-graph-svg { display: block; overflow: visible; }
+.focal-node { cursor: pointer; transition: transform 0.22s ease; }
+.focal-node-bg {
+  fill: var(--surface); stroke: var(--border); stroke-width: 1;
+  transition: fill 0.15s ease, stroke 0.15s ease;
+}
+.focal-node:hover .focal-node-bg,
+.focal-node:focus-visible .focal-node-bg { stroke: color-mix(in srgb, var(--accent-default) 45%, var(--border)); }
+.focal-node-label { font-size: 11px; fill: var(--text); }
+.focal-node-badge { font-size: 10px; font-weight: 700; fill: var(--text-faint); }
+.focal-node-dir .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 8%, var(--surface)); stroke-dasharray: 3 2; }
+.focal-node-dir.focal-node-expanded .focal-node-bg { stroke-dasharray: none; }
+.focal-node-parent .focal-node-bg { fill: var(--bg-soft); }
+.focal-node-active .focal-node-bg { fill: color-mix(in srgb, var(--accent-default) 16%, var(--surface)); stroke: var(--accent-default); stroke-width: 1.5; }
+.focal-node-active .focal-node-label { font-weight: 700; }
+.focal-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
+
+.focal-graph-links { margin: 0.5rem 0.4rem 0; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
+.focal-graph-links-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;
+  font-size: 0.72rem; font-weight: 700; color: var(--text-faint); margin-bottom: 0.4rem;
+}
+.focal-graph-links-empty { padding: 0.2rem 0; font-size: 0.76rem; }
+.focal-graph-links-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.focal-link-chip {
+  text-align: left; font-size: 0.78rem; color: var(--text-soft);
+  background: none; border: 1px dashed var(--border); border-radius: 8px;
+  padding: 0.3rem 0.5rem; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.focal-link-chip:hover { background: var(--bg-soft); color: var(--text); border-style: solid; }
 
 main#main-panel {
   flex: 1;

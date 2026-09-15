@@ -1,10 +1,29 @@
 import { h } from '../utils/dom.js';
+import { renderFocalGraph } from './focalGraph.js';
 
 // Session-only: which folders the user has collapsed. Everything starts
 // expanded — unlike the heading tree, a directory of Markdown files is
 // usually shallow enough that showing it all at once is more useful than
 // guessing what to hide.
 const manualCollapse = new Set();
+
+// Whether the workspace panel shows the plain always-expanded tree
+// (existing behavior) or the focal-neighborhood graph (see focalGraph.js) —
+// a standing preference, not a per-session toggle, so it's persisted the
+// same way as the other sidebar display preferences below.
+const VIEW_MODE_KEY = 'mdDashboard.sidebarViewMode';
+
+export function getWorkspaceViewMode() {
+  try {
+    return localStorage.getItem(VIEW_MODE_KEY) === 'graph' ? 'graph' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+export function setWorkspaceViewMode(mode) {
+  try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch { /* ignore */ }
+}
 
 // Whether the currently-active file (workspace file or not) is kept at the
 // top of the sidebar, with the workspace tree collapsing out of the way
@@ -46,9 +65,14 @@ let peeking = false;
  * as "containing" a file it has nothing to do with. `options.activeOnTop`
  * / `options.onToggleActiveOnTop` back a small pin control that switches
  * between that behavior and always leaving the tree where it is.
+ * `options.viewMode` ('list' | 'graph') / `options.onToggleViewMode` switch
+ * between this plain always-expanded tree and the focal-neighborhood graph
+ * (see focalGraph.js) — same header, different body.
  */
 export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
-  const { collapsed = false, activeOnTop = true, onToggleActiveOnTop } = options;
+  const {
+    collapsed = false, activeOnTop = true, onToggleActiveOnTop, viewMode = 'list', onToggleViewMode,
+  } = options;
   container.innerHTML = '';
   if (!workspace) return;
   if (!collapsed) peeking = false; // start fresh next time it auto-collapses
@@ -65,6 +89,13 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
     }, '▸') : null,
     h('span', { class: 'files-tree-icon' }, '🗂️'),
     h('span', { class: 'files-tree-name', title: workspace.rootName }, workspace.rootName),
+    onToggleViewMode ? h('button', {
+      class: 'icon-btn files-tree-view-toggle',
+      type: 'button',
+      title: viewMode === 'graph' ? 'Switch to the plain folder list' : 'Switch to the focal-neighborhood graph',
+      'aria-label': 'Toggle between list and graph view',
+      onClick: onToggleViewMode,
+    }, viewMode === 'graph' ? '📋' : '🕸️') : null,
     onToggleActiveOnTop ? h('button', {
       class: `icon-btn files-tree-pin${activeOnTop ? ' files-tree-pin-active' : ''}`,
       type: 'button',
@@ -85,6 +116,13 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
   container.appendChild(head);
 
   if (!showTree) return;
+
+  if (viewMode === 'graph') {
+    const graphWrap = h('div', { class: 'focal-graph-wrap' });
+    container.appendChild(graphWrap);
+    renderFocalGraph(graphWrap, workspace, activeRelPath, onOpenFile);
+    return;
+  }
 
   const list = h('ul', { class: 'nav-tree nav-tree-root files-tree' });
   workspace.tree.children.forEach((node) => {
