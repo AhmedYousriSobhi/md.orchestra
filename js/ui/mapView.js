@@ -85,7 +85,35 @@ function buildSvg(doc, selectedId, onPick) {
   return root;
 }
 
-export function openMapView() {
+/**
+ * Convert a workspace's plain folder/file tree (state/workspace.js's
+ * `{name, path, type, children}` shape) into the {id, title, level,
+ * children} shape renderMindMap expects (the same shape a parsed
+ * document's heading tree already has) — its own synthetic "document",
+ * one node per file or folder instead of one per heading. `idInfo` maps
+ * each synthetic id back to {type, relPath} so a click can tell a file
+ * node (open it) from a folder node (nothing to open, just structure).
+ */
+function buildWorkspaceMapDoc(workspace) {
+  const idInfo = new Map();
+  let counter = 0;
+  function convert(node, depth) {
+    const id = `wsmap-${counter}`;
+    counter += 1;
+    idInfo.set(id, { type: node.type, relPath: node.path });
+    return {
+      id,
+      title: node.type === 'dir' ? (node.name || workspace.rootName) : node.name,
+      level: depth,
+      children: node.type === 'dir' ? node.children.map((child) => convert(child, depth + 1)) : [],
+    };
+  }
+  const root = convert(workspace.tree, 1);
+  root.title = workspace.rootName;
+  return { doc: { children: [root] }, idInfo };
+}
+
+export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
   const { doc, fileName, selectedId } = getState();
   if (!doc) return;
 
@@ -121,33 +149,61 @@ export function openMapView() {
     selectSection(id);
   };
 
+  // The workspace-wide map has no active section to fall back to (it isn't
+  // even the same document), so switching to it when no folder is open at
+  // all would otherwise show an empty overlay with no way back — same
+  // fallback loadMode() below applies whenever it's picked without one.
+  if (mapMode === 'workspace' && !workspace) mapMode = 'tree';
+
   const treeBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🌳 Tree');
   const mindBtn = h('button', { class: 'map-mode-btn', type: 'button' }, '🧠 Mind map');
+  const workspaceBtn = workspace
+    ? h('button', { class: 'map-mode-btn', type: 'button' }, '🗂️ Workspace')
+    : null;
+
+  const subtitleEl = h('div', { class: 'insight-subtitle' });
 
   function renderMode() {
     teardownMindMap();
     treeBtn.classList.toggle('map-mode-active', mapMode === 'tree');
     mindBtn.classList.toggle('map-mode-active', mapMode === 'mind');
+    if (workspaceBtn) workspaceBtn.classList.toggle('map-mode-active', mapMode === 'workspace');
     scroll.innerHTML = '';
     if (mapMode === 'tree') {
+      subtitleEl.textContent = `${fileName || ''} — click any heading to jump there`;
       scroll.appendChild(buildSvg(doc, selectedId, onPick));
-    } else {
+    } else if (mapMode === 'mind') {
+      subtitleEl.textContent = `${fileName || ''} — click a heading to jump there, or drag a node to rearrange it`;
       const mindContainer = h('div', { class: 'mindmap-container' });
       scroll.appendChild(mindContainer);
       // needs real layout dimensions, which only exist once it's in the DOM
       requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, doc, selectedId, onPick); });
+    } else {
+      subtitleEl.textContent = `${workspace.rootName} — every Markdown file in this folder; click one to open it, or drag a node to rearrange it`;
+      const { doc: wsDoc, idInfo } = buildWorkspaceMapDoc(workspace);
+      const onPickWorkspaceNode = (id) => {
+        const info = idInfo.get(id);
+        if (info && info.type === 'file' && onOpenWorkspaceFile) {
+          handleClose();
+          onOpenWorkspaceFile(workspace.rootName, info.relPath);
+        }
+      };
+      const mindContainer = h('div', { class: 'mindmap-container' });
+      scroll.appendChild(mindContainer);
+      requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, wsDoc, null, onPickWorkspaceNode); });
     }
   }
   treeBtn.addEventListener('click', () => { mapMode = 'tree'; renderMode(); });
   mindBtn.addEventListener('click', () => { mapMode = 'mind'; renderMode(); });
+  if (workspaceBtn) workspaceBtn.addEventListener('click', () => { mapMode = 'workspace'; renderMode(); });
 
   const panel = h('div', { class: 'map-panel', role: 'dialog', 'aria-modal': 'true' }, [
     h('div', { class: 'side-panel-head' }, [
       h('div', {}, [
         h('h2', {}, '🗺️ Document map'),
-        h('div', { class: 'insight-subtitle' }, `${fileName || ''} — click any heading to jump there, or drag a node in Mind map to rearrange it`),
+        subtitleEl,
       ]),
-      h('div', { class: 'map-mode-toggle' }, [treeBtn, mindBtn]),
+      h('div', { class: 'map-mode-toggle' }, [treeBtn, mindBtn, workspaceBtn]),
       h('button', {
         class: 'code-btn code-btn-close',
         type: 'button',

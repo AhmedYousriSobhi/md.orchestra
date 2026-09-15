@@ -1132,7 +1132,12 @@ el.dirtyIndicator.addEventListener('click', handleSave);
 el.changesBtn.addEventListener('click', handleOpenChanges);
 
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
-el.mapViewBtn.addEventListener('click', openMapView);
+el.mapViewBtn.addEventListener('click', () => {
+  const workspaces = getWorkspaces();
+  const { workspaceRootName } = getState();
+  const workspace = workspaces.find((w) => w.rootName === workspaceRootName) || workspaces[0] || null;
+  openMapView({ workspace, onOpenWorkspaceFile: openWorkspaceFile });
+});
 el.previewToggleBtn.addEventListener('click', () => {
   if (el.previewPanel.hidden) {
     el.previewPanel.hidden = false;
