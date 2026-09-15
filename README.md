@@ -1343,3 +1343,17 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   built by converting the workspace's folder tree into the same
   {id, title, children} shape a document's heading tree already has —
   clicking a file node opens it directly.
+
+- **Stage 54** — Bug report with a screenshot: opening a third,
+  standalone file while two folders were already open put its row at
+  the top of Explorer indistinguishable from a folder's own header,
+  reading as a dead/unclickable row (it wasn't — it was already the
+  active document, just with no visual cue saying so); and a folder's
+  name appeared twice — once in Explorer's own header, again in the
+  focal graph's own root breadcrumb (which at the root is just that
+  same one name). Fixed both: the breadcrumb is now skipped until
+  you've actually drilled into a subdirectory, where it starts being
+  genuinely useful; standalone files are now grouped under their own
+  "Open files" label (distinct from the folder blocks below, VSCode's
+  "Open Editors" equivalent), and the active one gets a clear
+  current-item highlight.
