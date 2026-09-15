@@ -302,7 +302,10 @@ function renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile,
 
   const shown = new Set(rows.map((r) => r.node.path));
   shown.add(activeRelPath);
-  const linked = new Set([...getOutgoingLinks(activeRelPath), ...getIncomingLinks(activeRelPath)]);
+  const linked = new Set([
+    ...getOutgoingLinks(workspace.rootName, activeRelPath),
+    ...getIncomingLinks(workspace.rootName, activeRelPath),
+  ]);
   const linkedOnly = [...linked].filter((p) => !shown.has(p) && workspace.files.has(p));
 
   const tray = h('div', { class: 'focal-graph-links' });
@@ -331,7 +334,7 @@ function renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile,
   ]));
 
   if (!linkedOnly.length) {
-    tray.appendChild(h('p', { class: 'sidebar-empty focal-graph-links-empty' }, isIndexed(activeRelPath)
+    tray.appendChild(h('p', { class: 'sidebar-empty focal-graph-links-empty' }, isIndexed(workspace.rootName, activeRelPath)
       ? 'No cross-file links beyond what\'s already shown above.'
       : 'No links found yet — open this file to check, or scan the whole workspace.'));
   } else {

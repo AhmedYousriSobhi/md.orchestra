@@ -8,7 +8,8 @@ let state = {
   fileHandle: null,    // File System Access API handle, if the file was opened that way
   selectedId: null,    // id of the section currently focused in the main panel
   dirty: false,        // true once the in-memory doc diverges from the last load/save
-  workspaceRelPath: null, // this file's path within the open workspace (state/workspace.js), or null if it wasn't opened from one
+  workspaceRelPath: null, // this file's path within its workspace (state/workspace.js), or null if it wasn't opened from one
+  workspaceRootName: null, // which open workspace workspaceRelPath belongs to (several can be open at once) — null alongside workspaceRelPath
 };
 
 export function getState() {
@@ -56,7 +57,7 @@ const undoStacks = new Map();
 const MAX_UNDO_DEPTH = 20;
 
 export function loadDocument({
-  doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null,
+  doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null, workspaceRootName = null,
 }) {
   undoStacks.clear();
   const firstChild = doc.children[0];
@@ -67,6 +68,7 @@ export function loadDocument({
     selectedId: firstChild ? firstChild.id : doc.id,
     dirty,
     workspaceRelPath,
+    workspaceRootName,
   });
 }
 

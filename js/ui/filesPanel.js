@@ -1,10 +1,12 @@
 import { h } from '../utils/dom.js';
 import { renderFocalGraph } from './focalGraph.js';
 
-// Session-only: which folders the user has collapsed. Everything starts
-// expanded — unlike the heading tree, a directory of Markdown files is
-// usually shallow enough that showing it all at once is more useful than
-// guessing what to hide.
+// Session-only: which folders the user has collapsed, keyed by
+// `${rootName}::${path}` so two open workspaces with similarly-shaped
+// subdirectories don't share collapse state. Everything starts expanded —
+// unlike the heading tree, a directory of Markdown files is usually
+// shallow enough that showing it all at once is more useful than guessing
+// what to hide.
 const manualCollapse = new Set();
 
 // Whether the workspace panel shows the focal-neighborhood graph (see
@@ -48,34 +50,37 @@ export function setSidebarActiveOnTop(value) {
   try { localStorage.setItem(ACTIVE_ON_TOP_KEY, value ? '1' : '0'); } catch { /* ignore */ }
 }
 
-// While the workspace tree is auto-collapsed (not the active context), the
+// While a workspace's tree is auto-collapsed (not the active context), the
 // user can still peek at it without that changing which section leads —
-// this remembers that per open workspace, reset whenever the tree stops
-// being auto-collapsed so a later, unrelated collapse starts fresh.
-let peeking = false;
+// this remembers that per open workspace (keyed by rootName), reset
+// whenever that tree stops being auto-collapsed so a later, unrelated
+// collapse starts fresh.
+const peeking = new Set();
 
 /**
- * Render the open workspace's folder/file tree into `container` (a sidebar
+ * Render one open workspace's folder/file tree into `container` (a sidebar
  * slot next to the current file's own heading tree). `activeRelPath`
- * highlights whichever file is currently loaded; `onOpenFile(relPath)` is
- * called when the user clicks a file; `onClose` (optional) renders a small
- * "close workspace" control. Renders nothing (clears the container) when
- * `workspace` is null.
+ * highlights whichever file is currently loaded (pass null if the active
+ * document isn't one of this workspace's own files); `onOpenFile(relPath)`
+ * is called when the user clicks a file; `onClose` (optional) renders a
+ * small "close workspace" control. Renders nothing (clears the container)
+ * when `workspace` is null. Several open workspaces are rendered as
+ * separate calls into separate containers — see renderWorkspacesPanel.
  *
  * `options.collapsed` renders just the head row (folder name + a peek
- * toggle) instead of the full tree — used when a non-workspace file (e.g.
- * a sample) is the active document, so the directory doesn't visually read
- * as "containing" a file it has nothing to do with. `options.activeOnTop`
- * / `options.onToggleActiveOnTop` back a small pin control that switches
- * between that behavior and always leaving the tree where it is.
- * `options.viewMode` ('list' | 'graph') / `options.onToggleViewMode` switch
- * between this plain always-expanded tree and the focal-neighborhood graph
- * (see focalGraph.js) — same header, different body. `options.pendingPaths`
- * (a Set of relPaths) marks which files have unsaved changes waiting (see
- * main.js's recovery-snapshot tracking) with a small dot, so switching
- * freely between files (nothing is ever discarded — see loadFromText)
- * still leaves a visible trail of what's been touched, without needing the
- * Changes panel open to see it.
+ * toggle) instead of the full tree — used when the active document isn't
+ * actually one of this workspace's own files, so the directory doesn't
+ * visually read as "containing" a file it has nothing to do with.
+ * `options.activeOnTop` / `options.onToggleActiveOnTop` back a small pin
+ * control that switches between that behavior and always leaving the tree
+ * where it is. `options.viewMode` ('list' | 'graph') / `options.onToggleViewMode`
+ * switch between this plain always-expanded tree and the focal-neighborhood
+ * graph (see focalGraph.js) — same header, different body.
+ * `options.pendingPaths` (a Set of relPaths) marks which files have unsaved
+ * changes waiting (see main.js's recovery-snapshot tracking) with a small
+ * dot, so switching freely between files (nothing is ever discarded — see
+ * loadFromText) still leaves a visible trail of what's been touched,
+ * without needing the Changes panel open to see it.
  */
 export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
   const {
@@ -83,17 +88,20 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
   } = options;
   container.innerHTML = '';
   if (!workspace) return;
-  if (!collapsed) peeking = false; // start fresh next time it auto-collapses
+  if (!collapsed) peeking.delete(workspace.rootName); // start fresh next time it auto-collapses
 
   const rerender = () => renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options);
-  const showTree = !collapsed || peeking;
+  const showTree = !collapsed || peeking.has(workspace.rootName);
 
   const head = h('div', { class: 'files-tree-head' }, [
     collapsed ? h('button', {
       class: `nav-chevron${showTree ? ' nav-chevron-open' : ''}`,
       type: 'button',
       'aria-label': showTree ? 'Collapse folder view' : 'Peek at folder contents',
-      onClick: () => { peeking = !peeking; rerender(); },
+      onClick: () => {
+        if (peeking.has(workspace.rootName)) peeking.delete(workspace.rootName); else peeking.add(workspace.rootName);
+        rerender();
+      },
     }, '▸') : null,
     h('span', { class: 'files-tree-icon' }, '🗂️'),
     h('span', { class: 'files-tree-name', title: workspace.rootName }, workspace.rootName),
@@ -134,14 +142,15 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
 
   const list = h('ul', { class: 'nav-tree nav-tree-root files-tree' });
   workspace.tree.children.forEach((node) => {
-    list.appendChild(buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths));
+    list.appendChild(buildNode(workspace.rootName, node, activeRelPath, onOpenFile, rerender, pendingPaths));
   });
   container.appendChild(list);
 }
 
-function buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths) {
+function buildNode(rootName, node, activeRelPath, onOpenFile, rerender, pendingPaths) {
   if (node.type === 'dir') {
-    const collapsed = manualCollapse.has(node.path);
+    const collapseKey = `${rootName}::${node.path}`;
+    const collapsed = manualCollapse.has(collapseKey);
     const li = h('li', { class: 'nav-item files-dir' });
     const row = h('div', { class: 'nav-row' });
     row.appendChild(h('button', {
@@ -149,7 +158,7 @@ function buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths) {
       type: 'button',
       'aria-label': collapsed ? 'Expand folder' : 'Collapse folder',
       onClick: () => {
-        if (collapsed) manualCollapse.delete(node.path); else manualCollapse.add(node.path);
+        if (collapsed) manualCollapse.delete(collapseKey); else manualCollapse.add(collapseKey);
         rerender();
       },
     }, '▸'));
@@ -160,7 +169,7 @@ function buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths) {
     li.appendChild(row);
     if (!collapsed) {
       const sublist = h('ul', { class: 'nav-tree' });
-      node.children.forEach((child) => sublist.appendChild(buildNode(child, activeRelPath, onOpenFile, rerender, pendingPaths)));
+      node.children.forEach((child) => sublist.appendChild(buildNode(rootName, child, activeRelPath, onOpenFile, rerender, pendingPaths)));
       li.appendChild(sublist);
     }
     return li;
@@ -183,4 +192,40 @@ function buildNode(node, activeRelPath, onOpenFile, rerender, pendingPaths) {
   ]));
   li.appendChild(row);
   return li;
+}
+
+/**
+ * Render every currently-open workspace into `container`, one block per
+ * folder, stacked in the order they were opened — the multi-root
+ * equivalent of renderFilesTree above, which this calls once per workspace
+ * into its own child div. Only the workspace that actually owns
+ * `activeWorkspaceRootName` gets `activeRelPath` highlighted/passed through
+ * to its own pending-paths lookup; every other open folder shows plainly,
+ * with nothing marked current in it. `options` is the same shape
+ * renderFilesTree takes, applied identically to each block, except
+ * `onOpenFile`/`onClose`/`pendingPaths` which are called per-workspace
+ * (see main.js) since each folder is its own independent identity.
+ */
+export function renderWorkspacesPanel(container, workspaces, activeWorkspaceRootName, activeRelPath, options = {}) {
+  const {
+    onOpenFile, onClose, pendingPathsFor, ...rest
+  } = options;
+  container.innerHTML = '';
+  workspaces.forEach((workspace) => {
+    const block = h('div', { class: 'workspace-block' });
+    container.appendChild(block);
+    const isActiveWorkspace = workspace.rootName === activeWorkspaceRootName;
+    renderFilesTree(
+      block,
+      workspace,
+      isActiveWorkspace ? activeRelPath : null,
+      (relPath) => onOpenFile(workspace.rootName, relPath),
+      () => onClose(workspace.rootName),
+      {
+        ...rest,
+        collapsed: rest.collapsed && !isActiveWorkspace,
+        pendingPaths: pendingPathsFor ? pendingPathsFor(workspace) : new Set(),
+      },
+    );
+  });
 }

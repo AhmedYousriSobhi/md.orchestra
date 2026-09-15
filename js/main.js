@@ -9,22 +9,22 @@ import {
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
 import {
-  getWorkspace, setWorkspace, clearWorkspace, getWorkspaceFile, resolveWorkspaceLink,
+  getWorkspaces, hasWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
 import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
-  renderFilesTree, getSidebarActiveOnTop, setSidebarActiveOnTop, getWorkspaceViewMode, setWorkspaceViewMode,
+  renderWorkspacesPanel, getSidebarActiveOnTop, setSidebarActiveOnTop, getWorkspaceViewMode, setWorkspaceViewMode,
 } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
 import {
-  readFile, fetchSample, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
-} from './fileIO.js';
+  readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
+} from './core/fileIO.js';
 import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
-} from './workspaceIO.js';
+} from './core/workspaceIO.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -40,7 +40,7 @@ import { openCodeViewer } from './ui/codeViewer.js';
 import { debounce } from './utils/debounce.js';
 import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot as clearRecoverySnapshotRaw, snapshotIdentity,
-} from './recovery.js';
+} from './core/recovery.js';
 import { getTheme, applyTheme } from './utils/theme.js';
 
 // Belt-and-suspenders: index.html already stamps this inline (synchronously,
@@ -62,9 +62,6 @@ const el = {
   openFileBtn: document.getElementById('open-file-btn'),
   folderInput: document.getElementById('folder-input'),
   openFolderBtn: document.getElementById('open-folder-btn'),
-  samplesBtn: document.getElementById('samples-btn'),
-  samplesDropdown: document.getElementById('samples-dropdown'),
-  emptySampleBtn: document.getElementById('empty-sample-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
   previewToggleBtn: document.getElementById('preview-edge-toggle'),
@@ -107,33 +104,42 @@ function render() {
 }
 
 function renderInner() {
-  const { doc, fileName, dirty, workspaceRelPath } = getState();
+  const {
+    doc, fileName, dirty, workspaceRelPath, workspaceRootName,
+  } = getState();
 
   updateChangesBadge();
 
-  const workspace = getWorkspace();
+  const workspaces = getWorkspaces();
   const activeOnTop = getSidebarActiveOnTop();
-  // The workspace tree collapses out of the way (and the heading tree —
-  // the active document's own outline — moves above it) exactly when the
-  // active document isn't actually one of the workspace's own files: a
-  // loaded sample, or a plain file opened alongside an open folder,
-  // otherwise visually reads as if it belongs under that directory.
-  const isWorkspaceFileActive = Boolean(workspace) && Boolean(workspaceRelPath) && Boolean(getWorkspaceFile(workspaceRelPath));
-  const workspaceCollapsed = activeOnTop && Boolean(workspace) && !isWorkspaceFileActive;
+  // Every open workspace's tree collapses out of the way (and the heading
+  // tree — the active document's own outline — moves above them) exactly
+  // when the active document isn't actually one of THAT workspace's own
+  // files: a standalone file, or a file from a *different* open folder,
+  // otherwise visually reads as if it belongs under a directory it has
+  // nothing to do with. Each workspace decides this for itself inside
+  // renderWorkspacesPanel (comparing its own rootName against
+  // workspaceRootName); this is only the outer question of whether ANY of
+  // them is currently expanded, for ordering the two sidebar sections.
+  const activeWorkspaceOpen = workspaces.some((ws) => ws.rootName === workspaceRootName);
+  const workspaceCollapsed = activeOnTop && workspaces.length > 0 && !activeWorkspaceOpen;
   el.sidebar.insertBefore(
     workspaceCollapsed ? el.headingTree : el.workspaceTree,
     workspaceCollapsed ? el.workspaceTree : el.headingTree,
   );
 
-  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && Boolean(workspace) && !workspaceCollapsed);
-  renderFilesTree(el.workspaceTree, workspace, workspaceRelPath, (relPath) => openWorkspaceFile(relPath), handleCloseWorkspace, {
-    collapsed: workspaceCollapsed,
+  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && workspaces.length > 0 && !workspaceCollapsed);
+  renderWorkspacesPanel(el.workspaceTree, workspaces, workspaceRootName, workspaceRelPath, {
+    onOpenFile: openWorkspaceFile,
+    onClose: handleCloseWorkspace,
+    collapsed: activeOnTop,
     activeOnTop,
     onToggleActiveOnTop: handleToggleSidebarOrder,
     viewMode: getWorkspaceViewMode(),
     onToggleViewMode: handleToggleWorkspaceViewMode,
-    pendingPaths: pendingWorkspacePaths(workspace),
+    pendingPathsFor: pendingWorkspacePaths,
   });
+  el.openFolderBtn.textContent = workspaces.length ? '📁 Add folder' : '📁 Open folder';
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
@@ -257,10 +263,10 @@ const standaloneHandles = new Map();
 /** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
 function snapshotNow() {
   const {
-    doc, fileName, dirty, workspaceRelPath,
+    doc, fileName, dirty, workspaceRelPath, workspaceRootName,
   } = getState();
   if (!doc || !dirty) return;
-  const identity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+  const identity = { fileName, workspaceRelPath, workspaceRootName };
   const serialized = serializeMarkdown(doc);
   // `dirty` only means "something touched this doc since it loaded" — it
   // doesn't know whether that edit actually left the content any different
@@ -300,9 +306,11 @@ subscribe(snapshotIfDirty);
  * window where the badge would otherwise undercount.
  */
 function activeGapChangedCount() {
-  const { doc, dirty, fileName, workspaceRelPath } = getState();
+  const {
+    doc, dirty, fileName, workspaceRelPath, workspaceRootName,
+  } = getState();
   if (!doc || !dirty || !currentBaseline) return 0;
-  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
   if (listRecoverySnapshots().some((s) => s.id === id)) return 0;
   try {
     return findChangedNodes(doc, parseMarkdown(currentBaseline)).length || 1;
@@ -318,9 +326,10 @@ function activeGapChangedCount() {
  * needs to carry identity fields.
  */
 function activeGapSnapshot() {
-  const { doc, dirty, fileName, workspaceRelPath } = getState();
+  const {
+    doc, dirty, fileName, workspaceRelPath, workspaceRootName,
+  } = getState();
   if (!doc || !dirty) return null;
-  const workspaceRootName = getWorkspace()?.rootName || null;
   const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
   if (listRecoverySnapshots().some((s) => s.id === id)) return null;
   return {
@@ -386,7 +395,7 @@ window.addEventListener('beforeunload', (e) => {
 
 /** A live handle for `snapshot`'s own file, when one's resolvable — a workspace file's is always available again via getWorkspaceFile(); a standalone file's only if it was opened this session through the real file picker (see standaloneHandles). Used so restoring a pending edit (loadSnapshotAsActive) can still Save directly instead of falling back to a download. */
 function resolveHandleFor(snapshot) {
-  if (snapshot.workspaceRelPath) return getWorkspaceFile(snapshot.workspaceRelPath)?.fileHandle || null;
+  if (snapshot.workspaceRelPath) return getWorkspaceFile(snapshot.workspaceRootName, snapshot.workspaceRelPath)?.fileHandle || null;
   return standaloneHandles.get(snapshot.fileName) || null;
 }
 
@@ -400,18 +409,19 @@ function resolveHandleFor(snapshot) {
  * rather than only there), and if the file being switched *to* already has
  * pending unsaved edits waiting, those are what gets shown instead of a
  * fresh — and by now stale — read of what's on disk (see
- * loadSnapshotAsActive). `workspaceRelPath` records which open workspace
- * file this is (null for a standalone file/sample), and `anchor` — a
- * heading slug — jumps straight to that section once loaded, for a
- * cross-file link like `[...](other.md#some-heading)`.
+ * loadSnapshotAsActive). `workspaceRelPath`/`workspaceRootName` record
+ * which open workspace file this is (both null for a standalone
+ * file/sample), and `anchor` — a heading slug — jumps straight to that
+ * section once loaded, for a cross-file link like
+ * `[...](other.md#some-heading)`.
  */
-async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, anchor = null } = {}) {
+async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, workspaceRootName = null, anchor = null } = {}) {
   const current = getState();
-  const targetIdentity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+  const targetIdentity = { fileName, workspaceRelPath, workspaceRootName };
 
   if (current.doc) {
     const currentIdentity = {
-      fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null,
+      fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: current.workspaceRootName,
     };
     if (snapshotIdentity(currentIdentity) === snapshotIdentity(targetIdentity)) {
       // Already the active document (e.g. re-clicking its own row, or a
@@ -441,10 +451,10 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
     // A free ride on content we're already parsing: whatever this file
     // links to elsewhere in the workspace is now known, for the focal
     // graph's link-edge overlay — see state/linkIndex.js.
-    if (workspaceRelPath) recordLinksFor(workspaceRelPath, doc);
+    if (workspaceRelPath) recordLinksFor(workspaceRootName, workspaceRelPath, doc);
     currentBaseline = text;
     loadDocument({
-      doc, fileName, fileHandle, workspaceRelPath,
+      doc, fileName, fileHandle, workspaceRelPath, workspaceRootName,
     });
     if (anchor) {
       const targetId = buildSlugIndex(doc).get(anchor);
@@ -457,16 +467,16 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
   }
 }
 
-/** Read one file from the open workspace and load it as the active document (still funneling through loadFromText, which prefers a pending snapshot over this fresh read if one exists — see there). */
-async function openWorkspaceFile(relPath, anchor = null) {
-  const entry = getWorkspaceFile(relPath);
+/** Read one file from the `rootName` workspace and load it as the active document (still funneling through loadFromText, which prefers a pending snapshot over this fresh read if one exists — see there). */
+async function openWorkspaceFile(rootName, relPath, anchor = null) {
+  const entry = getWorkspaceFile(rootName, relPath);
   if (!entry) {
-    showToast(`"${relPath}" isn't in the open folder.`, { type: 'error' });
+    showToast(`"${relPath}" isn't in that open folder.`, { type: 'error' });
     return;
   }
   try {
     const text = await readWorkspaceFileText(entry);
-    loadFromText(text, entry.name, entry.fileHandle, { workspaceRelPath: relPath, anchor });
+    loadFromText(text, entry.name, entry.fileHandle, { workspaceRelPath: relPath, workspaceRootName: rootName, anchor });
   } catch (err) {
     showToast(`Could not open ${entry.name}: ${err.message}`, { type: 'error' });
   }
@@ -477,32 +487,34 @@ async function openWorkspaceFile(relPath, anchor = null) {
  * link that isn't a same-page "#anchor" jump; it resolves relative to
  * whichever workspace file is currently open, and returns whether it
  * actually handled it (a link to some other page entirely — an external
- * URL, or a .md file outside this folder — is left to behave normally).
+ * URL, a .md file outside this folder, or one in a *different* open
+ * folder — is left to behave normally).
  */
 function handleNavigateFile(href) {
-  const { workspaceRelPath } = getState();
+  const { workspaceRelPath, workspaceRootName } = getState();
   if (!workspaceRelPath) return false;
-  const resolved = resolveWorkspaceLink(workspaceRelPath, href);
+  const resolved = resolveWorkspaceLink(workspaceRootName, workspaceRelPath, href);
   if (!resolved) return false;
-  openWorkspaceFile(resolved.relPath, resolved.anchor);
+  openWorkspaceFile(workspaceRootName, resolved.relPath, resolved.anchor);
   return true;
 }
 
 /**
- * Closing a folder from the sidebar previously only ever forgot the
+ * Closing one folder from the sidebar previously only ever forgot the
  * workspace itself — if the currently active document happened to be one
  * of its files, it stayed fully loaded and editable with no visible link
  * back to any folder at all, and with no warning even if it had unsaved
- * changes. Now closing the folder closes that document too (confirming
+ * changes. Now closing a folder closes that document too (confirming
  * first if it's dirty, same as every other path that can actually lose
- * unsaved work) — a document that isn't part of this workspace (a
- * standalone file, or one from a *different* open folder) is left alone.
+ * unsaved work) — a document that isn't part of THIS workspace (a
+ * standalone file, or one from a *different* still-open folder) is left
+ * alone, and so is every other open workspace.
  */
-async function handleCloseWorkspace() {
+async function handleCloseWorkspace(rootName) {
   const {
-    doc, dirty, workspaceRelPath, fileName,
+    doc, dirty, workspaceRelPath, workspaceRootName, fileName,
   } = getState();
-  if (doc && workspaceRelPath) {
+  if (doc && workspaceRelPath && workspaceRootName === rootName) {
     if (dirty) {
       const ok = await confirmDialog({
         title: 'Close this folder?',
@@ -512,14 +524,14 @@ async function handleCloseWorkspace() {
       });
       if (!ok) return;
     }
-    clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+    clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName });
     currentBaseline = null;
     setState({
-      doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null,
+      doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
     });
   }
-  clearWorkspace();
-  clearLinkIndex();
+  removeWorkspace(rootName);
+  clearLinkIndex(rootName);
   render();
 }
 
@@ -544,7 +556,7 @@ function renderStandalonePendingHeads() {
     : null;
   const others = listRecoverySnapshots().filter((s) => !s.workspaceRelPath && s.id !== activeId);
 
-  if (activeIsStandalone && getWorkspace()) {
+  if (activeIsStandalone && hasWorkspaces()) {
     el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
       h('span', { class: 'files-tree-icon' }, '📄'),
       h('span', { class: 'files-tree-name', title: fileName }, fileName),
@@ -598,7 +610,7 @@ async function handleCloseStandaloneFile() {
   }
   currentBaseline = null;
   setState({
-    doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null,
+    doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
   });
 }
 
@@ -612,23 +624,27 @@ function handleToggleSidebarOrder() {
   render();
 }
 
+/**
+ * Add a newly-picked folder alongside whatever's already open — never
+ * replaces another open workspace, so working across two (or more)
+ * directories at once is just opening the folder picker again. Re-opening
+ * an already-open folder refreshes its file list in place instead of
+ * duplicating it (see addWorkspace).
+ */
 async function handleWorkspaceOpened({ rootName, files }) {
   if (!files.length) {
     showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
     return;
   }
-  setWorkspace({ rootName, files });
-  clearLinkIndex();
+  addWorkspace({ rootName, files });
   showToast(`Opened "${rootName}" — ${files.length} Markdown file${files.length === 1 ? '' : 's'} found.`);
-  // Only auto-open a default file into an empty workspace: if something's
-  // already open (a standalone file, or a file from a previously-open
-  // folder), opening a new folder alongside it shouldn't silently replace
-  // it — the folder becomes browsable in the sidebar and the current
-  // document stays exactly where it was, same as the reverse order
-  // (opening a standalone file while a folder's already open leaves that
-  // folder in place too, just no longer the active context).
+  // Only auto-open a default file when nothing at all is active yet: if
+  // something's already open (a standalone file, or a file from a
+  // previously-open folder), opening a new folder alongside it shouldn't
+  // silently replace it — the folder becomes browsable in the sidebar and
+  // the current document stays exactly where it was.
   if (getState().doc) {
-    // setWorkspace() (state/workspace.js) is its own module state, not
+    // addWorkspace() (state/workspace.js) is its own module state, not
     // part of the store — it never triggers a re-render on its own the
     // way setState() does, so without this the sidebar just wouldn't pick
     // up the newly-opened folder at all until some unrelated change
@@ -638,7 +654,7 @@ async function handleWorkspaceOpened({ rootName, files }) {
   }
   const sorted = files.slice().sort((a, b) => a.relPath.localeCompare(b.relPath));
   const preferred = sorted.find((f) => !f.relPath.includes('/') && /^(README|INDEX)\.(md|markdown)$/i.test(f.name));
-  await openWorkspaceFile((preferred || sorted[0]).relPath);
+  await openWorkspaceFile(rootName, (preferred || sorted[0]).relPath);
 }
 
 /**
@@ -675,6 +691,7 @@ function loadSnapshotAsActive(snapshot, { sectionId = null, anchor = null, fileH
       fileHandle,
       dirty: true,
       workspaceRelPath: snapshot.workspaceRelPath,
+      workspaceRootName: snapshot.workspaceRootName,
     });
     let targetId = sectionId;
     if (!targetId && anchor) {
@@ -766,31 +783,6 @@ el.folderInput.addEventListener('change', async (e) => {
   el.folderInput.value = '';
 });
 
-el.samplesBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  el.samplesDropdown.hidden = !el.samplesDropdown.hidden;
-});
-document.addEventListener('click', (e) => {
-  if (!el.samplesDropdown.hidden && !e.target.closest('.samples-menu')) el.samplesDropdown.hidden = true;
-});
-
-async function loadSample(path) {
-  try {
-    const text = await fetchSample(path);
-    loadFromText(text, path);
-  } catch (err) {
-    showToast(err.message, { type: 'error' });
-  }
-}
-
-el.samplesDropdown.querySelectorAll('button[data-sample]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    loadSample(btn.dataset.sample);
-    el.samplesDropdown.hidden = true;
-  });
-});
-el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
-
 /**
  * The one obvious way to persist changes: write straight back to the file
  * if it was opened via "Open .md file" (a real File System Access handle),
@@ -798,16 +790,18 @@ el.emptySampleBtn.addEventListener('click', () => loadSample('sample.md'));
  * "saved" — the in-memory doc is no longer ahead of what the user has.
  */
 async function handleSave() {
-  const { doc, fileName, fileHandle, workspaceRelPath } = getState();
+  const {
+    doc, fileName, fileHandle, workspaceRelPath, workspaceRootName,
+  } = getState();
   if (!doc) return;
   const text = serializeMarkdown(doc);
-  const identity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+  const identity = { fileName, workspaceRelPath, workspaceRootName };
   // Keeps the link index fresh for whatever's just been written — without
   // this, a file's own outgoing links are only ever refreshed by reopening
   // it (see loadFromText), so simply editing and saving an already-open
   // file (the common case) would otherwise never pick up a newly-added
   // link until it happened to be closed and reopened.
-  if (workspaceRelPath) recordLinksFor(workspaceRelPath, doc);
+  if (workspaceRelPath) recordLinksFor(workspaceRootName, workspaceRelPath, doc);
 
   if (fileHandle) {
     try {
@@ -894,7 +888,7 @@ async function handleChangesSave(snapshot, isActive) {
     await handleSave();
     return;
   }
-  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRelPath) : null;
+  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRootName, snapshot.workspaceRelPath) : null;
   try {
     if (entry && entry.fileHandle) {
       await writeToHandle(entry.fileHandle, snapshot.markdown);
@@ -912,7 +906,7 @@ async function handleChangesSave(snapshot, isActive) {
 /** Where a section-level save (see handleChangesSaveSection) should write its merged content: the same file handle a whole-file save would use, active document or not. */
 function resolveWriteHandle(isActive, snapshot) {
   if (isActive) return getState().fileHandle;
-  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRelPath) : null;
+  const entry = snapshot.workspaceRelPath ? getWorkspaceFile(snapshot.workspaceRootName, snapshot.workspaceRelPath) : null;
   return entry?.fileHandle || null;
 }
 
@@ -1055,7 +1049,7 @@ function handleChangesOpenSnapshot(snapshot) {
 function handleChangesOpenSection(snapshot, sectionId) {
   const current = getState();
   const currentId = current.doc
-    ? snapshotIdentity({ fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null })
+    ? snapshotIdentity({ fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: current.workspaceRootName })
     : null;
   if (snapshot.id === currentId) {
     selectSection(sectionId);
@@ -1087,10 +1081,10 @@ async function handleChangesDiscard(snapshot, isActive) {
   });
   if (!ok) return;
   try {
-    const { fileHandle, workspaceRelPath } = getState();
+    const { fileHandle, workspaceRelPath, workspaceRootName } = getState();
     const doc = parseMarkdown(currentBaseline);
     loadDocument({
-      doc, fileName: snapshot.fileName, fileHandle, dirty: false, workspaceRelPath,
+      doc, fileName: snapshot.fileName, fileHandle, dirty: false, workspaceRelPath, workspaceRootName,
     });
     clearRecoverySnapshot(snapshot);
     showToast(`Discarded unsaved changes to "${snapshot.fileName}"`);
@@ -1110,8 +1104,10 @@ const changesPanelHandlers = {
 };
 
 function handleOpenChanges() {
-  const { doc, fileName, workspaceRelPath } = getState();
-  const activeId = doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
+  const {
+    doc, fileName, workspaceRelPath, workspaceRootName,
+  } = getState();
+  const activeId = doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName }) : null;
   const enriched = listRecoverySnapshots().map((snap) => (snap.id === activeId ? enrichActiveSnapshot(snap) : enrichSnapshot(snap)));
   const gap = activeGapSnapshot();
   if (gap) enriched.push(enrichActiveSnapshot(gap));

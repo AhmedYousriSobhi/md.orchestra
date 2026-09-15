@@ -1,21 +1,27 @@
 import { resolveWorkspaceLink } from './workspace.js';
-import { readWorkspaceFileText } from '../workspaceIO.js';
+import { readWorkspaceFileText } from '../core/workspaceIO.js';
 import { parseMarkdown } from '../markdown/parser.js';
 
 // A session-scoped, best-effort map of outgoing cross-file Markdown links
-// between workspace files — relPath -> Set<relPath> it links to. Built
-// opportunistically (for free) from whichever files actually get opened
-// during this session, since their content is already being parsed anyway
-// at that point — see recordLinksFor, called from main.js's loadFromText.
-// This deliberately never scans the rest of the workspace on its own,
-// matching state/workspace.js's own lazy design (a workspace only ever
-// holds lightweight {relPath, name, fileHandle} entries, never every
-// file's parsed content up front). Full backlink coverage — knowing every
-// file that links to a given one, not just the ones visited so far — needs
+// between workspace files — key -> Set<key> it links to, where key is
+// `${rootName}::${relPath}` (several workspaces can be open at once, and a
+// relPath is only unique within its own one). Built opportunistically (for
+// free) from whichever files actually get opened during this session,
+// since their content is already being parsed anyway at that point — see
+// recordLinksFor, called from main.js's loadFromText. This deliberately
+// never scans the rest of a workspace on its own, matching
+// state/workspace.js's own lazy design (a workspace only ever holds
+// lightweight {relPath, name, fileHandle} entries, never every file's
+// parsed content up front). Full backlink coverage — knowing every file
+// that links to a given one, not just the ones visited so far — needs
 // indexWorkspaceLinks() below, which is the one place this module actually
 // reads file contents on its own, and only when explicitly asked to.
-let outgoing = new Map(); // relPath -> Set<relPath>
-let indexedPaths = new Set(); // relPaths whose outgoing links are currently known
+let outgoing = new Map(); // key -> Set<key>
+let indexedKeys = new Set(); // keys whose outgoing links are currently known
+
+function keyFor(rootName, relPath) {
+  return `${rootName}::${relPath}`;
+}
 
 // Deliberately simple (not a full CommonMark link parser): matches
 // `[text](target)`, with an optional title, same as every other
@@ -40,45 +46,51 @@ function collectHrefs(node, hrefs) {
 
 /**
  * Record every outgoing cross-file link `doc` (the just-parsed content of
- * `relPath`) actually contains, resolved against the open workspace —
- * same-page anchors and links outside the workspace are silently dropped
- * (resolveWorkspaceLink already handles that). Safe to call repeatedly
- * (every time the file is opened or edited): always replaces this file's
- * prior entry outright rather than accumulating stale links from before an
- * edit removed one.
+ * `relPath`, within the `rootName` workspace) actually contains, resolved
+ * against that same workspace — same-page anchors, links outside it, and
+ * links to a *different* open workspace (there's no such thing — a
+ * relative path can't name one) are silently dropped (resolveWorkspaceLink
+ * already handles that). Safe to call repeatedly (every time the file is
+ * opened or edited): always replaces this file's prior entry outright
+ * rather than accumulating stale links from before an edit removed one.
  */
-export function recordLinksFor(relPath, doc) {
+export function recordLinksFor(rootName, relPath, doc) {
   const hrefs = [];
   collectHrefs(doc, hrefs);
   const targets = new Set();
   hrefs.forEach((href) => {
-    const resolved = resolveWorkspaceLink(relPath, href);
-    if (resolved && resolved.relPath !== relPath) targets.add(resolved.relPath);
+    const resolved = resolveWorkspaceLink(rootName, relPath, href);
+    if (resolved && resolved.relPath !== relPath) targets.add(keyFor(rootName, resolved.relPath));
   });
-  outgoing.set(relPath, targets);
-  indexedPaths.add(relPath);
+  outgoing.set(keyFor(rootName, relPath), targets);
+  indexedKeys.add(keyFor(rootName, relPath));
 }
 
-/** Whether `relPath`'s own outgoing links are currently known (it's been opened this session, or covered by a deep scan) — getIncomingLinks() is only ever as complete as this. */
-export function isIndexed(relPath) {
-  return indexedPaths.has(relPath);
+/** Whether `relPath`'s own outgoing links (within `rootName`) are currently known (it's been opened this session, or covered by a deep scan) — getIncomingLinks() is only ever as complete as this. */
+export function isIndexed(rootName, relPath) {
+  return indexedKeys.has(keyFor(rootName, relPath));
 }
 
-export function getOutgoingLinks(relPath) {
-  return outgoing.get(relPath) || new Set();
+export function getOutgoingLinks(rootName, relPath) {
+  const targets = outgoing.get(keyFor(rootName, relPath)) || new Set();
+  return new Set([...targets].map((key) => key.slice(rootName.length + 2)));
 }
 
-/** Every currently-indexed file that links TO `relPath`. Best-effort: only reflects files whose own outgoing links are already known — a file nobody's opened yet and that hasn't been swept by indexWorkspaceLinks() simply isn't counted, even if it does link here. */
-export function getIncomingLinks(relPath) {
+/** Every currently-indexed file (within `rootName`) that links TO `relPath`. Best-effort: only reflects files whose own outgoing links are already known — a file nobody's opened yet and that hasn't been swept by indexWorkspaceLinks() simply isn't counted, even if it does link here. */
+export function getIncomingLinks(rootName, relPath) {
+  const target = keyFor(rootName, relPath);
   const result = new Set();
-  outgoing.forEach((targets, from) => { if (targets.has(relPath)) result.add(from); });
+  outgoing.forEach((targets, from) => {
+    if (from.startsWith(`${rootName}::`) && targets.has(target)) result.add(from.slice(rootName.length + 2));
+  });
   return result;
 }
 
-/** A fresh workspace has nothing in common with the last one's link graph. */
-export function clearLinkIndex() {
-  outgoing = new Map();
-  indexedPaths = new Set();
+/** Forget everything tracked for one closed workspace, leaving every other open one's link graph untouched. */
+export function clearLinkIndex(rootName) {
+  const prefix = `${rootName}::`;
+  [...outgoing.keys()].filter((k) => k.startsWith(prefix)).forEach((k) => outgoing.delete(k));
+  [...indexedKeys].filter((k) => k.startsWith(prefix)).forEach((k) => indexedKeys.delete(k));
 }
 
 /**
@@ -107,9 +119,9 @@ export async function indexWorkspaceLinks(workspace, onProgress) {
     await Promise.all(batch.map(async (entry) => {
       try {
         const text = await readWorkspaceFileText(entry);
-        recordLinksFor(entry.relPath, parseMarkdown(text));
+        recordLinksFor(workspace.rootName, entry.relPath, parseMarkdown(text));
       } catch {
-        indexedPaths.add(entry.relPath);
+        indexedKeys.add(keyFor(workspace.rootName, entry.relPath));
       }
     }));
     if (onProgress) onProgress(Math.min(i + BATCH_SIZE, total), total);

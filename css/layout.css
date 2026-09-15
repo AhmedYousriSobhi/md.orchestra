@@ -39,18 +39,6 @@ header#app-header {
 .dirty-indicator.is-dirty { color: #b8860b; }
 .dirty-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.7; flex-shrink: 0; }
 
-.samples-menu { position: relative; }
-.samples-dropdown {
-  position: absolute; top: calc(100% + 6px); left: 0;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md); min-width: 190px; padding: 0.35rem; z-index: 30;
-}
-.samples-dropdown button {
-  display: block; width: 100%; text-align: left; background: none; border: none;
-  padding: 0.5rem 0.6rem; border-radius: 6px; font-size: 0.85rem; color: var(--text);
-}
-.samples-dropdown button:hover { background: var(--bg-soft); }
-
 #app-body {
   flex: 1;
   display: flex;
@@ -87,6 +75,10 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 
 #workspace-tree:not(:empty) {
   margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+}
+/* One block per open workspace (see filesPanel.js's renderWorkspacesPanel) — several can be open at once, each its own independent folder. */
+.workspace-block + .workspace-block {
+  margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border);
 }
 .files-tree-head {
   display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.4rem 0.5rem;

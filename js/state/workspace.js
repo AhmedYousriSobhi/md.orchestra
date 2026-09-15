@@ -9,14 +9,30 @@
 // uses, so nothing about editing, saving, or the unsaved-changes guard
 // needs to know a workspace is even involved.
 //
-// No pub/sub of its own: every change here (setWorkspace/clearWorkspace)
+// More than one can be open at once — each directory keeps its own
+// identity (files, tree) independently, the same way a VSCode multi-root
+// workspace does, keyed by its own root folder name. Every active-document
+// identity elsewhere (recovery snapshots, the link index) already carries
+// that same rootName alongside a relPath specifically so two open folders
+// can never be confused for one another, even if a file at the same
+// relative path exists in both.
+//
+// No pub/sub of its own: every change here (addWorkspace/removeWorkspace)
 // only ever happens right before loading a document into state/store.js,
 // whose own subscribers already re-render on every such change — so
-// main.js just reads getWorkspace() fresh whenever that fires.
-let workspace = null;
+// main.js just reads getWorkspaces() fresh whenever that fires.
+const workspaces = new Map(); // rootName -> { rootName, files: Map, tree }
 
-export function getWorkspace() {
-  return workspace;
+export function getWorkspaces() {
+  return [...workspaces.values()];
+}
+
+export function getWorkspace(rootName) {
+  return workspaces.get(rootName) || null;
+}
+
+export function hasWorkspaces() {
+  return workspaces.size > 0;
 }
 
 function buildTree(files) {
@@ -56,20 +72,21 @@ function buildTree(files) {
   return root;
 }
 
-export function setWorkspace({ rootName, files }) {
-  workspace = {
+/** Add a newly-opened folder alongside whatever's already open. Opening the same rootName again (re-picking the same folder) just refreshes its file list in place rather than duplicating it. */
+export function addWorkspace({ rootName, files }) {
+  workspaces.set(rootName, {
     rootName,
     files: new Map(files.map((f) => [f.relPath, f])),
     tree: buildTree(files),
-  };
+  });
 }
 
-export function clearWorkspace() {
-  workspace = null;
+export function removeWorkspace(rootName) {
+  workspaces.delete(rootName);
 }
 
-export function getWorkspaceFile(relPath) {
-  return workspace ? workspace.files.get(relPath) || null : null;
+export function getWorkspaceFile(rootName, relPath) {
+  return workspaces.get(rootName)?.files.get(relPath) || null;
 }
 
 function normalizeSegments(segments) {
@@ -83,15 +100,18 @@ function normalizeSegments(segments) {
 }
 
 /**
- * Resolve an <a href="..."> found while rendering `fromRelPath` against the
- * open workspace: ignores same-page "#anchor" links, absolute URLs
+ * Resolve an <a href="..."> found while rendering `fromRelPath` (a file in
+ * the `rootName` workspace) against that same workspace only — a link
+ * never crosses into a *different* open folder, since a relative path has
+ * no way to name one. Ignores same-page "#anchor" links, absolute URLs
  * (http:, mailto:, //host/...), and anything that isn't a .md/.markdown
  * target; normalizes "./" and "../" relative to fromRelPath's own
  * directory. Returns { relPath, anchor } only when that normalized path is
  * actually a file in this workspace (so a dead link, or one pointing
  * outside the opened folder, is simply left alone by the caller).
  */
-export function resolveWorkspaceLink(fromRelPath, href) {
+export function resolveWorkspaceLink(rootName, fromRelPath, href) {
+  const workspace = workspaces.get(rootName);
   if (!workspace || !href || href.startsWith('#')) return null;
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) return null;
 
