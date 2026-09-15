@@ -579,8 +579,12 @@ function renderExplorerStandaloneEntries() {
     : null;
   const others = listRecoverySnapshots().filter((s) => !s.workspaceRelPath && s.id !== activeId);
 
+  const rows = [];
   if (activeIsStandalone) {
-    el.workspaceTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
+    // Marked as the current one (same idea as a workspace file's own
+    // .nav-link-current highlight) so it's unmistakable this row IS what's
+    // already showing, not an inert or broken entry waiting to be clicked.
+    rows.push(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-active' }, [
       h('span', { class: 'files-tree-icon' }, '📄'),
       h('span', { class: 'files-tree-name', title: fileName }, fileName),
       h('button', {
@@ -593,11 +597,11 @@ function renderExplorerStandaloneEntries() {
     ]));
   }
 
-  // Reversed so the row closest to the top of the sidebar is whichever was
-  // touched most recently — savedAt is only set once a snapshot is actually
-  // persisted, which is exactly the order a user would expect to scan them in.
+  // Most recently touched first — savedAt is only set once a snapshot is
+  // actually persisted, which is exactly the order a user would expect to
+  // scan them in.
   others.slice().reverse().forEach((snap) => {
-    el.workspaceTree.prepend(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
+    rows.push(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
       h('button', {
         class: 'standalone-file-switch',
         type: 'button',
@@ -617,6 +621,21 @@ function renderExplorerStandaloneEntries() {
       }, '✕'),
     ]));
   });
+
+  if (!rows.length) return;
+  // Grouped under its own small label and kept visually separate from the
+  // folder blocks below — otherwise a loose file's row and a workspace
+  // folder's own header (both share the same "files-tree-head" look) read
+  // as the same kind of thing stacked in one undifferentiated list, which
+  // is what actually made a loose file opened alongside two folders look
+  // like it had landed in the wrong place rather than its own distinct
+  // "open files" area (VSCode's own Explorer keeps exactly this
+  // distinction, via a separate "Open Editors" section above the tree).
+  const group = h('div', { class: 'explorer-open-files' }, [
+    getWorkspaces().length ? h('div', { class: 'explorer-open-files-label' }, 'Open files') : null,
+    ...rows,
+  ]);
+  el.workspaceTree.prepend(group);
 }
 
 /** The ✕ on a standalone file's own sidebar header (see renderInner) — closes just that file, leaving an open workspace (if any) untouched, same confirm-if-dirty treatment as everything else that can discard unsaved work. */

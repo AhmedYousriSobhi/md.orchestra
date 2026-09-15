@@ -106,12 +106,30 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .workspace-block + .workspace-block {
   margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border);
 }
+/* A loose file opened on its own, grouped apart from the workspace folder
+   blocks below it (see main.js's renderExplorerStandaloneEntries) — its
+   own small label makes clear it's a different kind of row (an open file,
+   not a folder), the way VSCode's Explorer keeps "Open Editors" visually
+   distinct from the folder tree beneath it. */
+.explorer-open-files-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--text-faint); padding: 0.1rem 0.4rem 0.3rem;
+}
+.explorer-open-files + .workspace-block { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
 .files-tree-head {
   display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.4rem 0.5rem;
   font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
 }
 .files-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .files-tree-close { font-size: 0.75rem; }
+/* The active standalone file's own row — a clear "you are here" marker
+   (same idea as .nav-link-current for an active workspace file) so it
+   never reads as an inert/broken row just because it has nothing to
+   switch to. */
+.standalone-file-head-active {
+  background: var(--bg-soft); border-radius: 8px;
+  box-shadow: inset 2px 0 0 var(--accent-default);
+}
 /* A pending standalone file's own row when it's NOT the active document
    (see main.js's renderStandalonePendingHeads) — same head styling as the
    active one, but the name itself is a button (switch to it) with its own

@@ -244,8 +244,13 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   // before the breadcrumb existed in Phase 2), stacking a third repeat of
   // the same path information on top of the sidebar's own folder-name
   // header and the breadcrumb right above it — removed rather than kept
-  // as a redundant, taller-than-it-needs-to-be third copy of it.
-  container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
+  // as a redundant, taller-than-it-needs-to-be third copy of it. At the
+  // workspace root specifically, the breadcrumb itself is now ALSO just
+  // that one root name and nothing else — still fully redundant with the
+  // Explorer block's own header directly above it — so it's skipped
+  // entirely until you've actually drilled into a subdirectory, where it
+  // starts earning its keep (jumping back several levels at once).
+  if (focalCenter) container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
 
   const rows = layoutRows(centerNode, focalExpanded, activeRelPath, pendingPaths);
   const height = Math.max(rows.length, 1) * ROW_H + 6;
