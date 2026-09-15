@@ -262,6 +262,15 @@ render();
 // prompt can be honest that a snapshot doesn't know about edits made
 // outside the app since.
 let currentBaseline = null;
+// Files opened via the real file picker (not the <input type=file>
+// fallback, which never grants a File System Access handle at all) keep
+// their handle here by name, even after switching away — a workspace
+// file's own handle is always available again later via getWorkspaceFile(),
+// but a standalone file has nowhere else to keep it, and without this,
+// switching back to one that still has pending edits (see loadFromText)
+// would lose direct Save and fall back to a download every time.
+const standaloneHandles = new Map();
+
 /** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
 function snapshotNow() {
   const {
@@ -297,9 +306,48 @@ function snapshotNow() {
 const snapshotIfDirty = debounce(snapshotNow, 1500);
 subscribe(snapshotIfDirty);
 
+/**
+ * How many sections the ACTIVE document's own dirty edit represents, but
+ * ONLY when it hasn't been flushed to a real recovery snapshot yet
+ * (otherwise it's already counted via the normal listRecoverySnapshots()
+ * sum) — the periodic debounce (snapshotIfDirty) usually closes this gap
+ * within 1.5s, but restoring a pending file as active (loadSnapshotAsActive)
+ * clears its snapshot the instant it's restored, and freshly typing into a
+ * brand-new edit hasn't been flushed even once yet — both leave a real
+ * window where the badge would otherwise undercount.
+ */
+function activeGapChangedCount() {
+  const { doc, dirty, fileName, workspaceRelPath } = getState();
+  if (!doc || !dirty || !currentBaseline) return 0;
+  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+  if (listRecoverySnapshots().some((s) => s.id === id)) return 0;
+  try {
+    return findChangedNodes(doc, parseMarkdown(currentBaseline)).length || 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Same gap as activeGapChangedCount() above, but as a snapshot-shaped entry
+ * for the Changes panel's own row list rather than just a count —
+ * enrichActiveSnapshot() fills in the real live doc and diff, so this only
+ * needs to carry identity fields.
+ */
+function activeGapSnapshot() {
+  const { doc, dirty, fileName, workspaceRelPath } = getState();
+  if (!doc || !dirty) return null;
+  const workspaceRootName = getWorkspace()?.rootName || null;
+  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
+  if (listRecoverySnapshots().some((s) => s.id === id)) return null;
+  return {
+    id, fileName, workspaceRelPath, workspaceRootName, savedAt: Date.now(), markdown: '',
+  };
+}
+
 /** The badge (and the Changes panel's own subtitle) count individual changed *sections* across every pending file, not just how many files have any changes — editing two different sections of the same file is two changes, not one. */
 function updateChangesBadge() {
-  const pendingCount = listRecoverySnapshots().reduce((sum, snap) => sum + countChangedSections(snap), 0);
+  const pendingCount = listRecoverySnapshots().reduce((sum, snap) => sum + countChangedSections(snap), 0) + activeGapChangedCount();
   el.changesBadge.hidden = pendingCount === 0;
   el.changesBadge.textContent = String(pendingCount);
 }
@@ -343,51 +391,60 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+/** A live handle for `snapshot`'s own file, when one's resolvable — a workspace file's is always available again via getWorkspaceFile(); a standalone file's only if it was opened this session through the real file picker (see standaloneHandles). Used so restoring a pending edit (loadSnapshotAsActive) can still Save directly instead of falling back to a download. */
+function resolveHandleFor(snapshot) {
+  if (snapshot.workspaceRelPath) return getWorkspaceFile(snapshot.workspaceRelPath)?.fileHandle || null;
+  return standaloneHandles.get(snapshot.fileName) || null;
+}
+
 /**
- * Every entry point that replaces the loaded document — samples, "Open .md
- * file", drag-drop, a workspace file, following a cross-file link — funnels
- * through here, so this one guard covers all of them: if the current
- * document has unsaved changes, confirm before discarding them.
- * (beforeunload only catches closing the tab/window; it has no say over
- * switching documents within the app.) `workspaceRelPath` records which open
- * workspace file this is (null for a standalone file/sample), and `anchor`
- * — a heading slug — jumps straight to that section once loaded, for a
+ * Every entry point that loads a document — samples, "Open .md file",
+ * drag-drop, a workspace file, following a cross-file link — funnels
+ * through here. Switching files never loses anything: whatever's currently
+ * active gets force-flushed into its own recovery snapshot first if it's
+ * dirty (snapshotNow() — the same non-destructive pattern the Changes
+ * panel's own "Open" action already used, just applied everywhere now
+ * rather than only there), and if the file being switched *to* already has
+ * pending unsaved edits waiting, those are what gets shown instead of a
+ * fresh — and by now stale — read of what's on disk (see
+ * loadSnapshotAsActive). `workspaceRelPath` records which open workspace
+ * file this is (null for a standalone file/sample), and `anchor` — a
+ * heading slug — jumps straight to that section once loaded, for a
  * cross-file link like `[...](other.md#some-heading)`.
  */
 async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPath = null, anchor = null } = {}) {
   const current = getState();
-  if (current.dirty) {
-    const ok = await confirmDialog({
-      title: 'Discard unsaved changes?',
-      message: `"${current.fileName}" has unsaved changes that will be lost. Load "${fileName}" anyway?`,
-      confirmLabel: 'Discard & load',
-      danger: true,
-    });
-    if (!ok) return;
-  } else if (current.doc && !current.workspaceRelPath && getWorkspace()) {
-    // A standalone file coexisting with an open folder (see Stage 47) is
-    // its own separate thing, not part of that folder's own tree — it has
-    // no listing anywhere to click back to once replaced, unlike a
-    // workspace file (always still there in the sidebar). Not "unsaved
-    // changes" (nothing here is dirty), just genuinely losing your place,
-    // so this asks even though there's nothing at risk of being discarded.
-    const ok = await confirmDialog({
-      title: 'Switch away from this file?',
-      message: `"${current.fileName}" is open on its own, separate from the current folder — switching to "${fileName}" will close it, and there's nothing to reopen it from afterward. Continue?`,
-      confirmLabel: 'Switch anyway',
-    });
-    if (!ok) return;
+  const targetIdentity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+
+  if (current.doc) {
+    const currentIdentity = {
+      fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null,
+    };
+    if (snapshotIdentity(currentIdentity) === snapshotIdentity(targetIdentity)) {
+      // Already the active document (e.g. re-clicking its own row, or a
+      // cross-file link back to the same file with a different anchor) —
+      // nothing to switch, just honor the anchor if one was given.
+      if (anchor) {
+        const targetId = buildSlugIndex(current.doc).get(anchor);
+        if (targetId) selectSection(targetId);
+      }
+      return;
+    }
   }
+  snapshotNow();
+
+  const pending = listRecoverySnapshots().find((s) => s.id === snapshotIdentity(targetIdentity));
+  if (pending) {
+    loadSnapshotAsActive(pending, { anchor, fileHandle: fileHandle || resolveHandleFor(pending) });
+    return;
+  }
+
   try {
     const doc = parseMarkdown(text);
     if (!doc.children.length && !doc.bodyMarkdown.trim()) {
       showToast('That file has no headings or content — nothing to show.', { type: 'error' });
       return;
     }
-    // Starting fresh with this exact file's own content — any recovery
-    // snapshot for it specifically no longer applies (snapshots for other
-    // files are untouched; see recovery.js).
-    clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
     // A free ride on content we're already parsing: whatever this file
     // links to elsewhere in the workspace is now known, for the focal
     // graph's link-edge overlay — see state/linkIndex.js.
@@ -407,7 +464,7 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
   }
 }
 
-/** Read one file from the open workspace and load it as the active document (still funneling through loadFromText's unsaved-changes guard). */
+/** Read one file from the open workspace and load it as the active document (still funneling through loadFromText, which prefers a pending snapshot over this fresh read if one exists — see there). */
 async function openWorkspaceFile(relPath, anchor = null) {
   const entry = getWorkspaceFile(relPath);
   if (!entry) {
@@ -532,10 +589,15 @@ async function handleWorkspaceOpened({ rootName, files }) {
 
 /**
  * Load a crash-recovery snapshot's content as the active document (dirty —
- * it was never actually saved). Shared by the startup recovery flow and
- * the on-demand Changes panel's "Open" action; neither the snapshot's
- * fileHandle (never persisted — can't be) is available here, so it loads
- * without direct save-back until re-saved or re-opened.
+ * it was never actually saved). Used by the startup recovery flow, the
+ * Changes panel's own "Open" action, and — every ordinary file switch that
+ * lands on a file with pending unsaved edits (see loadFromText, which
+ * prefers this over a fresh on-disk read so switching back to a file you
+ * were mid-edit on shows that edit, not a stale copy). `fileHandle`, when
+ * the caller can resolve one (see resolveHandleFor), keeps direct Save
+ * working instead of falling back to a download; there's genuinely nothing
+ * to resolve across a page reload, which is why the startup recovery
+ * flow's own calls here always end up passing none.
  *
  * Reuses `snapshot.doc` when present (set by enrichSnapshot()) rather than
  * re-parsing `snapshot.markdown` here — parseMarkdown() hands out fresh ids
@@ -544,22 +606,26 @@ async function handleWorkspaceOpened({ rootName, files }) {
  * values; an id computed against an earlier parse (elsewhere, for the
  * Changes panel's own section list) would silently match nothing in a
  * freshly re-parsed one. Lands on `sectionId` if given (the Changes panel
- * jumping to one specific listed change), otherwise on whichever section
- * was actually edited first (see markdown/diff.js), not just wherever the
- * document opens by default.
+ * jumping to one specific listed change), then `anchor` (a heading slug,
+ * for a cross-file link into a file that turned out to have pending edits),
+ * otherwise on whichever section was actually edited first (see
+ * markdown/diff.js), not just wherever the document opens by default.
  */
-function loadSnapshotAsActive(snapshot, sectionId = null) {
+function loadSnapshotAsActive(snapshot, { sectionId = null, anchor = null, fileHandle = null } = {}) {
   try {
     const doc = snapshot.doc ?? parseMarkdown(snapshot.markdown);
     currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
     loadDocument({
       doc,
       fileName: snapshot.fileName,
-      fileHandle: null,
+      fileHandle,
       dirty: true,
       workspaceRelPath: snapshot.workspaceRelPath,
     });
     let targetId = sectionId;
+    if (!targetId && anchor) {
+      targetId = buildSlugIndex(doc).get(anchor) ?? null;
+    }
     if (!targetId && snapshot.changedSections) {
       targetId = snapshot.changedSections[0]?.id ?? null;
     } else if (!targetId && snapshot.baselineMarkdown) {
@@ -606,7 +672,10 @@ el.openFileBtn.addEventListener('click', async () => {
   if (supportsFileSystemAccess) {
     try {
       const picked = await openFilePicker();
-      if (picked) loadFromText(picked.text, picked.fileName, picked.handle);
+      if (picked) {
+        standaloneHandles.set(picked.fileName, picked.handle);
+        loadFromText(picked.text, picked.fileName, picked.handle);
+      }
     } catch (err) {
       if (err.name !== 'AbortError') showToast(`Could not open file: ${err.message}`, { type: 'error' });
     }
@@ -918,7 +987,7 @@ async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
  */
 function handleChangesOpenSnapshot(snapshot) {
   snapshotNow();
-  loadSnapshotAsActive(snapshot);
+  loadSnapshotAsActive(snapshot, { fileHandle: resolveHandleFor(snapshot) });
 }
 
 /**
@@ -939,7 +1008,7 @@ function handleChangesOpenSection(snapshot, sectionId) {
     return;
   }
   snapshotNow();
-  loadSnapshotAsActive(snapshot, sectionId);
+  loadSnapshotAsActive(snapshot, { sectionId, fileHandle: resolveHandleFor(snapshot) });
 }
 
 /**
@@ -990,6 +1059,8 @@ function handleOpenChanges() {
   const { doc, fileName, workspaceRelPath } = getState();
   const activeId = doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
   const enriched = listRecoverySnapshots().map((snap) => (snap.id === activeId ? enrichActiveSnapshot(snap) : enrichSnapshot(snap)));
+  const gap = activeGapSnapshot();
+  if (gap) enriched.push(enrichActiveSnapshot(gap));
   openChangesPanel(enriched, activeId, changesPanelHandlers);
 }
 
