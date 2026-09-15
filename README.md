@@ -1371,3 +1371,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   dirty. Switching back to a clean one re-reads it fresh from its
   retained file-picker handle instead of needing a snapshot to
   restore.
+
+- **Stage 56** — Two more requests: remove the "Scan for links"/Linked
+  notes tray ("I don't see any useful thing for it, and actually it's
+  not working") — gone entirely, along with the whole
+  state/linkIndex.js module it existed to feed (nothing else used it;
+  cross-file link *navigation*, clicking a rendered link to jump to
+  another file, is a separate, untouched code path).
+
+  Also chased down "the file is removed again for the explorer...
+  something that triggers the disappear issue related to opening md
+  files in other directories" — found a real bug in focalGraph.js:
+  its navigation state (which directory each graph is centered on,
+  which subfolders are expanded) lived in flat module-level variables
+  shared across every open workspace's graph instead of scoped per
+  workspace. A workspace that isn't the one owning the active file
+  renders with its activeRelPath forced to null, and the reset-on-
+  active-file-change logic treated that null/real-path flip — which
+  happens on *every single switch*, for every other open workspace —
+  as a genuine change, silently collapsing whatever directory you'd
+  navigated into the moment you touched a file anywhere else. Moved
+  this state into a per-workspace map and narrowed the reset condition
+  to only fire on an actual change to a new real path. Verified with
+  extensive alternating cross-directory switching (dirty and clean
+  standalone files, root-level and deeply-nested workspace files, 10+
+  switches in sequence) against both the dev server and Docker.
