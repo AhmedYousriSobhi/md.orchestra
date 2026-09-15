@@ -937,3 +937,63 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   preview side mirrors it there instead, moving away hides it again,
   and clicking it adds a note to the selected section's own notes list
   — all with no console errors.
+- **Stage 42** (branch `feature/focal-neighborhood-graph`, not yet merged)
+  — A proposed "Best-Practice View Mode: Focal Neighborhood Graph" for
+  navigating a whole workspace (a directory of Markdown files), rather
+  than a single document's headings: instead of always showing the
+  entire recursive folder tree at once (the sidebar's existing plain
+  list already does that), show only the active file's own directory
+  — one hop — collapsing every subdirectory into a "+N" ghost node
+  until explicitly expanded. Reviewed first (data model, layout
+  engine, and where it should live in the UI) before writing any code;
+  the analysis and the three decisions that came out of it are worth
+  recording since they shaped everything else:
+
+  1. *Edges*: pure filesystem hierarchy (parent/children/siblings, free
+     from `workspace.tree`) plus cross-file Markdown links, combined —
+     but not by eagerly parsing the whole workspace up front, which
+     would contradict `state/workspace.js`'s own deliberately lazy
+     design (it only ever holds lightweight file entries, never every
+     file's parsed content). `state/linkIndex.js` (new) instead builds
+     a session-scoped map of outgoing links for free, from whichever
+     files actually get opened — their content is already being parsed
+     for editing anyway — with an explicit, on-demand "🔍 Scan for
+     links" action for complete backlink coverage across files that
+     have never been opened this session.
+  2. *Layout*: fixed depth-first tiers (parent above, siblings/children
+     below), not the force-directed physics `mindMap.js` already has
+     for the single-document Mind Map — a folder hierarchy is
+     predictable structure, not an organic cluster, so something that
+     jiggles or resettles would work against the "maintain a mental
+     map" goal the whole feature is for. Re-centering and expanding
+     still animate smoothly, just via a plain CSS transition on each
+     node's SVG transform rather than a running simulation.
+  3. *Placement*: a small 📋/🕸️ toggle on the existing workspace-tree
+     sidebar header, switching that same area between the plain list
+     and the graph, rather than a separate modal or a third tab bolted
+     onto the unrelated single-file Map view.
+
+  Phase 1 (this stage): `js/ui/focalGraph.js` renders the graph itself
+  — an SVG depth-first stack, directories collapsed to count badges by
+  default, click a ghost node to expand it in place (recursively),
+  click the parent node to re-center the whole view one level up,
+  click a file to open it (same as the plain tree). A tray below the
+  graph lists cross-file linked notes not already visible as
+  filesystem neighbors, pulling from the new link index. The sidebar
+  itself widens slightly (`.sidebar-graph-mode`, 260px → 320px) only in
+  graph mode, since a node-and-edge layout needs a bit more room than a
+  plain indented list to stay legible. Verified against a small nested
+  test workspace (multiple directories, a cross-directory link, a
+  two-levels-deep subdirectory): opening a file centers the graph on
+  its directory with the right siblings and parent shown; expanding a
+  ghost node reveals its nested file without disturbing the rest of
+  the view; the linked-notes tray correctly shows a same-workspace file
+  that's linked but *not* a filesystem neighbor; clicking that link
+  chip opens the file and re-centers the graph there; the manual
+  workspace-wide scan makes a previously-unknown backlink (from a file
+  that was never directly opened) show up afterward. No console
+  errors. Not yet merged to `master` or deployed to the running
+  container — left on its own branch until it's actually wanted for
+  daily use; deferred for a later phase: smooth expand transitions
+  beyond a plain CSS transition, and a breadcrumb strip synced to the
+  graph's current focus.
