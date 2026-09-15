@@ -1357,3 +1357,17 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   "Open files" label (distinct from the folder blocks below, VSCode's
   "Open Editors" equivalent), and the active one gets a clear
   current-item highlight.
+
+- **Stage 55** — Follow-up: the duplicate-name fix landed, but the
+  disappearing-file half of Stage 54 turned out to only be fixed for a
+  *dirty* standalone file — an unedited one (or one right after being
+  saved) still vanished from Explorer the moment you switched away,
+  since "Open files" was really only ever tracking pending recovery
+  snapshots, not "is this file open." Added
+  `openStandaloneFileNames` — every standalone file opened this
+  session, regardless of edit state, cleared only by an explicit close
+  — so it now behaves like VSCode's Open Editors: stays listed and one
+  click away until you close it, not just while it happens to be
+  dirty. Switching back to a clean one re-reads it fresh from its
+  retained file-picker handle instead of needing a snapshot to
+  restore.
