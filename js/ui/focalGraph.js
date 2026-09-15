@@ -77,7 +77,7 @@ function countFiles(dirNode) {
 }
 
 /** Depth-first, pre-order flatten of `centerNode`'s children — a directory only recurses into its own children when its path is in `expanded`; otherwise it's a single collapsed row with a file count. */
-function layoutRows(centerNode, expanded, activeRelPath) {
+function layoutRows(centerNode, expanded, activeRelPath, pendingPaths) {
   const rows = [];
   function place(node, depth, parentRow) {
     const isDir = node.type === 'dir';
@@ -87,6 +87,7 @@ function layoutRows(centerNode, expanded, activeRelPath) {
       parentRow,
       isDir,
       isActive: !isDir && node.path === activeRelPath,
+      isPending: !isDir && pendingPaths.has(node.path),
       count: isDir ? countFiles(node) : 0,
       isExpanded: isDir && expanded.has(node.path),
     };
@@ -142,7 +143,7 @@ function positionNode(group, key, x, y) {
 }
 
 function buildNodeGroup({
-  label, isDir, isActive, isExpanded, count, onClick,
+  label, isDir, isActive, isExpanded, isPending, count, onClick,
 }) {
   const w = nodeWidth(label);
   const classes = ['focal-node'];
@@ -168,8 +169,15 @@ function buildNodeGroup({
     group.appendChild(svg('text', {
       x: w - 8, y: (ROW_H - 6) / 2, class: 'focal-node-badge', 'dominant-baseline': 'middle', 'text-anchor': 'end',
     }, isExpanded ? '−' : `+${count}`));
+  } else if (isPending) {
+    // A file with unsaved changes waiting (see main.js's recovery-snapshot
+    // tracking) — nothing is ever lost switching away from it now, but this
+    // is the only visual trail of that once you've navigated elsewhere.
+    group.appendChild(svg('circle', {
+      class: 'focal-node-pending-dot', cx: w - 9, cy: (ROW_H - 6) / 2, r: 3.5,
+    }));
   }
-  group.appendChild(svg('title', {}, label));
+  group.appendChild(svg('title', {}, isPending ? `${label} — unsaved changes` : label));
   return { group, width: w };
 }
 
@@ -210,7 +218,7 @@ function renderGraphHead(workspace, centerPath, onJump) {
  * main.js). `onOpenFile(relPath)` opens a clicked file node exactly like
  * the plain tree's own file rows do.
  */
-export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile) {
+export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths = new Set()) {
   container.innerHTML = '';
   if (!workspace) return;
 
@@ -227,12 +235,12 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   const hasParent = focalCenter !== '';
   const parentPath = hasParent ? dirname(focalCenter) : null;
 
-  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile); }
+  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths); }
   function jumpTo(path) { focalCenter = path; focalExpanded = new Set(); rerender(); }
 
   container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
 
-  const rows = layoutRows(centerNode, focalExpanded, activeRelPath);
+  const rows = layoutRows(centerNode, focalExpanded, activeRelPath, pendingPaths);
   const bodyRowCount = rows.length + (hasParent ? 1 : 0);
   const height = Math.max(bodyRowCount, 1) * ROW_H + 6;
 
@@ -270,7 +278,7 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
       : () => onOpenFile(row.node.path);
 
     const { group } = buildNodeGroup({
-      label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, count: row.count, onClick,
+      label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, isPending: row.isPending, count: row.count, onClick,
     });
     nodeLayer.appendChild(group);
     positionNode(group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);

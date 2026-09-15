@@ -132,6 +132,7 @@ function renderInner() {
     onToggleActiveOnTop: handleToggleSidebarOrder,
     viewMode: getWorkspaceViewMode(),
     onToggleViewMode: handleToggleWorkspaceViewMode,
+    pendingPaths: pendingWorkspacePaths(workspace),
   });
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
@@ -350,6 +351,16 @@ function updateChangesBadge() {
   const pendingCount = listRecoverySnapshots().reduce((sum, snap) => sum + countChangedSections(snap), 0) + activeGapChangedCount();
   el.changesBadge.hidden = pendingCount === 0;
   el.changesBadge.textContent = String(pendingCount);
+}
+
+/** Every relPath within `workspace` that currently has a pending recovery snapshot — for the sidebar tree/graph's own small pending-changes dot (see filesPanel.js/focalGraph.js), so switching freely between files (nothing is ever discarded now) still leaves a visible trail of what's been touched. */
+function pendingWorkspacePaths(workspace) {
+  if (!workspace) return new Set();
+  return new Set(
+    listRecoverySnapshots()
+      .filter((s) => s.workspaceRelPath && s.workspaceRootName === workspace.rootName)
+      .map((s) => s.workspaceRelPath),
+  );
 }
 
 /**
