@@ -25,6 +25,8 @@ import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
 import { confirmDialog } from './ui/confirmDialog.js';
+import { renderPreviewPanel, getPreviewScope, setPreviewScope } from './ui/previewPanel.js';
+import { openCodeViewer } from './ui/codeViewer.js';
 import { debounce } from './utils/debounce.js';
 import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot,
@@ -53,6 +55,8 @@ const el = {
   emptySampleBtn: document.getElementById('empty-sample-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
+  previewToggleBtn: document.getElementById('preview-toggle-btn'),
+  previewPanel: document.getElementById('preview-panel'),
   saveBtn: document.getElementById('save-btn'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
@@ -72,6 +76,7 @@ function render() {
   el.sourceBtn.disabled = !doc;
   el.addSectionBtn.disabled = !doc;
   el.mapViewBtn.disabled = !doc;
+  el.previewToggleBtn.disabled = !doc;
   el.saveBtn.disabled = !doc;
 
   if (!doc) {
@@ -79,12 +84,35 @@ function render() {
     el.sectionView.hidden = true;
     el.headingTree.innerHTML = '';
     el.breadcrumb.innerHTML = '';
+    el.previewPanel.innerHTML = '';
     lastPathLength = 0;
     return;
   }
 
   el.emptyState.hidden = true;
   el.sectionView.hidden = false;
+
+  const node = getSelectedNode();
+  const path = getSelectedPath();
+  if (!node) return;
+
+  // Rendered ahead of the focus guard below, deliberately: unlike the card
+  // grid, there's no cursor/focus inside this panel to lose, and updating
+  // it live as you type (in a note, in the content editor) is the entire
+  // point of a preview pane.
+  if (!el.previewPanel.hidden) {
+    renderPreviewPanel(el.previewPanel, {
+      doc,
+      node,
+      scope: getPreviewScope(),
+      onScopeChange: handlePreviewScopeChange,
+      onClose: handleClosePreview,
+      onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
+      onNavigate: selectSection,
+      onNavigateFile: handleNavigateFile,
+      fileName,
+    });
+  }
 
   // A note/title edit fires a store update on every autosave tick. If the user is
   // still typing in a field inside the card grid, rebuilding that DOM out from under
@@ -96,16 +124,22 @@ function render() {
     return;
   }
 
-  const node = getSelectedNode();
-  const path = getSelectedPath();
-  if (!node) return;
-
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
   animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
+}
+
+function handlePreviewScopeChange(scope) {
+  setPreviewScope(scope);
+  render();
+}
+
+function handleClosePreview() {
+  el.previewPanel.hidden = true;
+  el.previewPanel.innerHTML = '';
 }
 
 /** Drag-and-drop reordering/relocating in the sidebar — see sidebar.js. */
@@ -387,6 +421,14 @@ el.dirtyIndicator.addEventListener('click', handleSave);
 
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', openMapView);
+el.previewToggleBtn.addEventListener('click', () => {
+  if (el.previewPanel.hidden) {
+    el.previewPanel.hidden = false;
+    render();
+  } else {
+    handleClosePreview();
+  }
+});
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);
 el.sidebarToggle.addEventListener('click', () => {

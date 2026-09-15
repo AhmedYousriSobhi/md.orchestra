@@ -105,6 +105,15 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    model (the key is stored only in `localStorage` on your machine and is
    sent directly to `api.anthropic.com` — never to any other service), and
    to switch between System/Light/Dark appearance.
+8. Toggle **👁 Preview** for a clean, read-only, GitHub/PDF-style view of
+   the Markdown — a single flowing page (real headings, tables, code,
+   mermaid, notes) instead of the card-based editing layout — docked on
+   the right so it can stay open alongside the editor rather than
+   blocking it like the other side panels. A "This section" / "Whole
+   document" toggle at its top switches between just what you're
+   currently looking at (plus its subsections) and the entire file, and
+   it updates live as you edit, including mid-keystroke in a note or the
+   content editor.
 
 ### Working with a directory
 
@@ -534,3 +543,21 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   deleting a note) — a page-owned dialog has no such suppression, and it
   looks consistent with the rest of the app instead of a native browser
   prompt besides.
+- **Stage 27** — Added a **👁 Preview** panel: a clean, read-only, single
+  flowing page (`js/ui/previewPanel.js`) closer to how the file would
+  actually render on GitHub or in a PDF, as an alternative to the app's
+  own card-based editing layout. Unlike Settings/Source/Map, it's a
+  docked pane (a sibling of the main panel, toggled by class rather than
+  an overlay) so it can stay open and visible while still editing, not a
+  modal blocking the rest of the app. A "This section"/"Whole document"
+  toggle (persisted in localStorage) switches its scope, reusing
+  `splitBody()` to render just each section's real content (not the raw
+  bodyMarkdown with note/AI-insert markers mixed in) with real
+  `<h1>`-`<h6>` tags. It's wired into the same render() pipeline as
+  everything else, deliberately *ahead of* the card grid's
+  focus-preserving guard — so, unlike the card view, it keeps updating
+  live while typing in a note or the content editor, which is rather the
+  point of a reference preview pane. Verified: section vs. whole-document
+  scope, code blocks' Expand button working from inside the preview,
+  live updates while editing, and the full existing regression suite
+  (self-tests, mind map, dark mode, undo, recovery, workspace) unaffected.
