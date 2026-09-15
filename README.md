@@ -721,3 +721,25 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   card view (confirming it's a real document change), Cancel discards
   cleanly, and editing a specific section deep in Whole document scope
   touches only that node — a sibling section's content is left alone.
+- **Stage 35** — Found a real, latent data-loss bug while testing the
+  notes UI (Stage 36 below): deleting one note on `sample.md` — a file
+  with real content accumulated across a long session — deleted *two*.
+  `utils/id.js`'s `nextId()` is a bare incrementing counter that never
+  resets within a page session, but `parseMarkdown()` calls it once per
+  heading — so even a small document burns through the first several
+  counter values before the user does anything at all — and ids are
+  persisted straight into the file (`<!-- dashboard:note:ID:start -->`).
+  A file saved by an earlier, longer session can easily contain a low id
+  like "note7" the counter reached ages ago; a freshly reloaded page's
+  counter starts back at 0 and reaches that exact same value after only
+  a handful of calls, silently colliding with it — and deleting either
+  note then filters by id and removes both. Fixed by prefixing each id
+  with the current time (to the millisecond, base36): a collision with
+  anything saved in a *different* session now requires hitting the exact
+  same millisecond, not just the same small integer, while the counter
+  still guarantees uniqueness within one session. Verified: reproduced
+  the exact failure against `sample.md` first (added a note, deleted it,
+  watched an unrelated pre-existing note vanish with it), confirmed a
+  fresh document was unaffected (isolating it to the collision, not a
+  regression), then confirmed the fix resolves it on `sample.md` too —
+  plus the full regression suite, including id-dependent marker tests.
