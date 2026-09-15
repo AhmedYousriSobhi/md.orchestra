@@ -7,17 +7,20 @@ import { renderFocalGraph } from './focalGraph.js';
 // guessing what to hide.
 const manualCollapse = new Set();
 
-// Whether the workspace panel shows the plain always-expanded tree
-// (existing behavior) or the focal-neighborhood graph (see focalGraph.js) —
-// a standing preference, not a per-session toggle, so it's persisted the
-// same way as the other sidebar display preferences below.
+// Whether the workspace panel shows the focal-neighborhood graph (see
+// focalGraph.js) or the plain always-expanded tree (the older behavior,
+// still available as a fallback) — a standing preference, not a
+// per-session toggle, so it's persisted the same way as the other sidebar
+// display preferences below. Defaults to the graph; explicitly switching to
+// the plain list (via the sidebar's own toggle) is what's remembered from
+// then on, not the other way around.
 const VIEW_MODE_KEY = 'mdDashboard.sidebarViewMode';
 
 export function getWorkspaceViewMode() {
   try {
-    return localStorage.getItem(VIEW_MODE_KEY) === 'graph' ? 'graph' : 'list';
+    return localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'graph';
   } catch {
-    return 'list';
+    return 'graph';
   }
 }
 
