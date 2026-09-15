@@ -1246,3 +1246,42 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   it immediately rather than after a debounce delay; re-clicking the
   already-active file is a no-op; pending-file dots show correctly in
   both sidebar view modes. Full regression suite unaffected.
+
+- **Stage 50** (branch `feature/multi-document-workspace`, not yet
+  merged) — Two more issues found while using Stage 49's rebuild:
+  "the title tree in project are not correct or maybe correct but too
+  long... under it it mention the original whole project name instead
+  of the parent" and "I'm still losing an old opened md alone, when I
+  open a new directory... it shows in the changes, but not on the side
+  bar."
+
+  - **Redundant parent node in the focal graph**: a screenshot of a
+    nested directory showed the same path repeated three times —
+    the sidebar's own folder-name header, the breadcrumb strip above
+    the graph, and a "parent" ghost node inside the graph body itself
+    (a leftover from Phase 1 of the focal graph, before the breadcrumb
+    existed). The breadcrumb already covers every ancestor including
+    the immediate parent, so the ghost node was pure duplication, not
+    a naming bug — removed it entirely from `focalGraph.js` rather
+    than trying to shorten or reconcile three overlapping displays;
+    layout math simplified accordingly (nested rows still draw a
+    connecting line back to their own parent row, top-level rows no
+    longer reserve space for one that no longer exists).
+  - **Standalone file vanishing from the sidebar**: a standalone
+    file's header row was only ever rendered while it was the active
+    document — its recovery snapshot was genuinely preserved when
+    switching away (Stage 49 already guaranteed that), but nothing in
+    the sidebar pointed back to it, so opening a new directory made it
+    look gone even though the Changes panel still listed it correctly.
+    `renderStandalonePendingHeads()` replaces the old
+    active-file-only block: it still shows the active standalone
+    file's header, plus a clickable row (with the same pending dot
+    used elsewhere) for every *other* standalone file with a pending
+    snapshot, so switching to a workspace — or a second, different
+    workspace — no longer erases the way back to it.
+
+  Verified with dedicated Playwright tests plus the full existing
+  regression suite (one test's selector, referencing the now-removed
+  parent node, was updated to use the breadcrumb instead — an
+  expected test update, not a regression). Both fixes are on
+  `feature/multi-document-workspace`, not merged or deployed.
