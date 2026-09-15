@@ -1165,3 +1165,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   closed. Verified with the fallback path specifically (no handle at
   all) across repeated cross-directory switches, on both the dev
   server and Docker.
+
+- **Stage 59** — Four requests: (1) moved this progress log out of
+  README.md into its own CHANGELOG.md — README had grown to over a
+  thousand lines of stage history dwarfing the actual usage docs —
+  and refreshed README content that had drifted stale over many
+  stages (removed sample.md/sample3.md/doc_flowchart.html references,
+  rewrote "Working with a directory" for the current multi-workspace
+  design, updated the Architecture file tree for the js/core/ move).
+  (2) Alt+N now adds a note to the selected section from anywhere
+  (guarded against active text inputs), reusing the same
+  addNoteToSelected() as the per-card "+ Add note" button. (3) Removed
+  the old note-seam-btn (a button that tracked the cursor along the
+  seam between the content pane and the preview, which is what made
+  that seam ungrabbable for anything else) and replaced it with a real
+  drag-to-resize handle for the preview panel — width is now a
+  `--preview-width` CSS variable, draggable between 280px and 70vw,
+  persisted across reloads. (4) A code-review pass: found and fixed a
+  real security gap (renderMarkdownToSafeHtml fell back to
+  *unsanitized* HTML if DOMPurify failed to load — now fails closed),
+  added a 5MB cap on embedded images (previously unbounded, risking a
+  localStorage quota error via recovery snapshots), released
+  per-workspace state (focal graph navigation, fold preference) when a
+  folder closes instead of leaking it for the rest of the session, and
+  removed several confirmed-dead exports and CSS classes (verified
+  zero references before removing each one).
