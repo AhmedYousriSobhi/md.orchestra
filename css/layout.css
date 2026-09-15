@@ -73,9 +73,24 @@ aside#sidebar.sidebar-collapsed {
 aside#sidebar.sidebar-graph-mode { width: 320px; }
 .sidebar-empty { color: var(--text-faint); font-size: 0.85rem; padding: 0.5rem; }
 
-#workspace-tree:not(:empty) {
-  margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+/* Two fixed panes, VSCode-style: Explorer (every open directory/standalone
+   file) on top, Outline (the active document's own heading breakdown)
+   below — neither ever reorders or hides itself based on which file is
+   currently active (see main.js's renderInner). Each is independently
+   collapsible via its own header, a standing preference like the other
+   sidebar display toggles. */
+.sidebar-section + .sidebar-section { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.sidebar-section-head {
+  display: flex; align-items: center; gap: 0.35rem; width: 100%;
+  background: none; border: none; padding: 0.2rem 0.3rem; margin-bottom: 0.4rem;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-faint); cursor: pointer; text-align: left; border-radius: 6px;
 }
+.sidebar-section-head:hover { background: var(--bg-soft); color: var(--text-soft); }
+.sidebar-section-chevron { transition: transform 0.15s ease; display: inline-block; }
+.sidebar-section-collapsed .sidebar-section-chevron { transform: rotate(-90deg); }
+.sidebar-section-collapsed .sidebar-section-body { display: none; }
+
 /* One block per open workspace (see filesPanel.js's renderWorkspacesPanel) — several can be open at once, each its own independent folder. */
 .workspace-block + .workspace-block {
   margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border);
@@ -85,8 +100,6 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
   font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
 }
 .files-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.files-tree-pin { font-size: 0.8rem; }
-.files-tree-pin-active { color: var(--accent-default); }
 .files-tree-close { font-size: 0.75rem; }
 /* A pending standalone file's own row when it's NOT the active document
    (see main.js's renderStandalonePendingHeads) — same head styling as the

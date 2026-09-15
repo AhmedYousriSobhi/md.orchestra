@@ -63,8 +63,24 @@
 
   <div id="app-body">
     <aside id="sidebar">
-      <div id="workspace-tree"></div>
-      <div id="heading-tree"></div>
+      <section class="sidebar-section" id="explorer-section">
+        <button type="button" class="sidebar-section-head" id="explorer-toggle">
+          <span class="sidebar-section-chevron">▾</span>
+          <span class="sidebar-section-title">Explorer</span>
+        </button>
+        <div class="sidebar-section-body" id="explorer-body">
+          <div id="workspace-tree"></div>
+        </div>
+      </section>
+      <section class="sidebar-section" id="outline-section">
+        <button type="button" class="sidebar-section-head" id="outline-toggle">
+          <span class="sidebar-section-chevron">▾</span>
+          <span class="sidebar-section-title">Outline</span>
+        </button>
+        <div class="sidebar-section-body" id="outline-body">
+          <div id="heading-tree"></div>
+        </div>
+      </section>
     </aside>
 
     <main id="main-panel">

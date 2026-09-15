@@ -27,14 +27,6 @@ export function getWorkspaces() {
   return [...workspaces.values()];
 }
 
-export function getWorkspace(rootName) {
-  return workspaces.get(rootName) || null;
-}
-
-export function hasWorkspaces() {
-  return workspaces.size > 0;
-}
-
 function buildTree(files) {
   const root = {
     name: '', path: '', type: 'dir', children: [],

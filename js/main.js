@@ -9,12 +9,12 @@ import {
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
 import {
-  getWorkspaces, hasWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
+  getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
 import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
-  renderWorkspacesPanel, getSidebarActiveOnTop, setSidebarActiveOnTop, getWorkspaceViewMode, setWorkspaceViewMode,
+  renderWorkspacesPanel, getWorkspaceViewMode, setWorkspaceViewMode,
 } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
@@ -51,7 +51,11 @@ applyTheme(getTheme());
 const el = {
   appBody: document.getElementById('app-body'),
   sidebar: document.getElementById('sidebar'),
+  explorerSection: document.getElementById('explorer-section'),
+  explorerToggle: document.getElementById('explorer-toggle'),
   workspaceTree: document.getElementById('workspace-tree'),
+  outlineSection: document.getElementById('outline-section'),
+  outlineToggle: document.getElementById('outline-toggle'),
   headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
@@ -82,6 +86,36 @@ const el = {
 // wiring below, which persists it once the user actually flips it.
 el.previewPanel.hidden = !getPreviewOpen();
 
+/**
+ * Which of the two fixed sidebar sections (Explorer, Outline — see
+ * renderInner) are collapsed, a standing per-section preference rather
+ * than a per-session toggle, keyed by a short id ('explorer' | 'outline').
+ */
+const SIDEBAR_SECTIONS_KEY = 'mdDashboard.sidebarSectionsCollapsed';
+
+function isSidebarSectionCollapsed(key) {
+  try {
+    return JSON.parse(localStorage.getItem(SIDEBAR_SECTIONS_KEY) || '{}')[key] === true;
+  } catch {
+    return false;
+  }
+}
+
+function toggleSidebarSection(key) {
+  let all;
+  try {
+    all = JSON.parse(localStorage.getItem(SIDEBAR_SECTIONS_KEY) || '{}');
+  } catch {
+    all = {};
+  }
+  all[key] = !all[key];
+  try { localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  render();
+}
+
+el.explorerToggle.addEventListener('click', () => toggleSidebarSection('explorer'));
+el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline'));
+
 let lastPathLength = 0;
 
 /**
@@ -110,35 +144,26 @@ function renderInner() {
 
   updateChangesBadge();
 
+  // VSCode-style, fixed two-pane sidebar: Explorer (every open
+  // directory/standalone file, always fully shown — see
+  // renderExplorer below) stays on top, Outline (the active document's own
+  // heading breakdown) stays below, neither ever reordering or hiding
+  // itself based on which file happens to be active.
   const workspaces = getWorkspaces();
-  const activeOnTop = getSidebarActiveOnTop();
-  // Every open workspace's tree collapses out of the way (and the heading
-  // tree — the active document's own outline — moves above them) exactly
-  // when the active document isn't actually one of THAT workspace's own
-  // files: a standalone file, or a file from a *different* open folder,
-  // otherwise visually reads as if it belongs under a directory it has
-  // nothing to do with. Each workspace decides this for itself inside
-  // renderWorkspacesPanel (comparing its own rootName against
-  // workspaceRootName); this is only the outer question of whether ANY of
-  // them is currently expanded, for ordering the two sidebar sections.
-  const activeWorkspaceOpen = workspaces.some((ws) => ws.rootName === workspaceRootName);
-  const workspaceCollapsed = activeOnTop && workspaces.length > 0 && !activeWorkspaceOpen;
-  el.sidebar.insertBefore(
-    workspaceCollapsed ? el.headingTree : el.workspaceTree,
-    workspaceCollapsed ? el.workspaceTree : el.headingTree,
-  );
-
-  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && workspaces.length > 0 && !workspaceCollapsed);
+  el.sidebar.classList.toggle('sidebar-graph-mode', getWorkspaceViewMode() === 'graph' && workspaces.length > 0);
+  el.explorerSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('explorer'));
+  el.outlineSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('outline'));
   renderWorkspacesPanel(el.workspaceTree, workspaces, workspaceRootName, workspaceRelPath, {
     onOpenFile: openWorkspaceFile,
     onClose: handleCloseWorkspace,
-    collapsed: activeOnTop,
-    activeOnTop,
-    onToggleActiveOnTop: handleToggleSidebarOrder,
     viewMode: getWorkspaceViewMode(),
     onToggleViewMode: handleToggleWorkspaceViewMode,
     pendingPathsFor: pendingWorkspacePaths,
   });
+  renderExplorerStandaloneEntries();
+  if (!el.workspaceTree.hasChildNodes()) {
+    el.workspaceTree.appendChild(h('p', { class: 'sidebar-empty' }, 'No folder or file opened yet.'));
+  }
   el.openFolderBtn.textContent = workspaces.length ? '📁 Add folder' : '📁 Open folder';
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
@@ -156,7 +181,7 @@ function renderInner() {
   if (!doc) {
     el.emptyState.hidden = false;
     el.sectionView.hidden = true;
-    el.headingTree.innerHTML = '';
+    renderSidebar(el.headingTree, null, [], selectSection, handleSidebarMove);
     el.breadcrumb.innerHTML = '';
     el.previewPanel.innerHTML = '';
     lastPathLength = 0;
@@ -206,7 +231,6 @@ function renderInner() {
   }
 
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
-  renderStandalonePendingHeads();
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
@@ -536,18 +560,19 @@ async function handleCloseWorkspace(rootName) {
 }
 
 /**
- * Every standalone file (not part of any workspace) with pending unsaved
- * changes gets its own small header row prepended above the heading tree —
- * the currently active one (if it's a standalone file) plus any *other*
- * standalone file edited earlier in this session and since navigated away
- * from. Without this, a standalone file's only trace once it stops being
- * the active document was the Changes panel — switching to a workspace (or
- * a different workspace entirely) made it look like it had vanished, even
- * though nothing was actually lost. A workspace file never needs this: it
- * always has its own permanent row in the tree/graph (with the same
- * pending-changes dot) regardless of which file is currently active.
+ * Every standalone file (opened alone, not part of any workspace) gets its
+ * own small row in Explorer — the currently active one (if it's a
+ * standalone file) plus any *other* standalone file edited earlier in this
+ * session and since navigated away from, the same way VSCode's Explorer
+ * keeps a loose "open editor" visible whether or not a folder is open
+ * alongside it. Without this, a standalone file's only trace once it
+ * stopped being the active document was the Changes panel — switching to a
+ * workspace made it look like it had vanished, even though nothing was
+ * actually lost. A workspace file never needs this: it always has its own
+ * permanent row in the tree/graph (with the same pending-changes dot)
+ * regardless of which file is currently active.
  */
-function renderStandalonePendingHeads() {
+function renderExplorerStandaloneEntries() {
   const { doc, fileName, workspaceRelPath } = getState();
   const activeIsStandalone = Boolean(doc) && !workspaceRelPath;
   const activeGap = activeIsStandalone ? activeGapSnapshot() : null;
@@ -556,8 +581,8 @@ function renderStandalonePendingHeads() {
     : null;
   const others = listRecoverySnapshots().filter((s) => !s.workspaceRelPath && s.id !== activeId);
 
-  if (activeIsStandalone && hasWorkspaces()) {
-    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
+  if (activeIsStandalone) {
+    el.workspaceTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
       h('span', { class: 'files-tree-icon' }, '📄'),
       h('span', { class: 'files-tree-name', title: fileName }, fileName),
       h('button', {
@@ -574,7 +599,7 @@ function renderStandalonePendingHeads() {
   // touched most recently — savedAt is only set once a snapshot is actually
   // persisted, which is exactly the order a user would expect to scan them in.
   others.slice().reverse().forEach((snap) => {
-    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
+    el.workspaceTree.prepend(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
       h('button', {
         class: 'standalone-file-switch',
         type: 'button',
@@ -616,11 +641,6 @@ async function handleCloseStandaloneFile() {
 
 function handleToggleWorkspaceViewMode() {
   setWorkspaceViewMode(getWorkspaceViewMode() === 'graph' ? 'list' : 'graph');
-  render();
-}
-
-function handleToggleSidebarOrder() {
-  setSidebarActiveOnTop(!getSidebarActiveOnTop());
   render();
 }
 
