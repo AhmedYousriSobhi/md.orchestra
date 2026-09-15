@@ -405,7 +405,36 @@ function handleNavigateFile(href) {
   return true;
 }
 
-function handleCloseWorkspace() {
+/**
+ * Closing a folder from the sidebar previously only ever forgot the
+ * workspace itself — if the currently active document happened to be one
+ * of its files, it stayed fully loaded and editable with no visible link
+ * back to any folder at all, and with no warning even if it had unsaved
+ * changes. Now closing the folder closes that document too (confirming
+ * first if it's dirty, same as every other path that can actually lose
+ * unsaved work) — a document that isn't part of this workspace (a
+ * standalone file, or one from a *different* open folder) is left alone.
+ */
+async function handleCloseWorkspace() {
+  const {
+    doc, dirty, workspaceRelPath, fileName,
+  } = getState();
+  if (doc && workspaceRelPath) {
+    if (dirty) {
+      const ok = await confirmDialog({
+        title: 'Close this folder?',
+        message: `"${fileName}" is open from this folder and has unsaved changes that will be lost. Close the folder anyway?`,
+        confirmLabel: 'Close & discard',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    clearRecoverySnapshot({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null });
+    currentBaseline = null;
+    setState({
+      doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null,
+    });
+  }
   clearWorkspace();
   clearLinkIndex();
   render();
