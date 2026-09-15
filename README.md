@@ -1189,3 +1189,60 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   standalone files with no workspace open (both pre-existing, both
   unaffected); closing the standalone file via its own ✕ leaves the
   workspace fully intact. Full regression suite unaffected.
+- **Stage 49** (branch `feature/multi-document-workspace`, not yet
+  merged) — Follow-up on Stage 48: "that's not fully correct" — the
+  confirm dialog didn't actually fix anything, it just made the same
+  data loss explicit instead of silent, and the same issue turned out
+  to apply generally (switching to *any* other file — a nested
+  subdirectory file included, not just the standalone-vs-folder case),
+  not just the one path Stage 48 covered. What was actually wanted
+  (VSCode-style): every opened file keeps its own state independently,
+  switching between them is instant and lossless, and the sidebar
+  marks which ones are open/pending directly rather than needing a
+  separate list. Scoped this properly before writing code (comparable
+  in size to the focal-graph work) — asked how the sidebar should
+  represent multiple open files, whether there should be a cap on how
+  many, and branch vs. `master` — then built it on its own branch:
+
+  - **Lossless switching, no confirm**: rather than rearchitecting the
+    store to hold multiple documents at once (a much larger change),
+    `loadFromText()` reuses the recovery-snapshot system already built
+    for crash recovery — force-flushing whatever's currently active
+    into its own snapshot first if it's dirty (the same
+    non-destructive pattern the Changes panel's own "Open" action
+    already used, just applied to every switch now), and preferring a
+    pending snapshot over a fresh on-disk read when switching to a
+    file that already has one waiting. Nothing is ever actually
+    discarded by navigating away anymore, so every confirm-before-
+    switch dialog (Stage 48's included) is gone; an explicit ✕-to-close
+    still confirms, since that genuinely does discard on purpose.
+    `standaloneHandles` keeps a standalone file's own File System
+    Access handle by name across switches (a workspace file's is
+    always available again via `getWorkspaceFile()`, but a standalone
+    file has nowhere else to keep it) so restoring its pending edit can
+    still Save directly instead of falling back to a download.
+  - **Changes panel/badge timing gap**: restoring a pending file as
+    active clears its snapshot the instant it's restored, which would
+    otherwise leave the Changes badge/panel showing nothing for it
+    until the next debounce tick — `activeGapChangedCount()`/
+    `activeGapSnapshot()` close that gap.
+  - **Sidebar marking**: a small dot now appears next to any workspace
+    file (plain list and focal graph both) with a pending recovery
+    snapshot, sourced from the same tracking the Changes panel already
+    uses — chosen over a separate "open files" list, per the review.
+  - **Incidental find**: testing this exposed a real, unrelated latent
+    bug — `mermaid.run()` returns a promise that was only ever wrapped
+    in a synchronous try/catch (which never catches a later rejection,
+    only a throw from the call itself); switching away from a document
+    while its diagrams were still mid-render removed the DOM nodes
+    mermaid was targeting, rejecting that promise with nothing to catch
+    it. Always possible in principle, but only became an easily-hit
+    race once switching got this fast. Fixed with an explicit `.catch()`.
+
+  Verified: editing a file and switching to another (standalone-to-
+  workspace, workspace-to-standalone, and workspace file to a nested
+  subdirectory file) never confirms and never loses the edit, switching
+  back shows it exactly as left, with the Changes panel/badge reflecting
+  it immediately rather than after a debounce delay; re-clicking the
+  already-active file is a no-op; pending-file dots show correctly in
+  both sidebar view modes. Full regression suite unaffected.
