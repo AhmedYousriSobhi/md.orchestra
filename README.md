@@ -1325,3 +1325,21 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   Each pane collapses independently via its own header, a persisted
   preference. Dropped the "keep active file on top" pin and the
   per-workspace auto-collapse/peek mechanic it required.
+
+- **Stage 53** — Four follow-up polish requests on the new sidebar/map:
+  (1) each open workspace folder in Explorer is now individually
+  foldable via its own chevron (persisted), independent of every other
+  folder and of which file is active — a collapsed one still shows a
+  pending-changes dot if something inside it is unsaved; (2) Explorer
+  and Outline are now a fixed-height flex column each scrolling its own
+  overflow independently, instead of one long shared scroll, so a long
+  file list or outline no longer pushes the other pane off-screen;
+  (3) removed the list/graph view toggle — dead weight since the focal
+  graph became the only mode actually used, so the button, its
+  preference, and the plain-list render path are gone; (4) the
+  Document map (🗺️) gained a third **Workspace** mode alongside Tree
+  and Mind map: the whole open folder's structure (every file and
+  subfolder) laid out with the same force-directed mind-map renderer,
+  built by converting the workspace's folder tree into the same
+  {id, title, children} shape a document's heading tree already has —
+  clicking a file node opens it directly.
