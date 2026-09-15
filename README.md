@@ -966,7 +966,36 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   branch — an unrelated, pre-existing issue found while testing this
   feature, fixed where it actually affects the deployed app, then
   merged back into this branch.)
-- **Stage 43** (branch `feature/focal-neighborhood-graph`, not yet merged)
+- **Stage 43** — Reported: a file starting with two consecutive H1s
+  and nothing in between (`# aCupOfTea` / `# AI Tea Lounge: Sipping
+  Knowledge in AI Domains`) parsed into two sibling top-level cards —
+  the first completely empty (and what the file opens on by default),
+  the second holding the document's entire real content as its own
+  subsections — rather than the two-line title it almost certainly was
+  meant to be. Asked which behavior was actually wanted (merge into
+  one card vs. leave the structure as-is but stop landing on the empty
+  one by default) before touching anything, since the literal parse
+  isn't *wrong*, just an unhelpful reading of a common pattern.
+  Chose: merge. `mergeLeadingEmptyH1s()` (parser.js) now folds a
+  leading H1 with no body text and no nested heading of its own into
+  the next H1's title (joined with " — "), dropping it from the tree;
+  the surviving node keeps its own id, level, body and children.
+  Scoped tight to avoid swallowing real structure: H1 only, only at
+  the very start of the document, and only when the leading heading is
+  truly empty — a placeholder section someone's mid-drafting always
+  has *something* under it eventually, but never sits fused to the
+  next H1 with nothing in between; the same empty-heading-before-a-
+  sibling pattern elsewhere in a document (not at the very start) is
+  left alone. Handles a chain of more than two leading empty H1s the
+  same way. Verified against the reported case, a chain of three
+  leading empty H1s, a lone stray empty H1 with nothing after it
+  (correctly left alone), a leading H1 with its own body or a nested
+  child (left alone in both cases), and the same pattern occurring
+  mid-document rather than at the start (left alone). Every case
+  round-trips stably through serialize → re-parse; full self-test
+  suite still passes. (Also landed directly on `master`, same reasoning
+  as Stage 42, then merged back into this branch.)
+- **Stage 44** (branch `feature/focal-neighborhood-graph`, not yet merged)
   — A proposed "Best-Practice View Mode: Focal Neighborhood Graph" for
   navigating a whole workspace (a directory of Markdown files), rather
   than a single document's headings: instead of always showing the

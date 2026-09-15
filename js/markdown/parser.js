@@ -60,6 +60,7 @@ export function parseMarkdown(mdText) {
   }
 
   finalizeNode(root);
+  mergeLeadingEmptyH1s(root);
   return root;
 }
 
@@ -69,6 +70,46 @@ function finalizeNode(node) {
   node.bodyMarkdown = node.bodyLines.join('\n');
   delete node.bodyLines;
   node.children.forEach(finalizeNode);
+}
+
+/**
+ * A document starting with two (or more) consecutive H1 lines and nothing
+ * else in between — no body text, no nested heading — almost always means
+ * a two-line title (a short label followed by the real, full title) rather
+ * than genuinely separate top-level sections: e.g.
+ *   # aCupOfTea
+ *   # AI Tea Lounge: Sipping Knowledge in AI Domains
+ * Parsed literally, the first H1 becomes its own empty card and every bit
+ * of the document's real content ends up nested under the second one
+ * instead — a confusing structure, and the empty first card is what the
+ * document opens on by default. Folded together into one card instead: the
+ * leading, truly-empty H1(s) contribute their titles to the next H1's own
+ * (joined with " — "), and are otherwise dropped from the tree — the
+ * surviving node keeps its own id, level, body and children unchanged.
+ * Deliberately scoped tight to avoid swallowing real structure: only H1s
+ * (level 1 is the closest thing this format has to "the document's own
+ * title"), only at the very start of the document, and only when the
+ * leading one has neither body text nor a nested heading of its own — a
+ * placeholder section someone's mid-drafting (even an empty one) always has
+ * *something* under it eventually, but never sits fused to the next H1 with
+ * literally nothing in between.
+ */
+function mergeLeadingEmptyH1s(root) {
+  const mergedTitles = [];
+  while (
+    root.children.length > 1
+    && root.children[0].level === 1
+    && root.children[1].level === 1
+    && !root.children[0].bodyMarkdown.trim()
+    && root.children[0].children.length === 0
+  ) {
+    mergedTitles.push(root.children[0].title);
+    root.children.shift();
+  }
+  if (mergedTitles.length) {
+    mergedTitles.push(root.children[0].title);
+    root.children[0].title = mergedTitles.join(' — ');
+  }
 }
 
 export function findNode(root, id) {
