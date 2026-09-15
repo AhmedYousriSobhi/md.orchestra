@@ -149,12 +149,39 @@ pre.code-pre, pre.hljs {
 .preview-sticky-note p:last-child { margin-bottom: 0; }
 .preview-sticky-note a { color: #6b4f00; }
 
-.notes-editor { margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem; }
-.notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.6rem; }
-.notes-editor-title { font-size: 0.82rem; font-weight: 600; color: var(--text-soft); }
+/* The notes "drawer": a clearly separate, tinted zone below a section's
+   actual content — same warm note color used everywhere else a note shows
+   up (the preview's sticky notes, the note-count badge on preview cards) —
+   rather than just a thin divider line, so it reads unmistakably as
+   "annotations about this section" rather than a continuation of the
+   section's own content. */
+.notes-editor {
+  margin-top: 1.25rem;
+  padding: 0.85rem 1rem 1rem;
+  background: var(--note-badge-bg);
+  border: 1px solid color-mix(in srgb, var(--note-badge-text) 30%, var(--border));
+  border-radius: var(--radius-md);
+}
+.notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.7rem; }
+.notes-editor-title {
+  display: flex; align-items: center; gap: 0.45rem;
+  font-size: 0.85rem; font-weight: 700; color: var(--note-badge-text);
+}
+.notes-count-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.2rem; height: 1.2rem; padding: 0 0.35rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--note-badge-text) 20%, var(--surface));
+  color: var(--note-badge-text); font-size: 0.68rem; font-weight: 700;
+}
+.notes-add-btn {
+  font-size: 0.75rem; font-weight: 700; padding: 0.35rem 0.7rem; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--note-badge-text) 45%, transparent);
+  background: var(--surface); color: var(--note-badge-text); cursor: pointer;
+}
+.notes-add-btn:hover { background: color-mix(in srgb, var(--note-badge-text) 12%, var(--surface)); }
 .notes-status { font-size: 0.72rem; color: var(--text-faint); }
 .notes-list { display: flex; flex-direction: column; gap: 0.7rem; }
-.note-card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.7rem; }
+.note-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.7rem; box-shadow: var(--shadow-sm); }
 .note-card-head { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; margin-bottom: 0.35rem; }
 .note-card-head .notes-status { margin-right: auto; }
 .notes-textarea {

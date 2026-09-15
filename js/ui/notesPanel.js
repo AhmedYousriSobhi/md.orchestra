@@ -15,11 +15,14 @@ export function createNotesSection(notes, handlers) {
   const list = h('div', { class: 'notes-list' });
   notes.forEach((note) => list.appendChild(createNoteCard(note, handlers)));
 
-  const addBtn = h('button', { class: 'code-btn', type: 'button', onClick: handlers.onAdd }, '+ Add note');
+  const addBtn = h('button', { class: 'notes-add-btn', type: 'button', onClick: handlers.onAdd }, '+ Add note');
 
   return h('div', { class: 'notes-editor' }, [
     h('div', { class: 'notes-editor-head' }, [
-      h('span', { class: 'notes-editor-title' }, '📝 Your notes'),
+      h('span', { class: 'notes-editor-title' }, [
+        '📝 Your notes',
+        notes.length ? h('span', { class: 'notes-count-badge' }, String(notes.length)) : null,
+      ]),
       addBtn,
     ]),
     notes.length ? list : h('p', { class: 'card-empty-note' }, 'No notes yet on this section.'),

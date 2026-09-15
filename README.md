@@ -743,3 +743,16 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   fresh document was unaffected (isolating it to the collision, not a
   regression), then confirmed the fix resolves it on `sample.md` too —
   plus the full regression suite, including id-dependent marker tests.
+- **Stage 36** — A visual pass on the card's notes area: it used to be
+  set apart from a section's actual content by a thin dashed line —
+  easy to miss, and not much of a signal that everything below it is an
+  annotation *about* the section rather than more of the section itself.
+  Notes now sit in a distinctly tinted "drawer" — the same warm note
+  color already used for the note-count badge on preview cards and the
+  Preview panel's sticky notes, so it reads as one consistent visual
+  language for "this is a note" across the whole app rather than a
+  one-off — with its own bordered zone, a note-count badge next to the
+  "Your notes" heading, a pill-styled "+ Add note" button, and each
+  individual note now a clean surface-colored card floating on that
+  tinted background instead of blending into it. Checked in both
+  light and dark themes.
