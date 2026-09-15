@@ -118,6 +118,34 @@ el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline')
 
 let lastPathLength = 0;
 
+// `currentBaseline` holds whichever file's content is currently active as
+// it was when this editing session of it began (set in loadFromText and
+// after a save) — the recovery snapshot's `baselineMarkdown`, shown in the
+// recovery panel, so a restore prompt can be honest that a snapshot
+// doesn't know about edits made outside the app since.
+let currentBaseline = null;
+// Files opened via the real file picker (not the <input type=file>
+// fallback, which never grants a File System Access handle at all) keep
+// their handle here by name, even after switching away — a workspace
+// file's own handle is always available again later via getWorkspaceFile(),
+// but a standalone file has nowhere else to keep it, and without this,
+// switching back to one that still has pending edits (see loadFromText)
+// would lose direct Save and fall back to a download every time.
+const standaloneHandles = new Map();
+// Every standalone file considered "open" this session — regardless of
+// whether it's ever been edited — so Explorer's "Open files" group (see
+// renderExplorerStandaloneEntries) behaves like VSCode's Open Editors: a
+// loose file you switched away from stays listed and one click away, not
+// just while it happens to have unsaved changes. Insertion order is
+// most-recent-last (re-added via delete+add on every open, so switching
+// back to an already-open one bumps it instead of leaving it stuck at its
+// original position); rendered most-recent-first. Read by renderInner (via
+// renderExplorerStandaloneEntries) on every render, including the very
+// first one — declared here, before that first render() call below, so
+// referencing it can't ever hit the temporal dead zone a `const` further
+// down in this file would.
+const openStandaloneFileNames = new Set();
+
 /**
  * A thin, never-throwing wrapper around the real render logic below. This
  * runs on every state change (and is called directly in several places
@@ -266,21 +294,9 @@ render();
 // current Markdown in localStorage (debounced — this fires on every store
 // update, including per-keystroke note/content autosaves), one per distinct
 // file (see recovery.js). If the tab or browser goes away before a real
-// save, the next load offers to restore any of them. `currentBaseline`
-// holds whichever file's content is currently active as it was when this
-// editing session of it began (set in loadFromText and after a save) — the
-// snapshot's `baselineMarkdown`, shown in the recovery panel, so a restore
-// prompt can be honest that a snapshot doesn't know about edits made
-// outside the app since.
-let currentBaseline = null;
-// Files opened via the real file picker (not the <input type=file>
-// fallback, which never grants a File System Access handle at all) keep
-// their handle here by name, even after switching away — a workspace
-// file's own handle is always available again later via getWorkspaceFile(),
-// but a standalone file has nowhere else to keep it, and without this,
-// switching back to one that still has pending edits (see loadFromText)
-// would lose direct Save and fall back to a download every time.
-const standaloneHandles = new Map();
+// save, the next load offers to restore any of them (currentBaseline,
+// standaloneHandles, and openStandaloneFileNames are all declared earlier
+// in this file, before the first render() call — see there).
 
 /** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
 function snapshotNow() {
@@ -441,6 +457,13 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
   const current = getState();
   const targetIdentity = { fileName, workspaceRelPath, workspaceRootName };
 
+  if (!workspaceRelPath) {
+    // Bumped to "most recent" on every open, including re-opening one
+    // that's already tracked — see openStandaloneFileNames above.
+    openStandaloneFileNames.delete(fileName);
+    openStandaloneFileNames.add(fileName);
+  }
+
   if (current.doc) {
     const currentIdentity = {
       fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: current.workspaceRootName,
@@ -558,26 +581,22 @@ async function handleCloseWorkspace(rootName) {
 }
 
 /**
- * Every standalone file (opened alone, not part of any workspace) gets its
- * own small row in Explorer — the currently active one (if it's a
- * standalone file) plus any *other* standalone file edited earlier in this
- * session and since navigated away from, the same way VSCode's Explorer
- * keeps a loose "open editor" visible whether or not a folder is open
- * alongside it. Without this, a standalone file's only trace once it
- * stopped being the active document was the Changes panel — switching to a
- * workspace made it look like it had vanished, even though nothing was
- * actually lost. A workspace file never needs this: it always has its own
- * permanent row in the tree/graph (with the same pending-changes dot)
+ * Every standalone file that's open this session (see
+ * openStandaloneFileNames) gets its own small row in Explorer — the
+ * currently active one, plus any *other* one navigated away from,
+ * whether or not it has unsaved changes — the same way VSCode's Explorer
+ * keeps a loose "open editor" listed until you explicitly close it, not
+ * just while it happens to be dirty. Without this, a standalone file's
+ * only trace once it stopped being the active document was the Changes
+ * panel (and only then if it had unsaved edits) — switching to a
+ * workspace made it look like it had vanished, even though it was still
+ * one click away. A workspace file never needs this: it always has its
+ * own permanent row in the tree/graph (with the same pending-changes dot)
  * regardless of which file is currently active.
  */
 function renderExplorerStandaloneEntries() {
   const { doc, fileName, workspaceRelPath } = getState();
   const activeIsStandalone = Boolean(doc) && !workspaceRelPath;
-  const activeGap = activeIsStandalone ? activeGapSnapshot() : null;
-  const activeId = activeIsStandalone
-    ? (activeGap ? activeGap.id : snapshotIdentity({ fileName, workspaceRelPath: null, workspaceRootName: null }))
-    : null;
-  const others = listRecoverySnapshots().filter((s) => !s.workspaceRelPath && s.id !== activeId);
 
   const rows = [];
   if (activeIsStandalone) {
@@ -597,27 +616,33 @@ function renderExplorerStandaloneEntries() {
     ]));
   }
 
-  // Most recently touched first — savedAt is only set once a snapshot is
-  // actually persisted, which is exactly the order a user would expect to
-  // scan them in.
-  others.slice().reverse().forEach((snap) => {
+  // Most recently opened/switched-to first (see openStandaloneFileNames).
+  const otherNames = [...openStandaloneFileNames]
+    .filter((name) => !(activeIsStandalone && name === fileName))
+    .reverse();
+  otherNames.forEach((name) => {
+    const snap = listRecoverySnapshots().find((s) => !s.workspaceRelPath && s.fileName === name);
     rows.push(h('div', { class: 'files-tree-head standalone-file-head standalone-file-head-pending' }, [
       h('button', {
         class: 'standalone-file-switch',
         type: 'button',
-        title: `Switch to "${snap.fileName}" — unsaved changes waiting`,
-        onClick: () => handleChangesOpenSnapshot(snap),
+        title: snap ? `Switch to "${name}" — unsaved changes waiting` : `Switch to "${name}"`,
+        onClick: () => (snap ? handleChangesOpenSnapshot(snap) : reopenCleanStandaloneFile(name)),
       }, [
         h('span', { class: 'files-tree-icon' }, '📄'),
-        h('span', { class: 'files-tree-name' }, snap.fileName),
-        h('span', { class: 'nav-pending-dot' }),
+        h('span', { class: 'files-tree-name' }, name),
+        snap ? h('span', { class: 'nav-pending-dot' }) : null,
       ]),
       h('button', {
         class: 'icon-btn files-tree-close',
         type: 'button',
-        title: 'Discard these changes',
-        'aria-label': 'Discard these changes',
-        onClick: () => { handleChangesDiscard(snap, false); render(); },
+        title: snap ? 'Discard these changes and close' : 'Close this file',
+        'aria-label': snap ? 'Discard these changes and close' : 'Close this file',
+        onClick: () => {
+          if (snap) handleChangesDiscard(snap, false);
+          openStandaloneFileNames.delete(name);
+          render();
+        },
       }, '✕'),
     ]));
   });
@@ -650,10 +675,38 @@ async function handleCloseStandaloneFile() {
     });
     if (!ok) return;
   }
+  openStandaloneFileNames.delete(fileName);
   currentBaseline = null;
   setState({
     doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
   });
+}
+
+/**
+ * Switch back to a standalone file that's open (see
+ * openStandaloneFileNames) but currently neither active nor dirty — there's
+ * no recovery snapshot to restore (nothing to preserve), so this re-reads
+ * it fresh from its retained file-picker handle, the same live-handle
+ * guarantee a workspace file always has via getWorkspaceFile(). A file
+ * opened through the <input type=file> fallback (no handle at all in this
+ * browser) can't be re-read this way; asks the user to pick it again
+ * instead of pretending to reopen it.
+ */
+async function reopenCleanStandaloneFile(fileName) {
+  const handle = standaloneHandles.get(fileName);
+  if (!handle) {
+    showToast(`Can't reopen "${fileName}" automatically — use "Open .md file" to pick it again.`, { type: 'error' });
+    openStandaloneFileNames.delete(fileName);
+    render();
+    return;
+  }
+  try {
+    const file = await handle.getFile();
+    const text = await file.text();
+    loadFromText(text, fileName, handle);
+  } catch (err) {
+    showToast(`Could not reopen ${fileName}: ${err.message}`, { type: 'error' });
+  }
 }
 
 /**
@@ -715,6 +768,10 @@ async function handleWorkspaceOpened({ rootName, files }) {
  */
 function loadSnapshotAsActive(snapshot, { sectionId = null, anchor = null, fileHandle = null } = {}) {
   try {
+    if (!snapshot.workspaceRelPath) {
+      openStandaloneFileNames.delete(snapshot.fileName);
+      openStandaloneFileNames.add(snapshot.fileName);
+    }
     const doc = snapshot.doc ?? parseMarkdown(snapshot.markdown);
     currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
     loadDocument({
