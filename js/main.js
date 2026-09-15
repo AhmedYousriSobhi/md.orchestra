@@ -583,6 +583,12 @@ async function handleSave() {
   if (!doc) return;
   const text = serializeMarkdown(doc);
   const identity = { fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null };
+  // Keeps the link index fresh for whatever's just been written — without
+  // this, a file's own outgoing links are only ever refreshed by reopening
+  // it (see loadFromText), so simply editing and saving an already-open
+  // file (the common case) would otherwise never pick up a newly-added
+  // link until it happened to be closed and reopened.
+  if (workspaceRelPath) recordLinksFor(workspaceRelPath, doc);
 
   if (fileHandle) {
     try {

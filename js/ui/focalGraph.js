@@ -1,6 +1,6 @@
 import { h, svg } from '../utils/dom.js';
 import {
-  getOutgoingLinks, getIncomingLinks, isIndexed, indexWorkspaceLinks, indexedCount,
+  getOutgoingLinks, getIncomingLinks, isIndexed, indexWorkspaceLinks,
 } from '../state/linkIndex.js';
 import { showToast } from './toast.js';
 
@@ -303,14 +303,19 @@ function renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile,
   const linkedOnly = [...linked].filter((p) => !shown.has(p) && workspace.files.has(p));
 
   const tray = h('div', { class: 'focal-graph-links' });
-  const fullyIndexed = indexedCount() >= workspace.files.size;
 
+  // Always available, not just until the workspace is "fully indexed" once
+  // — a file already scanned can still pick up new links later (edited and
+  // saved without ever being reopened), and indexWorkspaceLinks() always
+  // does a full re-read now specifically so re-running this stays useful,
+  // rather than becoming permanently unavailable the moment nothing was
+  // left to fill in the first time.
   tray.appendChild(h('div', { class: 'focal-graph-links-head' }, [
     h('span', {}, `🔗 Linked notes${linkedOnly.length ? ` (${linkedOnly.length})` : ''}`),
-    !fullyIndexed ? h('button', {
+    h('button', {
       class: 'code-btn',
       type: 'button',
-      title: 'Scan every file in this workspace for links, for complete backlink coverage (only files opened so far are known otherwise)',
+      title: 'Scan every file in this workspace for links, for complete and up-to-date backlink coverage',
       onClick: async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
@@ -319,7 +324,7 @@ function renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile,
         showToast('Finished scanning the workspace for links.');
         rerender();
       },
-    }, '🔍 Scan for links') : null,
+    }, '🔍 Scan for links'),
   ]));
 
   if (!linkedOnly.length) {

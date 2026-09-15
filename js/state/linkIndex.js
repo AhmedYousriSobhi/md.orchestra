@@ -75,10 +75,6 @@ export function getIncomingLinks(relPath) {
   return result;
 }
 
-export function indexedCount() {
-  return indexedPaths.size;
-}
-
 /** A fresh workspace has nothing in common with the last one's link graph. */
 export function clearLinkIndex() {
   outgoing = new Map();
@@ -89,14 +85,20 @@ export function clearLinkIndex() {
  * Read and scan every not-yet-indexed file in `workspace` for outgoing
  * links, for full backlink coverage — the one place this module does I/O
  * on its own, and only when a caller explicitly asks (never automatically,
- * unlike recordLinksFor's free ride on files already being opened).
- * Processes in small batches with a yield between them so a large
+ * unlike recordLinksFor's free ride on files already being opened). Always
+ * re-reads every file, even ones already indexed — deliberately not an
+ * incremental "only fill in the gaps" scan: a file already indexed once
+ * can still have picked up new links since (edited and saved without ever
+ * being reopened, which is the common case for whatever's currently the
+ * active document), and this is the one place that can catch that, since
+ * nothing else re-syncs an already-known file's links after its first
+ * open. Processes in small batches with a yield between them so a large
  * workspace doesn't freeze the UI; `onProgress(done, total)` fires after
  * each batch. A file that fails to read is marked indexed anyway (with no
  * known links) so a scan doesn't retry it forever.
  */
 export async function indexWorkspaceLinks(workspace, onProgress) {
-  const entries = [...workspace.files.values()].filter((f) => !indexedPaths.has(f.relPath));
+  const entries = [...workspace.files.values()];
   const total = entries.length;
   const BATCH_SIZE = 8;
   for (let i = 0; i < entries.length; i += BATCH_SIZE) {
