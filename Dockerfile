@@ -5,19 +5,22 @@ FROM nginx:alpine
 
 COPY . /usr/share/nginx/html
 
-# Service workers only get to control the exact scope they're served from,
-# and this app registers sw.js at "/" — make sure nginx doesn't cache it
-# aggressively, so an update to the app is picked up on the next reload
-# rather than being stuck behind a stale worker.
+# This app is under active development, redeployed often within the same
+# session — every one of these static files needs Cache-Control set
+# explicitly, or the browser's own HTTP cache can (and does) satisfy a
+# reload straight from disk without a request ever reaching nginx, making a
+# real code change look like it "didn't take effect." sw.js's own
+# network-first fetch handler forces a real round-trip on its end (see
+# sw.js), but that's moot if the browser answers the round-trip from cache
+# instead of asking this server — so every path gets the same treatment,
+# not just sw.js.
 RUN printf 'server {\n\
     listen 80;\n\
     server_name _;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
 \n\
-    location /sw.js {\n\
-        add_header Cache-Control "no-cache";\n\
-    }\n\
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;\n\
 \n\
     location / {\n\
         try_files $uri $uri/ =404;\n\

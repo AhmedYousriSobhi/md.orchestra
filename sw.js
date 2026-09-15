@@ -5,7 +5,7 @@
 // cross-origin responses here would mean opaque responses we can't safely
 // reason about, for no real benefit (those URLs are already versioned/pinned
 // and cache well on their own).
-const CACHE_NAME = 'md-dashboard-v3';
+const CACHE_NAME = 'md-dashboard-v4';
 const PRECACHE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -28,12 +28,21 @@ self.addEventListener('activate', (event) => {
 // mistake for the change never having happened. Network-first means an
 // online reload always sees the latest deployed code, while still keeping
 // the offline app-shell guarantee this service worker exists for.
+//
+// Plain fetch(request) here is NOT actually guaranteed to hit the network —
+// it's still subject to the browser's own HTTP cache, which (absent strong
+// Cache-Control from the server) can satisfy it heuristically from disk
+// with no request ever reaching nginx. That silently turns "network-first"
+// into "whatever the browser's cache felt like serving," which looks
+// exactly like a real code change having no effect at all. `cache:
+// 'no-store'` forces an actual round-trip every time, so this SW's own
+// stated guarantee is one this fetch handler can actually keep.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(request)
+    fetch(request, { cache: 'no-store' })
       .then((response) => {
         if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
         return response;
