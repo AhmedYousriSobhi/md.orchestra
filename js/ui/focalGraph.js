@@ -1,8 +1,4 @@
 import { h, svg } from '../utils/dom.js';
-import {
-  getOutgoingLinks, getIncomingLinks, isIndexed, indexWorkspaceLinks,
-} from '../state/linkIndex.js';
-import { showToast } from './toast.js';
 
 // A focal-neighborhood view of the open workspace: instead of the sidebar's
 // other mode (filesPanel.js's always-fully-expanded tree), this shows only
@@ -13,9 +9,7 @@ import { showToast } from './toast.js';
 // ancestor in it to re-center there directly, however many levels that is
 // — rather than a separate "parent" node duplicating just the immediate
 // step of that in the graph body itself, on top of the sidebar's own
-// folder-name header right above it. A small tray below surfaces
-// cross-file Markdown links to/from the active file that aren't already
-// visible as filesystem neighbors — see state/linkIndex.js.
+// folder-name header right above it.
 //
 // Deliberately no physics/force layout: this is a hierarchy, not an organic
 // cluster, so a fixed depth-first stack (same layout style as mapView.js's
@@ -51,11 +45,6 @@ let lastKnownPos = new Map();
 
 function dirname(relPath) {
   return relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
-}
-
-function basename(path) {
-  const segments = path.split('/');
-  return segments[segments.length - 1] || '';
 }
 
 function truncate(text, max = LABEL_MAX) {
@@ -298,62 +287,4 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   svgRoot.appendChild(edgeLayer);
   svgRoot.appendChild(nodeLayer);
   container.appendChild(svgRoot);
-
-  renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile, rerender);
-}
-
-function renderLinkedTray(container, workspace, activeRelPath, rows, onOpenFile, rerender) {
-  if (!activeRelPath) return;
-
-  const shown = new Set(rows.map((r) => r.node.path));
-  shown.add(activeRelPath);
-  const linked = new Set([
-    ...getOutgoingLinks(workspace.rootName, activeRelPath),
-    ...getIncomingLinks(workspace.rootName, activeRelPath),
-  ]);
-  const linkedOnly = [...linked].filter((p) => !shown.has(p) && workspace.files.has(p));
-
-  const tray = h('div', { class: 'focal-graph-links' });
-
-  // Always available, not just until the workspace is "fully indexed" once
-  // — a file already scanned can still pick up new links later (edited and
-  // saved without ever being reopened), and indexWorkspaceLinks() always
-  // does a full re-read now specifically so re-running this stays useful,
-  // rather than becoming permanently unavailable the moment nothing was
-  // left to fill in the first time.
-  tray.appendChild(h('div', { class: 'focal-graph-links-head' }, [
-    h('span', {}, `🔗 Linked notes${linkedOnly.length ? ` (${linkedOnly.length})` : ''}`),
-    h('button', {
-      class: 'code-btn',
-      type: 'button',
-      title: 'Scan every file in this workspace for links, for complete and up-to-date backlink coverage',
-      onClick: async (e) => {
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        btn.textContent = 'Scanning…';
-        await indexWorkspaceLinks(workspace, (done, total) => { btn.textContent = `Scanning ${done}/${total}…`; });
-        showToast('Finished scanning the workspace for links.');
-        rerender();
-      },
-    }, '🔍 Scan for links'),
-  ]));
-
-  if (!linkedOnly.length) {
-    tray.appendChild(h('p', { class: 'sidebar-empty focal-graph-links-empty' }, isIndexed(workspace.rootName, activeRelPath)
-      ? 'No cross-file links beyond what\'s already shown above.'
-      : 'No links found yet — open this file to check, or scan the whole workspace.'));
-  } else {
-    const list = h('div', { class: 'focal-graph-links-list' });
-    linkedOnly.forEach((relPath) => {
-      list.appendChild(h('button', {
-        class: 'focal-link-chip',
-        type: 'button',
-        title: relPath,
-        onClick: () => onOpenFile(relPath),
-      }, `📄 ${truncate(basename(relPath), 28)}`));
-    });
-    tray.appendChild(list);
-  }
-
-  container.appendChild(tray);
 }

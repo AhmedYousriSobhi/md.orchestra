@@ -11,7 +11,6 @@ import { addNote } from './markdown/markers.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
-import { recordLinksFor, clearLinkIndex } from './state/linkIndex.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
   renderWorkspacesPanel,
@@ -493,10 +492,6 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
       showToast('That file has no headings or content — nothing to show.', { type: 'error' });
       return;
     }
-    // A free ride on content we're already parsing: whatever this file
-    // links to elsewhere in the workspace is now known, for the focal
-    // graph's link-edge overlay — see state/linkIndex.js.
-    if (workspaceRelPath) recordLinksFor(workspaceRootName, workspaceRelPath, doc);
     currentBaseline = text;
     loadDocument({
       doc, fileName, fileHandle, workspaceRelPath, workspaceRootName,
@@ -576,7 +571,6 @@ async function handleCloseWorkspace(rootName) {
     });
   }
   removeWorkspace(rootName);
-  clearLinkIndex(rootName);
   render();
 }
 
@@ -885,12 +879,6 @@ async function handleSave() {
   if (!doc) return;
   const text = serializeMarkdown(doc);
   const identity = { fileName, workspaceRelPath, workspaceRootName };
-  // Keeps the link index fresh for whatever's just been written — without
-  // this, a file's own outgoing links are only ever refreshed by reopening
-  // it (see loadFromText), so simply editing and saving an already-open
-  // file (the common case) would otherwise never pick up a newly-added
-  // link until it happened to be closed and reopened.
-  if (workspaceRelPath) recordLinksFor(workspaceRootName, workspaceRelPath, doc);
 
   if (fileHandle) {
     try {

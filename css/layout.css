@@ -227,21 +227,6 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .focal-node-active .focal-node-label { font-weight: 700; }
 .focal-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
 
-.focal-graph-links { margin: 0.5rem 0.4rem 0; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
-.focal-graph-links-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;
-  font-size: 0.72rem; font-weight: 700; color: var(--text-faint); margin-bottom: 0.4rem;
-}
-.focal-graph-links-empty { padding: 0.2rem 0; font-size: 0.76rem; }
-.focal-graph-links-list { display: flex; flex-direction: column; gap: 0.25rem; }
-.focal-link-chip {
-  text-align: left; font-size: 0.78rem; color: var(--text-soft);
-  background: none; border: 1px dashed var(--border); border-radius: 8px;
-  padding: 0.3rem 0.5rem; cursor: pointer;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.focal-link-chip:hover { background: var(--bg-soft); color: var(--text); border-style: solid; }
-
 main#main-panel {
   flex: 1;
   display: flex;
