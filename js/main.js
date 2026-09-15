@@ -138,11 +138,18 @@ function renderInner() {
   const path = getSelectedPath();
   if (!node) return;
 
-  // Rendered ahead of the focus guard below, deliberately: unlike the card
-  // grid, there's no cursor/focus inside this panel to lose, and updating
-  // it live as you type (in a note, in the content editor) is the entire
-  // point of a preview pane.
-  if (!el.previewPanel.hidden) {
+  // Rendered ahead of the card grid's own focus guard below, deliberately:
+  // updating it live as you type elsewhere (in a note, in the card's
+  // content editor) is the entire point of a preview pane. But the preview
+  // panel now has its own editable textarea too (editing a section in
+  // place — see previewPanel.js), so it needs the exact same protection
+  // the card grid gets below: skip rebuilding it while its own textarea is
+  // focused, or an unrelated update elsewhere would wipe out whatever's
+  // mid-edit there.
+  const activeInPreview = document.activeElement;
+  const previewIsBeingEdited = activeInPreview && el.previewPanel.contains(activeInPreview)
+    && (activeInPreview.tagName === 'TEXTAREA' || activeInPreview.tagName === 'INPUT');
+  if (!el.previewPanel.hidden && !previewIsBeingEdited) {
     renderPreviewPanel(el.previewPanel, {
       doc,
       node,

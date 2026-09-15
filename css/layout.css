@@ -216,6 +216,28 @@ aside#preview-panel[hidden] { display: none; }
 .preview-document :is(h1,h2,h3,h4,h5,h6):first-child { margin-top: 0; }
 .preview-body { margin-bottom: 0.75rem; }
 
+/* Editing a section in place, from the preview (see previewPanel.js) — the
+   pencil only appears on hover so the reading view stays uncluttered. */
+.preview-body-wrap { position: relative; border-radius: 8px; transition: background 0.12s ease; }
+.preview-body-wrap:hover { background: var(--bg-soft); }
+.preview-body-wrap .preview-body,
+.preview-body-wrap.preview-body-empty { padding: 0.3rem 2.1rem 0.3rem 0.3rem; margin-left: -0.3rem; }
+.preview-edit-btn {
+  position: absolute; top: 0.25rem; right: 0.25rem;
+  opacity: 0; transition: opacity 0.12s ease;
+  background: var(--surface); box-shadow: var(--shadow-sm); border-radius: 6px;
+}
+.preview-body-wrap:hover .preview-edit-btn,
+.preview-edit-btn:focus-visible { opacity: 1; }
+.preview-edit-textarea {
+  width: 100%; min-height: 8rem; resize: vertical;
+  border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem;
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.82rem;
+  background: #1e2333; color: #e5e9f5;
+}
+.preview-section-body .edit-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.preview-section-body .edit-actions { display: flex; gap: 0.5rem; margin: 0.6rem 0 1.25rem; }
+
 @media (max-width: 860px) {
   header#app-header { flex-wrap: wrap; row-gap: 0.5rem; }
   header#app-header .brand { margin-right: auto; }

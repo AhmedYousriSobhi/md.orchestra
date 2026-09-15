@@ -1,7 +1,10 @@
 import { h } from '../utils/dom.js';
-import { splitBody } from '../markdown/markers.js';
+import { splitBody, joinBody } from '../markdown/markers.js';
 import { renderMarkdownToSafeHtml, enhanceRenderedContent } from '../markdown/render.js';
 import { buildSlugIndex } from '../markdown/slug.js';
+import { updateNode } from '../state/store.js';
+import { attachMarkdownEditingHelpers } from './markdownEditing.js';
+import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 
 const SCOPE_KEY = 'mdDashboard.previewScope';
 
@@ -33,7 +36,72 @@ function renderNoteCard(note, index) {
   return card;
 }
 
-/** Recursively render `node` (and its subsections) as a flowing, GitHub/PDF-style document: real heading tags, each section's own content, and — styled distinctly as sticky notes rather than blended into the running text — any notes attached to it. */
+/**
+ * A section's content, in the preview: rendered read-only by default, with
+ * a "✎" button (revealed on hover) that swaps it for a plain-Markdown
+ * textarea — the same editing model the card view's own "Edit content"
+ * already uses, just reachable without leaving the preview. Saving writes
+ * straight back to that exact node via updateNode(), so the change is
+ * immediately part of the document, not a preview-only copy of it.
+ */
+function renderSectionBody(container, node, opts) {
+  container.innerHTML = '';
+  const { main } = splitBody(node.bodyMarkdown);
+
+  function showView() {
+    container.innerHTML = '';
+    const editBtn = h('button', {
+      class: 'icon-btn preview-edit-btn',
+      type: 'button',
+      title: 'Edit this section',
+      'aria-label': 'Edit this section',
+      onClick: showEdit,
+    }, '✎');
+
+    if (!main) {
+      container.appendChild(h('div', { class: 'preview-body-wrap preview-body-empty' }, [
+        h('p', { class: 'card-empty-note' }, 'No content directly under this heading.'),
+        editBtn,
+      ]));
+      return;
+    }
+    const bodyEl = h('div', { class: 'rendered-markdown preview-body' });
+    bodyEl.innerHTML = renderMarkdownToSafeHtml(main);
+    enhanceRenderedContent(bodyEl, opts);
+    container.appendChild(h('div', { class: 'preview-body-wrap' }, [bodyEl, editBtn]));
+  }
+
+  function showEdit() {
+    container.innerHTML = '';
+    const textarea = h('textarea', { class: 'content-edit-textarea preview-edit-textarea' });
+    textarea.value = main;
+    attachMarkdownEditingHelpers(textarea);
+    wireImageAttach(textarea);
+
+    const save = () => {
+      const parts = splitBody(node.bodyMarkdown);
+      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, main: textarea.value }) });
+      // updateNode() triggers a full app re-render (main.js), which rebuilds
+      // this whole panel from the now-updated document — no need to call
+      // showView() here, and doing so anyway would just be redone a moment
+      // later against stale content.
+    };
+    container.appendChild(textarea);
+    container.appendChild(h('div', { class: 'edit-toolbar' }, [
+      createAttachImageButton(textarea),
+      h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in'),
+    ]));
+    container.appendChild(h('div', { class: 'edit-actions' }, [
+      h('button', { class: 'btn btn-primary', type: 'button', onClick: save }, 'Save'),
+      h('button', { class: 'btn btn-ghost', type: 'button', onClick: showView }, 'Cancel'),
+    ]));
+    textarea.focus();
+  }
+
+  showView();
+}
+
+/** Recursively render `node` (and its subsections) as a flowing, GitHub/PDF-style document: real heading tags, each section's own content (editable in place — see renderSectionBody), and — styled distinctly as sticky notes rather than blended into the running text — any notes attached to it. */
 function renderNode(node, opts) {
   const frag = document.createDocumentFragment();
 
@@ -42,14 +110,11 @@ function renderNode(node, opts) {
     frag.appendChild(h(tag, {}, node.title || '(untitled)'));
   }
 
-  const { main, notes } = splitBody(node.bodyMarkdown);
-  if (main) {
-    const bodyEl = h('div', { class: 'rendered-markdown preview-body' });
-    bodyEl.innerHTML = renderMarkdownToSafeHtml(main);
-    enhanceRenderedContent(bodyEl, opts);
-    frag.appendChild(bodyEl);
-  }
+  const bodyContainer = h('div', { class: 'preview-section-body' });
+  renderSectionBody(bodyContainer, node, opts);
+  frag.appendChild(bodyContainer);
 
+  const { notes } = splitBody(node.bodyMarkdown);
   const withText = notes.filter((n) => n.text.trim());
   if (withText.length) {
     const notesWrap = h('div', { class: 'preview-notes' });

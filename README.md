@@ -122,8 +122,8 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    model (the key is stored only in `localStorage` on your machine and is
    sent directly to `api.anthropic.com` — never to any other service), and
    to switch between System/Light/Dark appearance.
-8. Toggle **👁 Preview** for a clean, read-only, GitHub/PDF-style view of
-   the Markdown — a single flowing page (real headings, tables, code,
+8. Toggle **👁 Preview** for a clean, GitHub/PDF-style view of the
+   Markdown — a single flowing page (real headings, tables, code,
    mermaid) instead of the card-based editing layout — docked on the
    right so it can stay open alongside the editor rather than blocking
    it like the other side panels. Notes show up too, each styled as its
@@ -131,7 +131,12 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    "This section" / "Whole document" toggle at its top switches between
    just what you're currently looking at (plus its subsections) and the
    entire file, and it updates live as you edit, including mid-keystroke
-   in a note or the content editor.
+   in a note or the content editor. Hover any section's content there
+   for a **✎** button — it's editable in place: the same plain-Markdown
+   editor the card view's own "Edit content" uses, just reachable
+   without leaving the preview, and Save writes straight back to that
+   exact section of the document (Whole document scope included — you
+   can edit any section shown, not only the one you started on).
 
 ### Working with a directory
 
@@ -695,3 +700,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   hardware-manual heading) still correctly don't count. Added two
   regression assertions to the self-test suite (now 18/18) covering both
   the accepted spellings and the still-rejected ones.
+- **Stage 34** — The Preview panel gained reverse editing: hovering any
+  section's content there reveals a **✎** button that swaps it for the
+  same plain-Markdown textarea the card view's own "Edit content" uses
+  (list continuation, formatting shortcuts, image paste/drag — all of
+  `markdownEditing.js`/`imageAttach.js` reused as-is), and Save writes
+  straight back to that exact node via `updateNode()` — a real document
+  edit, not a preview-only copy of one. Works from Whole document scope
+  too: any section shown can be edited in place, not only the one
+  the preview happened to open on.
+
+  Found and fixed a real bug while building this: the preview panel now
+  has its own editable textarea, and the render guard that protects the
+  card view's textareas from being wiped mid-keystroke by an unrelated
+  update didn't cover it — so a rebuild triggered by something else
+  entirely, while typing in the preview's own edit box, could have
+  silently discarded whatever wasn't saved yet. Extended the same
+  focus-aware skip-the-rebuild guard to the preview panel. Verified:
+  editing and saving from the preview updates both the preview and the
+  card view (confirming it's a real document change), Cancel discards
+  cleanly, and editing a specific section deep in Whole document scope
+  touches only that node — a sibling section's content is left alone.
