@@ -8,7 +8,7 @@ import {
   getWorkspace, setWorkspace, clearWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
 import { renderSidebar } from './ui/sidebar.js';
-import { renderFilesTree } from './ui/filesPanel.js';
+import { renderFilesTree, getSidebarActiveOnTop, setSidebarActiveOnTop } from './ui/filesPanel.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { animatedSwap } from './ui/transitions.js';
@@ -69,7 +69,25 @@ let lastPathLength = 0;
 function render() {
   const { doc, fileName, dirty, workspaceRelPath } = getState();
 
-  renderFilesTree(el.workspaceTree, getWorkspace(), workspaceRelPath, (relPath) => openWorkspaceFile(relPath), handleCloseWorkspace);
+  const workspace = getWorkspace();
+  const activeOnTop = getSidebarActiveOnTop();
+  // The workspace tree collapses out of the way (and the heading tree —
+  // the active document's own outline — moves above it) exactly when the
+  // active document isn't actually one of the workspace's own files: a
+  // loaded sample, or a plain file opened alongside an open folder,
+  // otherwise visually reads as if it belongs under that directory.
+  const isWorkspaceFileActive = Boolean(workspace) && Boolean(workspaceRelPath) && Boolean(getWorkspaceFile(workspaceRelPath));
+  const workspaceCollapsed = activeOnTop && Boolean(workspace) && !isWorkspaceFileActive;
+  el.sidebar.insertBefore(
+    workspaceCollapsed ? el.headingTree : el.workspaceTree,
+    workspaceCollapsed ? el.workspaceTree : el.headingTree,
+  );
+
+  renderFilesTree(el.workspaceTree, workspace, workspaceRelPath, (relPath) => openWorkspaceFile(relPath), handleCloseWorkspace, {
+    collapsed: workspaceCollapsed,
+    activeOnTop,
+    onToggleActiveOnTop: handleToggleSidebarOrder,
+  });
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
@@ -267,6 +285,11 @@ function handleNavigateFile(href) {
 
 function handleCloseWorkspace() {
   clearWorkspace();
+  render();
+}
+
+function handleToggleSidebarOrder() {
+  setSidebarActiveOnTop(!getSidebarActiveOnTop());
   render();
 }
 

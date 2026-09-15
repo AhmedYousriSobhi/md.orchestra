@@ -6,23 +6,74 @@ import { h } from '../utils/dom.js';
 // guessing what to hide.
 const manualCollapse = new Set();
 
+// Whether the currently-active file (workspace file or not) is kept at the
+// top of the sidebar, with the workspace tree collapsing out of the way
+// when it isn't the active context — see main.js's render() for the actual
+// reordering. Persisted since it's a standing preference, not a
+// per-session toggle.
+const ACTIVE_ON_TOP_KEY = 'mdDashboard.sidebarActiveOnTop';
+
+export function getSidebarActiveOnTop() {
+  try {
+    const raw = localStorage.getItem(ACTIVE_ON_TOP_KEY);
+    return raw === null ? true : raw === '1';
+  } catch {
+    return true;
+  }
+}
+
+export function setSidebarActiveOnTop(value) {
+  try { localStorage.setItem(ACTIVE_ON_TOP_KEY, value ? '1' : '0'); } catch { /* ignore */ }
+}
+
+// While the workspace tree is auto-collapsed (not the active context), the
+// user can still peek at it without that changing which section leads —
+// this remembers that per open workspace, reset whenever the tree stops
+// being auto-collapsed so a later, unrelated collapse starts fresh.
+let peeking = false;
+
 /**
  * Render the open workspace's folder/file tree into `container` (a sidebar
- * slot separate from the current file's own heading tree below it).
- * `activeRelPath` highlights whichever file is currently loaded;
- * `onOpenFile(relPath)` is called when the user clicks a file;
- * `onClose` (optional) renders a small "close workspace" control.
- * Renders nothing (clears the container) when `workspace` is null.
+ * slot next to the current file's own heading tree). `activeRelPath`
+ * highlights whichever file is currently loaded; `onOpenFile(relPath)` is
+ * called when the user clicks a file; `onClose` (optional) renders a small
+ * "close workspace" control. Renders nothing (clears the container) when
+ * `workspace` is null.
+ *
+ * `options.collapsed` renders just the head row (folder name + a peek
+ * toggle) instead of the full tree — used when a non-workspace file (e.g.
+ * a sample) is the active document, so the directory doesn't visually read
+ * as "containing" a file it has nothing to do with. `options.activeOnTop`
+ * / `options.onToggleActiveOnTop` back a small pin control that switches
+ * between that behavior and always leaving the tree where it is.
  */
-export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose) {
+export function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
+  const { collapsed = false, activeOnTop = true, onToggleActiveOnTop } = options;
   container.innerHTML = '';
   if (!workspace) return;
+  if (!collapsed) peeking = false; // start fresh next time it auto-collapses
 
-  const rerender = () => renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose);
+  const rerender = () => renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options);
+  const showTree = !collapsed || peeking;
 
-  container.appendChild(h('div', { class: 'files-tree-head' }, [
+  const head = h('div', { class: 'files-tree-head' }, [
+    collapsed ? h('button', {
+      class: `nav-chevron${showTree ? ' nav-chevron-open' : ''}`,
+      type: 'button',
+      'aria-label': showTree ? 'Collapse folder view' : 'Peek at folder contents',
+      onClick: () => { peeking = !peeking; rerender(); },
+    }, '▸') : null,
     h('span', { class: 'files-tree-icon' }, '🗂️'),
     h('span', { class: 'files-tree-name', title: workspace.rootName }, workspace.rootName),
+    onToggleActiveOnTop ? h('button', {
+      class: `icon-btn files-tree-pin${activeOnTop ? ' files-tree-pin-active' : ''}`,
+      type: 'button',
+      title: activeOnTop
+        ? 'Keeping the active file on top — click to always leave the folder where it is'
+        : 'Folder stays put — click to keep the active file on top instead',
+      'aria-label': 'Toggle whether the active file leads the sidebar',
+      onClick: onToggleActiveOnTop,
+    }, activeOnTop ? '🔝' : '📌') : null,
     onClose ? h('button', {
       class: 'icon-btn files-tree-close',
       type: 'button',
@@ -30,7 +81,10 @@ export function renderFilesTree(container, workspace, activeRelPath, onOpenFile,
       'aria-label': 'Close this folder',
       onClick: onClose,
     }, '✕') : null,
-  ]));
+  ]);
+  container.appendChild(head);
+
+  if (!showTree) return;
 
   const list = h('ul', { class: 'nav-tree nav-tree-root files-tree' });
   workspace.tree.children.forEach((node) => {

@@ -120,12 +120,23 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
 
 **📁 Open folder** reads every `.md`/`.markdown` file in a directory (and
 its subfolders — dotfiles/dotfolders like `.git` are skipped) and adds a
-folder/file tree to the top of the sidebar, above the current file's own
-heading tree. Everything above still works exactly the same on whichever
-file is active; nothing about editing, saving, or the unsaved-changes guard
-needed to change — clicking a different file in the tree just re-runs the
-same "load a document" path a sample or **Open .md file** already uses, so
+folder/file tree to the sidebar, alongside the current file's own heading
+tree. Everything above still works exactly the same on whichever file is
+active; nothing about editing, saving, or the unsaved-changes guard needed
+to change — clicking a different file in the tree just re-runs the same
+"load a document" path a sample or **Open .md file** already uses, so
 switching away from unsaved edits still asks for confirmation first.
+
+Whichever one is the *active* context leads the sidebar: with a workspace
+file open, the folder tree stays on top; load something outside it (a
+sample, or a plain file via **Open .md file**) and the folder tree
+collapses to just its name — so it stops visually reading as if it
+"contains" a file it has nothing to do with — while that file's own
+heading tree takes the lead. A small chevron on the collapsed tree lets
+you peek at its contents without switching away from what you're doing,
+and switching back to one of its files flips the order back
+automatically. The 🔝/📌 pin next to the folder name toggles this off if
+you'd rather the folder tree just always stayed put.
 
 A relative Markdown link in one file's content — `[the guide](sub/guide.md)`,
 or with an anchor, `[a step](sub/guide.md#some-heading)` — resolves against
@@ -576,7 +587,22 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   user's request — including scrubbing it from every prior commit's
   history (it was only ever added once, in Stage 0, and never modified
   again, so this was a straightforward `git filter-branch` across all 44
-  commits rather than a per-commit content edit). The old history is kept
-  intact on a `backup/pre-sample2-removal` branch/tag rather than
-  discarded outright. Updated the Samples menu and the self-test suite's
-  round-trip check to stop referencing the removed file.
+  commits rather than a per-commit content edit) and, per a follow-up
+  request, permanently purging the backup branch/tag and unreachable
+  objects that rewrite had kept around as a safety net. Updated the
+  Samples menu and the self-test suite's round-trip check to stop
+  referencing the removed file.
+- **Stage 30** — Reported: loading a sample while a directory was open
+  made the sample's outline appear nested "under" the folder in the
+  sidebar, which doesn't reflect reality (the sample isn't part of that
+  directory at all). The sidebar's two sections now reorder themselves
+  around whichever is actually the active context: the folder tree
+  collapses to just its name and moves below when the active document
+  isn't one of its own files, letting that file's own heading tree lead
+  instead — and switching to a file that *is* part of the open folder
+  flips it back automatically. A small chevron lets you peek at the
+  collapsed tree without switching away, and a 🔝/📌 pin (persisted)
+  toggles the whole behavior off in favor of always leaving the folder
+  tree where it is. Verified all four combinations (workspace file
+  active/collapsed, peeking, switching back, and the pin disabling
+  reordering entirely) plus the existing regression suite.

@@ -88,7 +88,9 @@ aside#sidebar.sidebar-collapsed {
   font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
 }
 .files-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.files-tree-close { margin-left: auto; font-size: 0.75rem; }
+.files-tree-pin { font-size: 0.8rem; }
+.files-tree-pin-active { color: var(--accent-default); }
+.files-tree-close { font-size: 0.75rem; }
 .files-dir-label { cursor: default; color: var(--text-soft); font-weight: 600; }
 
 .nav-tree { list-style: none; margin: 0; padding: 0; }
