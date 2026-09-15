@@ -991,3 +991,19 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   mid-document rather than at the start (left alone). Every case
   round-trips stably through serialize → re-parse; full self-test
   suite still passes.
+- **Stage 44** — Reported: closing the preview via its own "✕" button
+  (inside the panel itself, not the edge-toggle tab from Stage 41)
+  left the edge-toggle tab visually stuck docked at its "open"
+  position instead of sliding back out to the collapsed one.
+  `handleClosePreview()` never called `render()` — only the
+  edge-toggle's own click handler did, right after calling it, which
+  is what masked this for that one path; `#app-body`'s `preview-open`
+  class (what actually drives the edge-toggle's docked position in
+  CSS) only gets synced inside `renderInner()`, so the panel's own ✕
+  button — which goes through `handleClosePreview()` directly — left
+  it stale. Moved the `render()` call into `handleClosePreview()`
+  itself so every caller gets it consistently, and dropped the
+  now-redundant one from the edge-toggle's own close branch. Verified:
+  closing via the panel's ✕ now correctly moves the edge-toggle back to
+  its collapsed position; the edge-toggle's own open/close cycle still
+  works as before.
