@@ -107,11 +107,18 @@ still up — check with `docker ps`), set `PORT` to use a different one, e.g.
    accumulate unsaved changes in more than one file across a session (e.g.
    edit a workspace file, switch to a sample without saving first, edit
    that too). **📝 Changes**, in the header, lists every one of them — like
-   a compact `git status` — with a badge showing how many. Every row —
-   click anywhere on it, not just its buttons, for a non-active one — jumps
-   straight to that file *and* lands you on whichever section was actually
-   edited, not just wherever the file happens to open by default, through
-   the same unsaved-changes guard as everywhere else. Each file also gets **💾 Save** (writes it straight to
+   a compact `git status` — with a badge showing how many. Its badge and
+   each file's row count individual *sections*, not files — editing two
+   different sections of the same file shows as two separate, individually
+   clickable chips under that file, each jumping straight to that exact
+   section. Clicking anywhere on a row (not just its buttons) or a chip
+   switches to it immediately, no confirmation prompt: switching away from
+   the file you're currently on doesn't actually discard anything (its
+   changes stay tracked right here, in this same list), so there's nothing
+   to warn about — that confirm still appears for every path that's
+   actually destructive: closing the app with unsaved changes, or loading
+   something over a file *without* going through this list. Each file also
+   gets **💾 Save** (writes it straight to
    disk without switching away from whatever you're currently doing, if it
    still has a live handle — otherwise downloads it, same as the main Save
    button) and **🗑 Discard**: for another file, drops that pending copy
@@ -794,3 +801,47 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   where you actually were. Verified against a section three levels
   deep, edited, switched away from, and reopened via the Changes
   panel's row click — landed exactly on it, with the edit visible.
+- **Stage 39** — Two more requests for the Changes panel, both about the
+  same underlying gap: it tracked *files*, not the actual edits within
+  them. First: "Open" always asked to confirm discarding, every single
+  time, even though nothing was actually being discarded — the file
+  being left behind stays fully tracked in this very list, so the
+  warning was both untrue and constant noise. Second: editing two
+  different sections of the same file only ever showed up as "1 file
+  changed", with no way to tell there were two distinct edits, let alone
+  jump to either specifically.
+
+  Fixed together, since the same underlying work serves both: `markdown/
+  diff.js` (new) structurally diffs a document against its own baseline
+  and returns every individually-changed *section*, not just whether the
+  file as a whole differs. Each file's row now lists its own changed
+  sections as separate clickable chips, and the badge/subtitle count
+  sections across every pending file, not files themselves — "editing
+  two sections in one file" now correctly reads as 2, not 1. Opening a
+  row (or a chip) no longer confirms: it force-flushes the current
+  document's own recovery snapshot first (bypassing the normal 1.5s
+  debounce), which makes the switch genuinely non-destructive rather
+  than just usually-fine, so there's nothing left to warn about — every
+  *other* discard-style action (the active row's own Discard, and every
+  document-load path that doesn't go through this panel) still confirms
+  as before, since those really can lose work.
+
+  A real correctness trap surfaced while building this: parseMarkdown()
+  hands out fresh ids on every call and never reuses old ones (a
+  deliberate fix from a previous stage — ids must survive across
+  documents), which means two *separate* parses of the exact same text
+  produce structurally identical trees with completely unrelated id
+  values. An id computed once (for the chip list) would silently match
+  nothing in a second, later parse (for actually loading the file) —
+  wrong section, or no jump at all. Fixed by parsing each snapshot
+  exactly once and reusing that same parsed document everywhere it's
+  needed, rather than re-parsing at click time; the currently-active
+  document's own chips are diffed straight against the live in-memory
+  doc for the same reason, so clicking one is a plain in-place jump with
+  no reload at all — confirmed by checking that an unrelated section's
+  undo history survived it. Verified: editing two sections of one file
+  shows 2 chips and a badge of 2, clicking a chip lands exactly there
+  (both for a different file and in-place within the active one),
+  switching files via this panel never prompts even when the edit is
+  only milliseconds old, and every other discard/confirm path is
+  unaffected.

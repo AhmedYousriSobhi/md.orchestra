@@ -1,6 +1,7 @@
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
+import { findChangedNodes } from './markdown/diff.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection,
 } from './state/store.js';
@@ -212,7 +213,8 @@ render();
 // prompt can be honest that a snapshot doesn't know about edits made
 // outside the app since.
 let currentBaseline = null;
-const snapshotIfDirty = debounce(() => {
+/** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
+function snapshotNow() {
   const {
     doc, fileName, dirty, workspaceRelPath,
   } = getState();
@@ -228,13 +230,30 @@ const snapshotIfDirty = debounce(() => {
   // would otherwise re-render the Changes button's badge to reflect it
   // until some unrelated state change happened to trigger render() again.
   updateChangesBadge();
-}, 1500);
+}
+const snapshotIfDirty = debounce(snapshotNow, 1500);
 subscribe(snapshotIfDirty);
 
+/** The badge (and the Changes panel's own subtitle) count individual changed *sections* across every pending file, not just how many files have any changes — editing two different sections of the same file is two changes, not one. */
 function updateChangesBadge() {
-  const pendingCount = listRecoverySnapshots().length;
+  const pendingCount = listRecoverySnapshots().reduce((sum, snap) => sum + countChangedSections(snap), 0);
   el.changesBadge.hidden = pendingCount === 0;
   el.changesBadge.textContent = String(pendingCount);
+}
+
+/** The list of {id, title, level} sections a snapshot actually touched, vs. its own baseline — see markdown/diff.js. Empty (not thrown) if there's no baseline to compare against, or either parse fails. */
+function diffSnapshot(snap) {
+  if (!snap.baselineMarkdown) return [];
+  try {
+    return findChangedNodes(parseMarkdown(snap.markdown), parseMarkdown(snap.baselineMarkdown));
+  } catch {
+    return [];
+  }
+}
+
+/** How many individual sections (not files) a snapshot represents — at least 1, even for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section). */
+function countChangedSections(snap) {
+  return diffSnapshot(snap).length || 1;
 }
 
 /** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
@@ -353,38 +372,26 @@ async function handleWorkspaceOpened({ rootName, files }) {
 }
 
 /**
- * Find whichever node in `newNode`'s tree was actually edited, by walking
- * it alongside the equivalent `oldNode` (the baseline) in document order:
- * ids can't be compared directly between the two — each comes from its
- * own independent parseMarkdown() call, so they're unrelated numbers —
- * but the two trees are the same *document*, just before and after an
- * edit, so corresponding positions almost always line up. Returns the
- * first node (in reading order) whose own bodyMarkdown differs, or — if a
- * whole new section was added — that new section's own id. Returns null
- * if nothing differs (or the shapes diverge enough that position-matching
- * isn't meaningful), in which case the caller just falls back to whatever
- * it would otherwise have selected.
+ * Load a crash-recovery snapshot's content as the active document (dirty —
+ * it was never actually saved). Shared by the startup recovery flow and
+ * the on-demand Changes panel's "Open" action; neither the snapshot's
+ * fileHandle (never persisted — can't be) is available here, so it loads
+ * without direct save-back until re-saved or re-opened.
+ *
+ * Reuses `snapshot.doc` when present (set by enrichSnapshot()) rather than
+ * re-parsing `snapshot.markdown` here — parseMarkdown() hands out fresh ids
+ * every call (see utils/id.js), so a *second* parse of the exact same text
+ * produces a structurally-identical tree with completely different id
+ * values; an id computed against an earlier parse (elsewhere, for the
+ * Changes panel's own section list) would silently match nothing in a
+ * freshly re-parsed one. Lands on `sectionId` if given (the Changes panel
+ * jumping to one specific listed change), otherwise on whichever section
+ * was actually edited first (see markdown/diff.js), not just wherever the
+ * document opens by default.
  */
-function findFirstChangedNodeId(newNode, oldNode) {
-  if (!newNode || !oldNode) return null;
-  if ((newNode.bodyMarkdown || '').trim() !== (oldNode.bodyMarkdown || '').trim()) {
-    return newNode.id;
-  }
-  const shared = Math.min(newNode.children.length, oldNode.children.length);
-  for (let i = 0; i < shared; i += 1) {
-    const found = findFirstChangedNodeId(newNode.children[i], oldNode.children[i]);
-    if (found) return found;
-  }
-  if (newNode.children.length > oldNode.children.length) {
-    return newNode.children[shared].id;
-  }
-  return null;
-}
-
-/** Load a crash-recovery snapshot's content as the active document (dirty — it was never actually saved). Shared by the startup recovery flow and the on-demand Changes panel's "Open" action; neither the snapshot's fileHandle (never persisted — can't be) is available here, so it loads without direct save-back until re-saved or re-opened. Lands on whichever section was actually edited (see findFirstChangedNodeId), not just the document's default landing spot. */
-function loadSnapshotAsActive(snapshot) {
+function loadSnapshotAsActive(snapshot, sectionId = null) {
   try {
-    const doc = parseMarkdown(snapshot.markdown);
+    const doc = snapshot.doc ?? parseMarkdown(snapshot.markdown);
     currentBaseline = snapshot.baselineMarkdown ?? snapshot.markdown;
     loadDocument({
       doc,
@@ -393,10 +400,17 @@ function loadSnapshotAsActive(snapshot) {
       dirty: true,
       workspaceRelPath: snapshot.workspaceRelPath,
     });
-    if (snapshot.baselineMarkdown) {
-      const changedId = findFirstChangedNodeId(doc, parseMarkdown(snapshot.baselineMarkdown));
-      if (changedId) selectSection(changedId);
+    let targetId = sectionId;
+    if (!targetId && snapshot.changedSections) {
+      targetId = snapshot.changedSections[0]?.id ?? null;
+    } else if (!targetId && snapshot.baselineMarkdown) {
+      try {
+        targetId = findChangedNodes(doc, parseMarkdown(snapshot.baselineMarkdown))[0]?.id ?? null;
+      } catch {
+        targetId = null;
+      }
     }
+    if (targetId) selectSection(targetId);
     clearRecoverySnapshot(snapshot);
     showToast(`Restored unsaved work for "${snapshot.fileName}"`);
   } catch (err) {
@@ -545,11 +559,47 @@ function notifyOtherPendingChanges(justSavedIdentity) {
   const savedId = snapshotIdentity(justSavedIdentity);
   const others = listRecoverySnapshots().filter((s) => s.id !== savedId);
   if (!others.length) return;
-  openChangesPanel(others, null, {
+  openChangesPanel(others.map(enrichSnapshot), null, {
     onSave: handleChangesSave,
     onOpen: handleChangesOpenSnapshot,
+    onOpenSection: handleChangesOpenSection,
     onDiscard: handleChangesDiscard,
   });
+}
+
+/**
+ * Attaches each snapshot's own parsed `doc` (so opening it later reuses
+ * these exact node ids instead of re-parsing — see loadSnapshotAsActive)
+ * and its list of individually-changed sections, for the Changes panel to
+ * render as separate, individually-jumpable entries within that one
+ * file's row.
+ */
+function enrichSnapshot(snap) {
+  try {
+    const doc = parseMarkdown(snap.markdown);
+    const changedSections = snap.baselineMarkdown ? findChangedNodes(doc, parseMarkdown(snap.baselineMarkdown)) : [];
+    return { ...snap, doc, changedSections };
+  } catch {
+    return { ...snap, doc: null, changedSections: [] };
+  }
+}
+
+/**
+ * Same idea as enrichSnapshot(), but for the row representing the file
+ * that's *currently* the live active document: diffed against the real
+ * in-memory doc (and currentBaseline) rather than re-parsing the
+ * snapshot's own cached markdown, so its section ids are the real,
+ * currently-selectable ones — clicking one just needs selectSection(), no
+ * reload (see handleChangesOpenSection).
+ */
+function enrichActiveSnapshot(snap) {
+  const { doc: liveDoc } = getState();
+  if (!liveDoc || !currentBaseline) return enrichSnapshot(snap);
+  try {
+    return { ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, parseMarkdown(currentBaseline)) };
+  } catch {
+    return enrichSnapshot(snap);
+  }
 }
 
 /** Save one pending snapshot (from the Changes panel) directly to disk, without switching away from whatever's currently open. `isActive` means this row IS the live document, so it just goes through the normal save path. */
@@ -573,19 +623,41 @@ async function handleChangesSave(snapshot, isActive) {
   }
 }
 
-/** "Open" a pending snapshot from the Changes panel: switch to it as the active document, guarded by the same unsaved-changes confirm as every other document-load path. */
-async function handleChangesOpenSnapshot(snapshot) {
-  const current = getState();
-  if (current.dirty) {
-    const ok = await confirmDialog({
-      title: 'Discard unsaved changes?',
-      message: `"${current.fileName}" has unsaved changes that will be lost. Open "${snapshot.fileName}" anyway?`,
-      confirmLabel: 'Discard & open',
-      danger: true,
-    });
-    if (!ok) return;
-  }
+/**
+ * "Open" a pending snapshot from the Changes panel: switch to it as the
+ * active document. Unlike every *other* document-load path (a sample,
+ * "Open .md file", a link), this one skips the unsaved-changes confirm —
+ * deliberately: everything about the current document that's actually at
+ * risk is captured by force-flushing its own recovery snapshot right here
+ * (snapshotNow(), bypassing its usual debounce), so it stays exactly as
+ * recoverable — via this very panel — as it already was. Nothing is
+ * actually being discarded by switching, just leaving one already-tracked
+ * file for another, so warning about it would be both untrue and noise.
+ */
+function handleChangesOpenSnapshot(snapshot) {
+  snapshotNow();
   loadSnapshotAsActive(snapshot);
+}
+
+/**
+ * Same idea as handleChangesOpenSnapshot, but for jumping straight to one
+ * specific listed change within a file rather than wherever the first
+ * change happens to be. If that file is already the live document (its
+ * row was enriched with the real in-memory doc — see enrichActiveSnapshot
+ * — so `sectionId` is one of its actual, currently-valid ids), this is
+ * just a plain in-place jump: no reload, no snapshot, nothing to lose.
+ */
+function handleChangesOpenSection(snapshot, sectionId) {
+  const current = getState();
+  const currentId = current.doc
+    ? snapshotIdentity({ fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null })
+    : null;
+  if (snapshot.id === currentId) {
+    selectSection(sectionId);
+    return;
+  }
+  snapshotNow();
+  loadSnapshotAsActive(snapshot, sectionId);
 }
 
 /**
@@ -624,11 +696,13 @@ async function handleChangesDiscard(snapshot, isActive) {
 }
 
 function handleOpenChanges() {
-  const { fileName, workspaceRelPath } = getState();
-  const activeId = getState().doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
-  openChangesPanel(listRecoverySnapshots(), activeId, {
+  const { doc, fileName, workspaceRelPath } = getState();
+  const activeId = doc ? snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName: getWorkspace()?.rootName || null }) : null;
+  const enriched = listRecoverySnapshots().map((snap) => (snap.id === activeId ? enrichActiveSnapshot(snap) : enrichSnapshot(snap)));
+  openChangesPanel(enriched, activeId, {
     onSave: handleChangesSave,
     onOpen: handleChangesOpenSnapshot,
+    onOpenSection: handleChangesOpenSection,
     onDiscard: handleChangesDiscard,
   });
 }

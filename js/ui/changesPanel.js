@@ -24,13 +24,19 @@ function excerptOf(markdown, max = 110) {
  * crash-recovery snapshot elsewhere (see recovery.js's per-file tracking)
  * — so having more than one file's worth of unsaved work never has to be
  * tracked purely from memory. `activeId` marks whichever snapshot (if any)
- * corresponds to the live document. Every row offers Save (write straight
- * to disk — for the active row that's just the normal save; for any other,
- * without switching away from what you're doing) and Discard (for the
- * active row, revert it back to its last-saved baseline; for any other,
- * drop that pending snapshot for good). Non-active rows are also clickable
- * anywhere on the row — not only their explicit Open button — to switch to
- * that file. `handlers` is `{ onSave(snapshot, isActive), onOpen(snapshot), onDiscard(snapshot, isActive) }`.
+ * corresponds to the live document. Each snapshot's `changedSections`
+ * (from main.js's enrichSnapshot()/enrichActiveSnapshot(), a list of
+ * {id, title, level}) is rendered as individually-clickable chips — one
+ * *file* can hold several independent changes, each jumpable on its own,
+ * rather than the row only ever representing "this whole file changed".
+ *
+ * Every row offers Save (write straight to disk — for the active row
+ * that's just the normal save; for any other, without switching away from
+ * what you're doing) and Discard (for the active row, revert it back to
+ * its last-saved baseline; for any other, drop that pending snapshot for
+ * good). Non-active rows are also clickable anywhere on the row — not only
+ * their explicit Open button — to switch to that file. `handlers` is
+ * `{ onSave(snapshot, isActive), onOpen(snapshot), onOpenSection(snapshot, sectionId), onDiscard(snapshot, isActive) }`.
  */
 export function openChangesPanel(snapshots, activeId, handlers) {
   if (panelEl) panelEl.remove();
@@ -45,8 +51,9 @@ export function openChangesPanel(snapshots, activeId, handlers) {
   const subtitle = h('div', { class: 'insight-subtitle' }, '');
 
   function renderList() {
+    const totalChanges = pending.reduce((sum, s) => sum + (s.changedSections?.length || 1), 0);
     subtitle.textContent = pending.length
-      ? `${pending.length} file${pending.length === 1 ? '' : 's'} with unsaved changes`
+      ? `${totalChanges} change${totalChanges === 1 ? '' : 's'} across ${pending.length} file${pending.length === 1 ? '' : 's'}`
       : 'Everything is saved';
     body.innerHTML = '';
     if (!pending.length) {
@@ -58,6 +65,7 @@ export function openChangesPanel(snapshots, activeId, handlers) {
     pending.forEach((snap) => {
       const isActive = snap.id === activeId;
       const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+      const sections = snap.changedSections || [];
 
       const actions = [
         h('button', {
@@ -86,6 +94,15 @@ export function openChangesPanel(snapshots, activeId, handlers) {
         }),
       }, isActive ? '🗑 Discard changes' : '🗑 Discard'));
 
+      const changesContent = sections.length
+        ? h('div', { class: 'recovery-sections' }, sections.map((sec) => h('button', {
+          class: 'recovery-section-chip',
+          type: 'button',
+          title: `Jump to "${sec.title}"`,
+          onClick: stop(() => { handlers.onOpenSection(snap, sec.id); handleClose(); }),
+        }, sec.title)))
+        : h('p', { class: 'recovery-excerpt' }, excerptOf(snap.markdown));
+
       const row = h('div', {
         class: `recovery-row${isActive ? ' recovery-row-active' : ' recovery-row-clickable'}`,
         ...(isActive ? {} : {
@@ -102,7 +119,7 @@ export function openChangesPanel(snapshots, activeId, handlers) {
           ]),
           h('span', { class: 'recovery-time' }, timeAgo(snap.savedAt)),
         ]),
-        h('p', { class: 'recovery-excerpt' }, excerptOf(snap.markdown)),
+        changesContent,
         h('div', { class: 'recovery-row-actions' }, actions),
       ]);
       list.appendChild(row);

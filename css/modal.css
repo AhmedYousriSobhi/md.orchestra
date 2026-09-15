@@ -118,6 +118,17 @@
 .recovery-file { font-weight: 700; font-size: 0.9rem; color: var(--text); word-break: break-all; }
 .recovery-time { font-size: 0.72rem; color: var(--text-faint); flex-shrink: 0; }
 .recovery-excerpt { font-size: 0.82rem; color: var(--text-soft); margin: 0.4rem 0 0.7rem; }
+.recovery-sections { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.7rem; }
+.recovery-section-chip {
+  font-size: 0.76rem; font-weight: 600; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0.25rem 0.65rem; cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recovery-section-chip:hover {
+  border-color: color-mix(in srgb, var(--accent-default) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent-default) 8%, var(--surface));
+}
 .recovery-row-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 /* In-app confirm() replacement */
