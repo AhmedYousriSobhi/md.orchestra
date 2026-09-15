@@ -1,3 +1,4 @@
+import { h } from './utils/dom.js';
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
@@ -198,6 +199,25 @@ function renderInner() {
   }
 
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
+  // The active document and an open folder are two independent things you
+  // opened separately — when both are around at once (see Stage 47's
+  // folder-open fix), give the standalone one the same kind of clearly-
+  // labeled header row the folder already gets (.files-tree-head), rather
+  // than just an unlabeled heading outline that reads as if it belongs to
+  // the folder underneath it.
+  if (!workspaceRelPath && getWorkspace()) {
+    el.headingTree.prepend(h('div', { class: 'files-tree-head standalone-file-head' }, [
+      h('span', { class: 'files-tree-icon' }, '📄'),
+      h('span', { class: 'files-tree-name', title: fileName }, fileName),
+      h('button', {
+        class: 'icon-btn files-tree-close',
+        type: 'button',
+        title: 'Close this file',
+        'aria-label': 'Close this file',
+        onClick: handleCloseStandaloneFile,
+      }, '✕'),
+    ]));
+  }
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
@@ -344,6 +364,19 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
       danger: true,
     });
     if (!ok) return;
+  } else if (current.doc && !current.workspaceRelPath && getWorkspace()) {
+    // A standalone file coexisting with an open folder (see Stage 47) is
+    // its own separate thing, not part of that folder's own tree — it has
+    // no listing anywhere to click back to once replaced, unlike a
+    // workspace file (always still there in the sidebar). Not "unsaved
+    // changes" (nothing here is dirty), just genuinely losing your place,
+    // so this asks even though there's nothing at risk of being discarded.
+    const ok = await confirmDialog({
+      title: 'Switch away from this file?',
+      message: `"${current.fileName}" is open on its own, separate from the current folder — switching to "${fileName}" will close it, and there's nothing to reopen it from afterward. Continue?`,
+      confirmLabel: 'Switch anyway',
+    });
+    if (!ok) return;
   }
   try {
     const doc = parseMarkdown(text);
@@ -438,6 +471,24 @@ async function handleCloseWorkspace() {
   clearWorkspace();
   clearLinkIndex();
   render();
+}
+
+/** The ✕ on a standalone file's own sidebar header (see renderInner) — closes just that file, leaving an open workspace (if any) untouched, same confirm-if-dirty treatment as everything else that can discard unsaved work. */
+async function handleCloseStandaloneFile() {
+  const { dirty, fileName } = getState();
+  if (dirty) {
+    const ok = await confirmDialog({
+      title: 'Close this file?',
+      message: `"${fileName}" has unsaved changes that will be lost. Close it anyway?`,
+      confirmLabel: 'Close & discard',
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  currentBaseline = null;
+  setState({
+    doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null,
+  });
 }
 
 function handleToggleWorkspaceViewMode() {
