@@ -26,22 +26,33 @@ const LABEL_MAX = 24;
 const GRAPH_WIDTH = 280;
 
 // Session-scoped view state (mirrors filesPanel.js's own module-level
-// manualCollapse pattern) — which directory the graph is currently centered
-// on, and which of ITS descendants (beyond the directly-shown 1-hop tier)
-// have been expanded further. Reset whenever the active file changes to one
-// outside the current view, so opening a different file always starts from
-// a sane, freshly-scoped neighborhood rather than an unrelated leftover
-// expansion state from wherever you were browsing before.
-let focalCenter = null;
-let focalExpanded = new Set();
-let lastActiveRelPath = undefined;
+// manualCollapse pattern) — which directory each open workspace's graph is
+// currently centered on, and which of ITS descendants (beyond the
+// directly-shown 1-hop tier) have been expanded further, plus its own FLIP
+// bookkeeping (each node's last-rendered (x, y), keyed by something stable
+// across renders — a file/dir's own path, not array position, which shifts
+// whenever a row above it expands/collapses). Keyed by workspace rootName —
+// several workspaces can be open and rendered at once (see main.js), each
+// its own directory the user browses independently; sharing one flat set
+// of this across all of them meant switching the active file in ONE
+// workspace silently reset every OTHER open workspace's graph back to its
+// root the next time it re-rendered, discarding whatever it was showing.
+// Reset per-workspace whenever THAT workspace's own active file changes to
+// one outside its current view, so opening a different file always starts
+// from a sane, freshly-scoped expansion state rather than an unrelated
+// leftover from wherever you were browsing before.
+const viewStateByWorkspace = new Map();
 
-// FLIP bookkeeping: each node's last-rendered (x, y), keyed by something
-// stable across renders (a file/dir's own path — not array position, which
-// shifts whenever a row above it expands/collapses). Read before laying out
-// the new frame, written after, so positionNode() can tell "moved" from
-// "brand new" for every node on every render.
-let lastKnownPos = new Map();
+function getViewState(rootName) {
+  let vs = viewStateByWorkspace.get(rootName);
+  if (!vs) {
+    vs = {
+      center: null, expanded: new Set(), lastActiveRelPath: undefined, knownPos: new Map(),
+    };
+    viewStateByWorkspace.set(rootName, vs);
+  }
+  return vs;
+}
 
 function dirname(relPath) {
   return relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
@@ -105,9 +116,9 @@ function nodeWidth(label) {
  * path, not its row index (which changes constantly as siblings
  * expand/collapse above it).
  */
-function positionNode(group, key, x, y) {
-  const prev = lastKnownPos.get(key);
-  lastKnownPos.set(key, { x, y });
+function positionNode(knownPos, group, key, x, y) {
+  const prev = knownPos.get(key);
+  knownPos.set(key, { x, y });
 
   if (!prev) {
     group.setAttribute('transform', `translate(${x}, ${y})`);
@@ -213,19 +224,28 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   container.innerHTML = '';
   if (!workspace) return;
 
+  const vs = getViewState(workspace.rootName);
   const activeDir = activeRelPath ? dirname(activeRelPath) : '';
-  if (activeRelPath !== lastActiveRelPath) {
-    lastActiveRelPath = activeRelPath;
-    focalCenter = activeDir;
-    focalExpanded = new Set();
-    lastKnownPos = new Map();
+  // `activeRelPath` is null whenever THIS workspace isn't the one owning
+  // the currently active file (see renderWorkspacesPanel) — every switch
+  // to a file in a *different* open workspace flips it between a real path
+  // and null for every other workspace's own render call, even though
+  // nothing about what this workspace was showing actually changed. Only a
+  // genuine change to a new real path re-centers and resets the expansion
+  // state; a workspace with no active file of its own just keeps showing
+  // whatever it already had (or its root, the first time).
+  if (activeRelPath && activeRelPath !== vs.lastActiveRelPath) {
+    vs.lastActiveRelPath = activeRelPath;
+    vs.center = activeDir;
+    vs.expanded = new Set();
+    vs.knownPos = new Map();
   }
-  if (focalCenter === null) focalCenter = activeDir;
+  if (vs.center === null) vs.center = activeDir;
 
-  const centerNode = findDirNode(workspace.tree, focalCenter) || workspace.tree;
+  const centerNode = findDirNode(workspace.tree, vs.center) || workspace.tree;
 
   function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths); }
-  function jumpTo(path) { focalCenter = path; focalExpanded = new Set(); rerender(); }
+  function jumpTo(path) { vs.center = path; vs.expanded = new Set(); rerender(); }
 
   // Jumping to any ancestor — including the immediate parent — is what the
   // breadcrumb strip above the graph is for; a separate "parent" ghost node
@@ -239,9 +259,9 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
   // Explorer block's own header directly above it — so it's skipped
   // entirely until you've actually drilled into a subdirectory, where it
   // starts earning its keep (jumping back several levels at once).
-  if (focalCenter) container.appendChild(renderGraphHead(workspace, focalCenter, jumpTo));
+  if (vs.center) container.appendChild(renderGraphHead(workspace, vs.center, jumpTo));
 
-  const rows = layoutRows(centerNode, focalExpanded, activeRelPath, pendingPaths);
+  const rows = layoutRows(centerNode, vs.expanded, activeRelPath, pendingPaths);
   const height = Math.max(rows.length, 1) * ROW_H + 6;
 
   const svgRoot = svg('svg', {
@@ -257,8 +277,8 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
     const y = rowIndex * ROW_H + 3;
     const onClick = row.isDir
       ? () => {
-        if (focalExpanded.has(row.node.path)) focalExpanded.delete(row.node.path);
-        else focalExpanded.add(row.node.path);
+        if (vs.expanded.has(row.node.path)) vs.expanded.delete(row.node.path);
+        else vs.expanded.add(row.node.path);
         rerender();
       }
       : () => onOpenFile(row.node.path);
@@ -267,7 +287,7 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
       label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, isPending: row.isPending, count: row.count, onClick,
     });
     nodeLayer.appendChild(group);
-    positionNode(group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
+    positionNode(vs.knownPos, group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
 
     // Only nested rows (a directory's own children, revealed by expanding
     // it) connect to anything — a top-level row has no parent node to draw
