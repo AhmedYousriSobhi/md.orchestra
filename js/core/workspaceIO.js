@@ -1,4 +1,6 @@
-export const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+import { isElectron, electronPickFolder, electronReopenFolder } from './electronFsAdapter.js';
+
+export const supportsDirectoryPicker = isElectron || (typeof window !== 'undefined' && 'showDirectoryPicker' in window);
 
 const MD_RE = /\.(md|markdown)$/i;
 
@@ -29,20 +31,36 @@ async function collectFromDirectoryHandle(dirHandle, prefix = '', dirHandles) {
 }
 
 /**
- * Chromium/Edge path: a native folder picker with live read/write handles.
- * `dirHandles` (relDirPath -> FileSystemDirectoryHandle, the root itself
- * keyed by '') is what makes creating/deleting/copying files possible
- * later (see createFileInDirectory/deleteFileFromDirectory below) — a
- * capability the webkitdirectory fallback below can never offer, since it
- * only ever gets plain File objects, never a directory handle to write
- * through.
+ * Native folder picker with live read/write handles — Electron's own
+ * dialog (backed by real `fs`, see electronFsAdapter.js) when running as
+ * the desktop app, otherwise Chromium/Edge's showDirectoryPicker(). Either
+ * way, `dirHandles` (relDirPath -> handle, the root itself keyed by '') is
+ * what makes creating/deleting/copying files possible later (see
+ * createFileInDirectory/deleteFileFromDirectory below) — a capability the
+ * webkitdirectory fallback below can never offer, since it only ever gets
+ * plain File objects, never a directory handle to write through.
  */
 export async function openDirectoryPicker() {
   if (!supportsDirectoryPicker) return null;
-  const dirHandle = await window.showDirectoryPicker();
+  const dirHandle = isElectron ? await electronPickFolder() : await window.showDirectoryPicker();
+  if (!dirHandle) return null;
   const dirHandles = new Map();
   const files = await collectFromDirectoryHandle(dirHandle, '', dirHandles);
-  return { rootName: dirHandle.name, files, dirHandles };
+  // dirHandle.path only exists in Electron mode (see electronFsAdapter.js) —
+  // main.js uses it to remember this folder across app launches.
+  return {
+    rootName: dirHandle.name, files, dirHandles, rootPath: dirHandle.path,
+  };
+}
+
+/** Silently reopens a folder from a previous Electron launch by its remembered absolute path — see electronFsAdapter.js's electronReopenFolder. Only ever called when isElectron. */
+export async function reopenWorkspaceAtPath(rootPath, rootName) {
+  const dirHandle = await electronReopenFolder(rootPath, rootName);
+  const dirHandles = new Map();
+  const files = await collectFromDirectoryHandle(dirHandle, '', dirHandles);
+  return {
+    rootName, files, dirHandles, rootPath,
+  };
 }
 
 /**

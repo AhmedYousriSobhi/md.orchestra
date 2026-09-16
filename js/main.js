@@ -30,8 +30,9 @@ import {
 } from './core/fileIO.js';
 import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
-  createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory,
+  createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory, reopenWorkspaceAtPath,
 } from './core/workspaceIO.js';
+import { isElectron } from './core/electronFsAdapter.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -101,6 +102,28 @@ const el = {
 // ui/previewPanel.js's getPreviewOpen/setPreviewOpen and the edge-toggle
 // wiring below, which persists it once the user actually flips it.
 el.previewPanel.hidden = !getPreviewOpen();
+
+/**
+ * The desktop app's own last-opened folder (see handleWorkspaceOpened and
+ * the startup reopen below) — meaningless in the browser, where there's no
+ * such thing as a path that survives the tab closing. Reopening it
+ * silently on launch, the way VSCode reopens your last workspace, is the
+ * whole point of moving off the browser's "grant access, once" model.
+ */
+const LAST_ELECTRON_FOLDER_KEY = 'mdDashboard.lastElectronFolder';
+
+function rememberElectronFolder(rootPath, rootName) {
+  try { localStorage.setItem(LAST_ELECTRON_FOLDER_KEY, JSON.stringify({ rootPath, rootName })); } catch { /* ignore */ }
+}
+
+function getRememberedElectronFolder() {
+  try {
+    const raw = localStorage.getItem(LAST_ELECTRON_FOLDER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Which of the two fixed sidebar sections (Explorer, Outline — see
@@ -636,6 +659,12 @@ async function handleCloseWorkspace(rootName) {
   removeWorkspace(rootName);
   forgetWorkspaceViewState(rootName);
   forgetWorkspaceCollapsed(rootName);
+  // Closing means closing: don't silently bring it back on the next launch
+  // (see reopenLastElectronFolder above) just because it was the most
+  // recently opened one.
+  if (isElectron && getRememberedElectronFolder()?.rootName === rootName) {
+    try { localStorage.removeItem(LAST_ELECTRON_FOLDER_KEY); } catch { /* ignore */ }
+  }
   render();
 }
 
@@ -972,7 +1001,10 @@ async function reopenCleanStandaloneFile(fileName) {
  * an already-open folder refreshes its file list in place instead of
  * duplicating it (see addWorkspace).
  */
-async function handleWorkspaceOpened({ rootName, files, dirHandles = null }) {
+async function handleWorkspaceOpened({
+  rootName, files, dirHandles = null, rootPath = null,
+}) {
+  if (isElectron && rootPath) rememberElectronFolder(rootPath, rootName);
   if (!files.length) {
     showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
     return;
@@ -1671,7 +1703,10 @@ el.sidebarToggle.addEventListener('click', () => {
 
 // Registering this lets a supporting browser offer "Install app" — opening
 // in its own standalone window, like a desktop app, rather than a tab.
-if ('serviceWorker' in navigator) {
+// Meaningless (and untested) inside the real desktop app (electron/), which
+// already has its own standalone window and loads everything from local
+// disk rather than needing an offline cache.
+if (!isElectron && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker registration failed', err));
   });
@@ -1688,3 +1723,25 @@ window.addEventListener('drop', async (e) => {
   const text = await readFile(file);
   loadFromText(text, file.name);
 });
+
+/**
+ * Silently reopens the desktop app's last-used folder on launch — the
+ * same trust VSCode extends to reopening your last workspace, made
+ * possible by the desktop app keeping a real path (LAST_ELECTRON_FOLDER_KEY
+ * above) rather than a browser permission grant that never survives a
+ * reload anyway. Never runs in the browser; never blocks the rest of
+ * startup if the folder's moved or been deleted since — just a toast, the
+ * same failure path a manual re-open would hit.
+ */
+async function reopenLastElectronFolder() {
+  if (!isElectron) return;
+  const remembered = getRememberedElectronFolder();
+  if (!remembered) return;
+  try {
+    const result = await reopenWorkspaceAtPath(remembered.rootPath, remembered.rootName);
+    await handleWorkspaceOpened(result);
+  } catch (err) {
+    showToast(`Could not reopen "${remembered.rootName}": ${err.message}`, { type: 'error' });
+  }
+}
+reopenLastElectronFolder();

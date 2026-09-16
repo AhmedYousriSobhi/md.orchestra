@@ -1,0 +1,15 @@
+{
+  "name": "md-orchestra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MD.Orchestra — a Markdown workspace dashboard, as a desktop app.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "python3 -m http.server 8899"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "playwright": "^1.63.0"
+  }
+}

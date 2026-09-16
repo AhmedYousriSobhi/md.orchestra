@@ -1,3 +1,5 @@
+import { isElectron, electronPickFile } from './electronFsAdapter.js';
+
 export function readFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -7,10 +9,15 @@ export function readFile(file) {
   });
 }
 
-export const supportsFileSystemAccess = typeof window !== 'undefined' && 'showOpenFilePicker' in window;
+export const supportsFileSystemAccess = isElectron || (typeof window !== 'undefined' && 'showOpenFilePicker' in window);
 
 export async function openFilePicker() {
   if (!supportsFileSystemAccess) return null;
+  if (isElectron) {
+    const picked = await electronPickFile();
+    if (!picked) return null;
+    return { handle: picked.fileHandle, fileName: picked.name, text: picked.text };
+  }
   const [handle] = await window.showOpenFilePicker({
     types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }],
   });
