@@ -11,6 +11,7 @@ import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
+  workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace,
 } from './state/workspace.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
@@ -29,11 +30,13 @@ import {
 } from './core/fileIO.js';
 import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
+  createFileInDirectory,
 } from './core/workspaceIO.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
 import { openShortcutsPanel } from './ui/shortcutsPanel.js';
+import { openNewFileModal, closeNewFileModal } from './ui/newFileModal.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
@@ -76,6 +79,7 @@ const el = {
   openFileBtn: document.getElementById('open-file-btn'),
   folderInput: document.getElementById('folder-input'),
   openFolderBtn: document.getElementById('open-folder-btn'),
+  addFileBtn: document.getElementById('add-file-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
   previewToggleBtn: document.getElementById('preview-edge-toggle'),
@@ -635,6 +639,51 @@ async function handleCloseWorkspace(rootName) {
   render();
 }
 
+function stemOf(fileName) {
+  return fileName.replace(/\.(md|markdown)$/i, '');
+}
+
+/**
+ * Creates a brand-new file — from the sidebar's "File+" button (any
+ * write-capable open workspace, or a blank standalone document if none is
+ * open) or the Explorer's own "Add file" context-menu action (always a
+ * specific folder, so its own call skips newFileModal's target picker
+ * entirely). `target` is `{ rootName, dirRelPath }`, or the sentinel
+ * string '__standalone__' for the blank-document fallback. Starts with a
+ * single "# <name>" heading rather than genuinely empty content, since
+ * loadFromText refuses to open a file with neither headings nor body text.
+ */
+async function handleCreateFile(fileName, target) {
+  const initialText = `# ${stemOf(fileName)}\n`;
+  if (!target || target === '__standalone__') {
+    closeNewFileModal();
+    loadFromText(initialText, fileName);
+    return;
+  }
+  const { rootName, dirRelPath } = target;
+  const dirHandle = getWorkspaceDirHandle(rootName, dirRelPath);
+  if (!dirHandle) { showToast('That folder no longer supports creating files.', { type: 'error' }); return; }
+  const relPath = dirRelPath ? `${dirRelPath}/${fileName}` : fileName;
+  try {
+    const fileHandle = await createFileInDirectory(dirHandle, fileName, initialText);
+    addFileToWorkspace(rootName, {
+      relPath, name: fileName, fileHandle, webkitFile: null,
+    });
+    closeNewFileModal();
+    loadFromText(initialText, fileName, fileHandle, { workspaceRelPath: relPath, workspaceRootName: rootName });
+  } catch (err) {
+    showToast(`Could not create "${fileName}": ${err.message}`, { type: 'error' });
+  }
+}
+
+function handleAddFileClick() {
+  const targets = getWorkspaces()
+    .filter((w) => workspaceSupportsWrite(w.rootName))
+    .map((w) => ({ label: w.rootName, value: { rootName: w.rootName, dirRelPath: '' } }));
+  targets.push({ label: 'a new blank standalone document (not saved to disk yet)', value: '__standalone__' });
+  openNewFileModal({ targets, onCreate: handleCreateFile });
+}
+
 /**
  * Every standalone file that's open this session (see
  * openStandaloneFileNames) gets its own small row in Explorer — the
@@ -781,12 +830,12 @@ async function reopenCleanStandaloneFile(fileName) {
  * an already-open folder refreshes its file list in place instead of
  * duplicating it (see addWorkspace).
  */
-async function handleWorkspaceOpened({ rootName, files }) {
+async function handleWorkspaceOpened({ rootName, files, dirHandles = null }) {
   if (!files.length) {
     showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
     return;
   }
-  addWorkspace({ rootName, files });
+  addWorkspace({ rootName, files, dirHandles });
   showToast(`Opened "${rootName}" — ${files.length} Markdown file${files.length === 1 ? '' : 's'} found.`);
   // Only auto-open a default file when nothing at all is active yet: if
   // something's already open (a standalone file, or a file from a
@@ -1271,6 +1320,7 @@ el.changesBtn.addEventListener('click', handleOpenChanges);
 el.viewModeFullBtn.addEventListener('click', () => handleViewModeChange('full'));
 el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sections'));
 
+el.addFileBtn.addEventListener('click', handleAddFileClick);
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', () => {
   const workspaces = getWorkspaces();
@@ -1344,6 +1394,7 @@ document.addEventListener('keydown', (e) => {
   const altActions = {
     o: () => el.openFileBtn.click(),
     d: () => el.openFolderBtn.click(),
+    f: () => el.addFileBtn.click(),
     a: () => { if (!el.addSectionBtn.disabled) el.addSectionBtn.click(); },
     c: () => el.changesBtn.click(),
     m: () => { if (!el.mapViewBtn.disabled) el.mapViewBtn.click(); },

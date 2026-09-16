@@ -10,6 +10,7 @@ export const SHORTCUTS = [
   { keys: 'Ctrl/⌘ + S', action: 'Save the current file' },
   { keys: 'Alt + O', action: 'Open a .md file' },
   { keys: 'Alt + D', action: 'Open a folder' },
+  { keys: 'Alt + F', action: 'Add a new file' },
   { keys: 'Alt + A', action: 'Add a new section' },
   { keys: 'Alt + N', action: 'Add a note to the selected section' },
   { keys: 'Alt + C', action: 'Open Changes (every file with unsaved edits)' },

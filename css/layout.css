@@ -84,14 +84,27 @@ aside#sidebar.sidebar-collapsed {
 aside#sidebar.sidebar-graph-mode { width: 320px; }
 .sidebar-empty { color: var(--text-faint); font-size: 0.85rem; padding: 0.5rem; }
 
-/* Add section / Changes used to sit in the header's main scan line —
-   moved down here since both act on the sidebar's own document tree
-   rather than the toolbar's file/view controls above. */
-.sidebar-toolbar {
-  display: flex; gap: 0.4rem; flex-wrap: wrap; flex-shrink: 0;
-  padding-bottom: 0.6rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+/* Add file / Add section / Changes used to sit in the header's main scan
+   line — moved down here since all three act on the sidebar's own
+   document tree rather than the toolbar's file/view controls above. Each
+   is a small icon "logo" (title/aria-label carry the actual meaning) so
+   three of them fit comfortably in the width of one sidebar. */
+.sidebar-toolbar { display: flex; gap: 0.4rem; flex-shrink: 0; padding-bottom: 0.6rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+.sidebar-toolbar .btn-icon {
+  position: relative; flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; padding: 0.45rem 0.4rem;
 }
-.sidebar-toolbar .btn { flex: 1; font-size: 0.78rem; padding: 0.4rem 0.5rem; white-space: nowrap; }
+.btn-icon-plus {
+  position: absolute; bottom: 0.15rem; right: 0.2rem; font-size: 0.6rem; font-weight: 800;
+  color: var(--accent-default); background: var(--surface); border-radius: 50%; line-height: 1;
+  width: 0.85rem; height: 0.85rem; display: flex; align-items: center; justify-content: center;
+}
+/* The pending-count badge reads better as a small corner dot on an
+   icon-only button than inline after a label that no longer exists. */
+.sidebar-toolbar .btn-icon .changes-badge {
+  position: absolute; top: 0.1rem; right: 0.1rem; margin-left: 0;
+  min-width: 0.95rem; padding: 0 0.3rem; font-size: 0.62rem; line-height: 1.1rem;
+}
 
 /* Two fixed-size panes, VSCode-style: Explorer (every open
    directory/standalone file) on top, Outline (the active document's own

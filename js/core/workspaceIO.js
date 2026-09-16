@@ -11,13 +11,14 @@ const MD_RE = /\.(md|markdown)$/i;
  * directory should be small enough that this is fine), but the caller can
  * decide to warn on huge results.
  */
-async function collectFromDirectoryHandle(dirHandle, prefix = '') {
+async function collectFromDirectoryHandle(dirHandle, prefix = '', dirHandles) {
   const files = [];
+  dirHandles.set(prefix, dirHandle);
   for await (const [name, handle] of dirHandle.entries()) {
     if (name.startsWith('.')) continue;
     const relPath = prefix ? `${prefix}/${name}` : name;
     if (handle.kind === 'directory') {
-      files.push(...await collectFromDirectoryHandle(handle, relPath));
+      files.push(...await collectFromDirectoryHandle(handle, relPath, dirHandles));
     } else if (MD_RE.test(name)) {
       files.push({
         relPath, name, fileHandle: handle, webkitFile: null,
@@ -27,12 +28,21 @@ async function collectFromDirectoryHandle(dirHandle, prefix = '') {
   return files;
 }
 
-/** Chromium/Edge path: a native folder picker with live read/write handles. */
+/**
+ * Chromium/Edge path: a native folder picker with live read/write handles.
+ * `dirHandles` (relDirPath -> FileSystemDirectoryHandle, the root itself
+ * keyed by '') is what makes creating/deleting/copying files possible
+ * later (see createFileInDirectory/deleteFileFromDirectory below) — a
+ * capability the webkitdirectory fallback below can never offer, since it
+ * only ever gets plain File objects, never a directory handle to write
+ * through.
+ */
 export async function openDirectoryPicker() {
   if (!supportsDirectoryPicker) return null;
   const dirHandle = await window.showDirectoryPicker();
-  const files = await collectFromDirectoryHandle(dirHandle);
-  return { rootName: dirHandle.name, files };
+  const dirHandles = new Map();
+  const files = await collectFromDirectoryHandle(dirHandle, '', dirHandles);
+  return { rootName: dirHandle.name, files, dirHandles };
 }
 
 /**
@@ -71,3 +81,26 @@ export async function readWorkspaceFileText(entry) {
   if (entry.webkitFile) return entry.webkitFile.text();
   throw new Error('No readable handle for this file.');
 }
+
+async function fileExistsIn(dirHandle, fileName) {
+  try {
+    await dirHandle.getFileHandle(fileName);
+    return true;
+  } catch (err) {
+    if (err.name === 'NotFoundError') return false;
+    throw err;
+  }
+}
+
+/** Create a brand-new Markdown file inside `dirHandle`. Refuses to silently overwrite an existing one — `getFileHandle(name, {create: true})` alone would happily hand back the existing file instead of failing. */
+export async function createFileInDirectory(dirHandle, fileName, initialText = '') {
+  if (await fileExistsIn(dirHandle, fileName)) {
+    throw new Error(`"${fileName}" already exists here.`);
+  }
+  const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(initialText);
+  await writable.close();
+  return fileHandle;
+}
+

@@ -64,12 +64,23 @@ function buildTree(files) {
   return root;
 }
 
-/** Add a newly-opened folder alongside whatever's already open. Opening the same rootName again (re-picking the same folder) just refreshes its file list in place rather than duplicating it. */
-export function addWorkspace({ rootName, files }) {
+/**
+ * Add a newly-opened folder alongside whatever's already open. Opening the
+ * same rootName again (re-picking the same folder) just refreshes its file
+ * list in place rather than duplicating it. `dirHandles` (relDirPath ->
+ * FileSystemDirectoryHandle, present only when opened via the native
+ * folder picker — see workspaceIO.js) is what lets addFileToWorkspace/
+ * removeFileFromWorkspace's callers actually create or delete a file on
+ * disk; a workspace opened via the webkitdirectory fallback simply has
+ * none, which is also how callers know to hide those actions for it (see
+ * workspaceSupportsWrite).
+ */
+export function addWorkspace({ rootName, files, dirHandles = null }) {
   workspaces.set(rootName, {
     rootName,
     files: new Map(files.map((f) => [f.relPath, f])),
     tree: buildTree(files),
+    dirHandles,
   });
 }
 
@@ -80,6 +91,25 @@ export function removeWorkspace(rootName) {
 export function getWorkspaceFile(rootName, relPath) {
   return workspaces.get(rootName)?.files.get(relPath) || null;
 }
+
+/** Whether files can be created/deleted/copied in this workspace at all — only true when it was opened via the native folder picker (see addWorkspace above). */
+export function workspaceSupportsWrite(rootName) {
+  return Boolean(workspaces.get(rootName)?.dirHandles);
+}
+
+/** The live directory handle for `dirRelPath` (root is `''`) within this workspace, or null if unsupported/not found. */
+export function getWorkspaceDirHandle(rootName, dirRelPath) {
+  return workspaces.get(rootName)?.dirHandles?.get(dirRelPath) || null;
+}
+
+/** Register a file this workspace didn't know about yet (just created on disk — see workspaceIO.js's createFileInDirectory) into its in-memory tree, so it shows up in the Explorer without re-scanning the whole folder. */
+export function addFileToWorkspace(rootName, entry) {
+  const workspace = workspaces.get(rootName);
+  if (!workspace) return;
+  workspace.files.set(entry.relPath, entry);
+  workspace.tree = buildTree([...workspace.files.values()]);
+}
+
 
 function normalizeSegments(segments) {
   const out = [];
