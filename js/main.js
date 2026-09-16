@@ -33,6 +33,7 @@ import {
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
+import { openShortcutsPanel } from './ui/shortcutsPanel.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
 import { openRecoveryPanel } from './ui/recoveryPanel.js';
@@ -84,6 +85,7 @@ const el = {
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
   sourceBtn: document.getElementById('source-btn'),
+  shortcutsBtn: document.getElementById('shortcuts-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
   dirtyText: document.getElementById('dirty-text'),
@@ -1310,6 +1312,53 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   addNoteToSelected();
 });
+
+/**
+ * Every other global shortcut (see ui/shortcutsPanel.js's SHORTCUTS table,
+ * the guide's own single source of truth for this list) just clicks the
+ * button it stands in for, so there's exactly one code path for each
+ * action regardless of how it's triggered. Ctrl/⌘+S is the one exception
+ * that works while typing (like any text editor's own save shortcut); the
+ * Alt+letter ones and "?" are guarded the same way Alt+N already is above,
+ * so they don't hijack an Alt-combo character or a literal "?" typed into
+ * a note, a section's content, or a modal field.
+ */
+document.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if ((key === 's') && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (getState().doc) handleSave();
+    return;
+  }
+
+  const active = document.activeElement;
+  const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
+
+  if (e.key === '?' && !isTyping) {
+    e.preventDefault();
+    openShortcutsPanel();
+    return;
+  }
+
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || isTyping) return;
+  const altActions = {
+    o: () => el.openFileBtn.click(),
+    d: () => el.openFolderBtn.click(),
+    a: () => { if (!el.addSectionBtn.disabled) el.addSectionBtn.click(); },
+    c: () => el.changesBtn.click(),
+    m: () => { if (!el.mapViewBtn.disabled) el.mapViewBtn.click(); },
+    p: () => { if (!el.previewToggleBtn.disabled) el.previewToggleBtn.click(); },
+    v: () => { if (!el.viewModeBar.hidden) handleViewModeChange(el.viewModeFullBtn.getAttribute('aria-selected') === 'true' ? 'sections' : 'full'); },
+    r: () => { if (!el.sourceBtn.disabled) el.sourceBtn.click(); },
+    ',': () => el.settingsBtn.click(),
+  };
+  const action = altActions[key];
+  if (!action) return;
+  e.preventDefault();
+  action();
+});
+
+el.shortcutsBtn.addEventListener('click', openShortcutsPanel);
 
 /**
  * Drag-to-resize for the preview panel, via the dedicated handle sitting

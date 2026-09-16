@@ -84,6 +84,15 @@ aside#sidebar.sidebar-collapsed {
 aside#sidebar.sidebar-graph-mode { width: 320px; }
 .sidebar-empty { color: var(--text-faint); font-size: 0.85rem; padding: 0.5rem; }
 
+/* Add section / Changes used to sit in the header's main scan line —
+   moved down here since both act on the sidebar's own document tree
+   rather than the toolbar's file/view controls above. */
+.sidebar-toolbar {
+  display: flex; gap: 0.4rem; flex-wrap: wrap; flex-shrink: 0;
+  padding-bottom: 0.6rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+}
+.sidebar-toolbar .btn { flex: 1; font-size: 0.78rem; padding: 0.4rem 0.5rem; white-space: nowrap; }
+
 /* Two fixed-size panes, VSCode-style: Explorer (every open
    directory/standalone file) on top, Outline (the active document's own
    heading breakdown) below — neither ever reorders or hides itself based

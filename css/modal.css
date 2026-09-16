@@ -53,6 +53,16 @@
 .side-panel-head h2 { font-size: 1.05rem; font-weight: 700; }
 .side-panel-body { padding: 1.25rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.5rem; }
 
+/* ---- shortcuts guide (ui/shortcutsPanel.js) ---- */
+.shortcuts-table { width: 100%; border-collapse: collapse; }
+.shortcuts-table td { padding: 0.55rem 0.4rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.shortcuts-keys { white-space: nowrap; width: 1%; padding-right: 1rem; }
+.shortcuts-keys kbd {
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.78rem;
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px;
+  padding: 0.15rem 0.4rem; box-shadow: 0 1px 0 var(--border);
+}
+
 .settings-divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
 .theme-toggle { display: flex; gap: 0.3rem; background: var(--bg-soft); border-radius: 999px; padding: 0.2rem; margin-bottom: 0.25rem; }
 .theme-toggle-btn {

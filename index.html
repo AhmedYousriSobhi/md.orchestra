@@ -57,20 +57,23 @@
     </button>
     <div class="toolbar-group">
       <button id="save-btn" class="btn btn-primary" type="button" disabled>💾 Save</button>
-      <button id="changes-btn" class="btn" type="button" title="Every file with unsaved changes right now">📝 Changes<span id="changes-badge" class="changes-badge" hidden>0</span></button>
-      <button id="add-section-btn" class="btn" type="button" disabled>+ New section</button>
     </div>
     <div class="toolbar-group">
       <button id="map-view-btn" class="btn" type="button" disabled>🗺️ Map</button>
     </div>
     <div class="toolbar-group toolbar-group-end">
       <button id="source-btn" class="btn" type="button" disabled>Source</button>
+      <button id="shortcuts-btn" class="btn btn-ghost" type="button" title="Keyboard shortcuts">⌨</button>
       <button id="settings-btn" class="btn" type="button">Settings ⚙</button>
     </div>
   </header>
 
   <div id="app-body">
     <aside id="sidebar">
+      <div class="sidebar-toolbar">
+        <button id="add-section-btn" class="btn" type="button" disabled>+ New section</button>
+        <button id="changes-btn" class="btn" type="button" title="Every file with unsaved changes right now">📝 Changes<span id="changes-badge" class="changes-badge" hidden>0</span></button>
+      </div>
       <section class="sidebar-section" id="explorer-section">
         <button type="button" class="sidebar-section-head" id="explorer-toggle">
           <span class="sidebar-section-chevron">▾</span>
