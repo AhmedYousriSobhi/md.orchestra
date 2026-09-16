@@ -1433,3 +1433,22 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   immediately, with no dialog, when nothing's unsaved). Verified against
   the real close event, not just app state, via Playwright's Electron
   driver.
+
+- **Stage 71** (same branch) — Three more UI/UX requests. (1) The header's
+  own "⌨" shortcuts button is gone — Stage 69 already added the same
+  entry into Settings, so the header kept a redundant second way to reach
+  it. (2) "Open .md file"/"Open folder" moved out of the header and into
+  the sidebar's own toolbar, as icon buttons alongside File+/Section+/
+  Changes — every file/folder action now sits in one horizontal row
+  instead of split across two separate bars. (3) Workspace mode's map
+  (Stage 69's reuse of `focalGraph.js`, the sidebar Explorer's own flat,
+  one-hop-at-a-time list) still read as a plain list once scaled up to
+  fill the modal, not an actual graph. New `js/ui/workspaceGraph.js`
+  lays the same clickable, expand/collapse folder tree out as a real
+  node-link "tidy tree" instead: branches fan out left-to-right by
+  depth, curved edges connect them, and each parent sits vertically
+  centered on its own children, so the shape of the directory is visible
+  at a glance rather than scrolled through top-to-bottom. `focalGraph.js`
+  itself is untouched and still backs the sidebar Explorer, which suits
+  a narrow one-hop view — the two remain a deliberate, different
+  tradeoff for two different spaces, not one replacing the other.
