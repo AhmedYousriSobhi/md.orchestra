@@ -18,6 +18,7 @@ import {
   renderWorkspacesPanel, forgetWorkspaceCollapsed,
 } from './ui/filesPanel.js';
 import { forgetWorkspaceViewState } from './ui/focalGraph.js';
+import { forgetWorkspaceGraphState } from './ui/workspaceGraph.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
 import { renderFullDocView } from './ui/fullDocView.js';
@@ -666,6 +667,7 @@ async function handleCloseWorkspace(rootName) {
   }
   removeWorkspace(rootName);
   forgetWorkspaceViewState(rootName);
+  forgetWorkspaceGraphState(rootName);
   forgetWorkspaceCollapsed(rootName);
   // Closing means closing: don't silently bring it back on the next launch
   // (see reopenLastElectronFolder above) just because it was the most

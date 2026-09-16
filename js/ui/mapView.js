@@ -3,7 +3,7 @@ import { paletteFor } from '../utils/colors.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { getState, selectSection } from '../state/store.js';
 import { renderMindMap } from './mindMap.js';
-import { renderFocalGraph } from './focalGraph.js';
+import { renderWorkspaceGraph } from './workspaceGraph.js';
 
 let overlayEl = null;
 let mapMode = 'tree';
@@ -154,19 +154,15 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
       requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, doc, selectedId, onPick); });
     } else {
       subtitleEl.textContent = `${workspace.rootName} — click a folder to expand it, a file to open it`;
-      // The same one-hop-at-a-time, click-to-expand graph the Explorer
-      // sidebar already uses to browse this exact workspace (focalGraph.js)
-      // — a physics-based mind map free-floats every node with no regard
-      // for how deep it's nested, which reads fine for a few dozen headings
-      // but turns an actual directory (parent folders, nested subfolders,
-      // files, however many there are) into an unreadable hairball; a real
-      // expand/collapse graph never shows more at once than what's
-      // actually been drilled into, the way file-system navigation
-      // actually works, rather than dumping the whole tree in one flat
-      // list.
-      const graphWrap = h('div', { class: 'focal-graph-wrap map-workspace-graph' });
+      // A real node-link tree (workspaceGraph.js) — branches fan out by
+      // depth and a parent centers on its own children, rather than every
+      // node stacked in one flat vertical list; click to expand/collapse a
+      // folder still works the same way, just laid out to actually look
+      // like the shape of the tree instead of a plain scrolling list of
+      // rows.
+      const graphWrap = h('div', { class: 'map-workspace-graph' });
       scroll.appendChild(graphWrap);
-      renderFocalGraph(graphWrap, workspace, null, (relPath) => {
+      renderWorkspaceGraph(graphWrap, workspace, (relPath) => {
         handleClose();
         onOpenWorkspaceFile(workspace.rootName, relPath);
       });
