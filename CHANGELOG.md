@@ -1297,3 +1297,29 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   which old node it "used to be" — the selection resets to the document
   root and old per-section undo history is left orphaned (the
   textarea's own native undo covers a raw-source edit instead).
+
+- **Stage 66** (`feature/electron-desktop-shell` branch) — The browser's
+  File System Access API always read like an upload: one eager scan per
+  permission grant, no live navigation, no persistence across a reload.
+  MD.Orchestra is now also its own desktop window app (`npm start`),
+  Electron-based, backed by Node's real `fs` instead. `electron/main.js`
+  exposes a narrow, allowlisted IPC surface over the real filesystem;
+  `electron/preload.js` bridges it into the page as `window.electronFS`
+  (contextIsolation on, nodeIntegration off — the page never gets raw
+  Node access). `js/core/electronFsAdapter.js` wraps that bridge in
+  objects shaped exactly like the browser's own
+  FileSystemDirectoryHandle/FileSystemFileHandle, so `workspaceIO.js`'s
+  existing create/delete/copy logic needed only a small branch at its two
+  entry points, not a rewrite — every folder opened this way is now
+  fully writable, closing the "only via the native picker" gap Stage 64's
+  Explorer context menu had. The last-opened folder is remembered and
+  silently reopened on launch, the way VSCode reopens your last
+  workspace. The browser/Docker deployment (`npm run web`) is completely
+  untouched — Electron is additive, detected at runtime, not a
+  replacement. Verified end-to-end against a real Electron window via
+  Playwright's own Electron launcher: open folder, create/delete a file,
+  edit the raw source and Ctrl+S save straight to the real file on disk,
+  quit and relaunch reopening the same folder — zero console errors.
+  True lazy per-directory listing on expand (rather than one recursive
+  scan at open time) is a deliberately flagged follow-up, not included
+  here.
