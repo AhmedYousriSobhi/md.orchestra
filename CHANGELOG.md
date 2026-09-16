@@ -1343,3 +1343,36 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   the existing `icons/icon.svg` via headless Chromium (electron-builder's
   Linux target needs a raster icon), so there isn't a second icon asset
   to keep in sync by hand.
+
+- **Stage 68** (same branch) — Four cleanup/UX requests now that the
+  desktop app is the primary way to run MD.Orchestra. (1) The old
+  browser-only version is preserved wholesale on a new
+  `legacy/browser-only-v1` branch (a snapshot of `master` from just before
+  this session's desktop-app work, with a note at the top of its own
+  README marking it as an archive, not active development). (2) This
+  branch drops the deployment tooling that browser version needed and
+  this one doesn't: the nginx `Dockerfile`/`docker-compose.yml`, the
+  app-mode launcher (`run.sh`), and the PWA install path
+  (`manifest.json`, `sw.js`, and `main.js`'s service-worker
+  registration) — that browser experience was never equivalent to the
+  desktop app (one-shot permission grant per folder, no persistence
+  across a reload, no write access at all in some browsers), so it isn't
+  carried forward here; `npm run web` (plain static server, no Docker)
+  stays as a dev convenience, since it's also how the app's own
+  browser-fallback code paths actually get exercised. README's
+  architecture section is refreshed to match the tree as it actually is
+  now (`electron/`, the Full-text/Sections modules, `contextMenu.js`,
+  etc.), not several stages ago. (3) The "Full document"/"Sections"
+  toggle above the canvas is renamed to "📝 Full text" / "🗃️ Sections" —
+  clearer about what each actually shows, with a tooltip on each and an
+  icon that reads as its function rather than a bare label. (4) The Map
+  button's Workspace mode (a whole open folder's structure) reused the
+  single-document Mind map's force-directed physics layout, which
+  degrades into an unreadable, free-floating hairball for an actual
+  directory — no visual sense of "this is inside that." It now reuses
+  the same plain indented-tree layout Tree mode already uses for a
+  document's own headings, with folders getting a 📁 icon and reading as
+  inert (nothing to open) rather than looking identically clickable to a
+  📄 file — parent/child position plus a connecting line says "contained
+  in" directly, and stays readable at any size; a huge folder just means
+  scrolling further, not the whole layout collapsing into noise.
