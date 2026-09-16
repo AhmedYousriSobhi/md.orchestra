@@ -33,6 +33,22 @@
 
 .card-body.rendered-markdown { color: var(--text-soft); }
 .card-empty-note { color: var(--text-faint); font-style: italic; font-size: 0.88rem; }
+/* The notes empty-state specifically (unlike the other, purely
+   informational uses of .card-empty-note) is itself the way to add the
+   first note — styled and behaving like an actual writable field's
+   placeholder rather than inert text, so it doesn't read as something you
+   could type into directly but can't. */
+.card-empty-note-writable {
+  display: block; width: 100%; text-align: left;
+  border: 1px dashed color-mix(in srgb, var(--note-badge-text) 45%, var(--border));
+  border-radius: 8px; background: none; padding: 0.6rem 0.7rem;
+  cursor: pointer; font-family: inherit;
+}
+.card-empty-note-writable:hover {
+  color: var(--note-badge-text);
+  border-color: var(--note-badge-text);
+  background: color-mix(in srgb, var(--note-badge-text) 8%, transparent);
+}
 
 .content-edit-textarea {
   width: 100%; min-height: 10rem; resize: vertical;

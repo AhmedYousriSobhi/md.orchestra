@@ -7,6 +7,35 @@ import { confirmDialog } from './confirmDialog.js';
 const EDITING_HINT = 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in';
 
 /**
+ * Focus the textarea of whatever note gets added next — used right after
+ * calling the `onAdd` this module hands out (see main.js's Alt+N shortcut
+ * and cardGrid.js's "+ Add note"/empty-state click), so adding a note
+ * actually lands you ready to type, not just looking at an empty one.
+ * `previousCount` is how many `.notes-textarea` elements existed right
+ * before the add, so this can tell "the new one showed up" apart from
+ * "nothing changed yet" — the section view's own re-render is animated
+ * (see transitions.js's animatedSwap), so the new textarea doesn't exist
+ * in the DOM the instant onAdd's own state update returns; polling one
+ * frame at a time (rather than a fixed delay guessing that animation's
+ * own timing) stays correct even if that timing ever changes. Capped so a
+ * render that never actually adds the expected node (a bug, or the
+ * section view isn't even showing this one anymore) can't poll forever.
+ */
+export function focusNewestNoteTextarea(previousCount) {
+  let framesLeft = 120; // ~2s at 60fps
+  function tryFocus() {
+    const textareas = document.querySelectorAll('.notes-textarea');
+    if (textareas.length > previousCount) {
+      textareas[textareas.length - 1].focus();
+      return;
+    }
+    framesLeft -= 1;
+    if (framesLeft > 0) requestAnimationFrame(tryFocus);
+  }
+  requestAnimationFrame(tryFocus);
+}
+
+/**
  * A section can hold several independent notes (not just one) — each its
  * own small card with its own textarea, debounced autosave, and delete
  * button. `handlers` is { onUpdate(id, text), onAdd(), onDelete(id) }.
@@ -25,7 +54,11 @@ export function createNotesSection(notes, handlers) {
       ]),
       addBtn,
     ]),
-    notes.length ? list : h('p', { class: 'card-empty-note' }, 'No notes yet on this section.'),
+    notes.length ? list : h('button', {
+      class: 'card-empty-note card-empty-note-writable',
+      type: 'button',
+      onClick: handlers.onAdd,
+    }, 'No notes yet — click to write one…'),
   ]);
 }
 

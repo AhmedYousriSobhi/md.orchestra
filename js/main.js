@@ -8,6 +8,7 @@ import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
+import { focusNewestNoteTextarea } from './ui/notesPanel.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
 } from './state/workspace.js';
@@ -1251,8 +1252,9 @@ el.previewToggleBtn.addEventListener('click', () => {
 function addNoteToSelected() {
   const node = getSelectedNode();
   if (!node) return;
+  const countBefore = document.querySelectorAll('.notes-textarea').length;
   updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
-  showToast('Note added — open the section to fill it in.');
+  focusNewestNoteTextarea(countBefore);
 }
 
 document.addEventListener('keydown', (e) => {

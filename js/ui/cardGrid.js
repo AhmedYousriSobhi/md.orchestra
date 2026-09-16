@@ -11,7 +11,7 @@ import { generateTocMarkdown, looksLikeTocSection } from '../markdown/toc.js';
 import {
   getState, selectSection, updateNode, removeSection, canUndoNode, undoNode,
 } from '../state/store.js';
-import { createNotesSection } from './notesPanel.js';
+import { createNotesSection, focusNewestNoteTextarea } from './notesPanel.js';
 import { openCodeViewer } from './codeViewer.js';
 import { openInsightModal } from './insightModal.js';
 import { showToast } from './toast.js';
@@ -128,7 +128,9 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
       updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === id ? { ...n, text } : n)) }) });
     },
     onAdd: () => {
+      const countBefore = document.querySelectorAll('.notes-textarea').length;
       updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
+      focusNewestNoteTextarea(countBefore);
     },
     onDelete: (id) => {
       const parts = currentParts();
