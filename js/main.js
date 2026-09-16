@@ -90,7 +90,6 @@ const el = {
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
   sourceBtn: document.getElementById('source-btn'),
-  shortcutsBtn: document.getElementById('shortcuts-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
   dirtyText: document.getElementById('dirty-text'),
@@ -246,7 +245,8 @@ function renderInner() {
   if (!el.workspaceTree.hasChildNodes()) {
     el.workspaceTree.appendChild(h('p', { class: 'sidebar-empty' }, 'No folder or file opened yet.'));
   }
-  el.openFolderBtn.textContent = workspaces.length ? '📁 Add folder' : '📁 Open folder';
+  el.openFolderBtn.title = workspaces.length ? 'Add folder' : 'Open folder';
+  el.openFolderBtn.setAttribute('aria-label', el.openFolderBtn.title);
 
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
@@ -1605,8 +1605,6 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   action();
 });
-
-el.shortcutsBtn.addEventListener('click', openShortcutsPanel);
 
 /**
  * Drag-to-resize for the preview panel, via the dedicated handle sitting
