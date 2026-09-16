@@ -1215,3 +1215,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   can now be resized against each other via a drag handle between
   them, persisted as a percentage of the sidebar's own height (hidden
   while either pane is collapsed).
+
+- **Stage 62** (`feature/full-vs-sectioned-view` branch, not merged to
+  `master`) — A short document — a quick note, a small standalone file —
+  used to always get split into per-section cards the same as a long one,
+  which mostly produced a handful of near-empty "dummy" cards instead of
+  making anything easier to navigate; a two-line file with one heading
+  became one lonely card with nothing below it. `markdown/docStats.js`
+  now measures a document's own content length and heading count, and
+  `ui/docViewMode.js` uses that to recommend Full document (one
+  continuous page, real heading hierarchy) or Sections (the existing
+  per-card drill-down) as the default — whether the file came from a
+  standalone open or a whole folder makes no difference, only the
+  document's own length and structure do. A "Full document / Sections"
+  toggle above the canvas lets the recommendation be overridden per
+  document, remembered across reloads. Full document view
+  (`ui/fullDocView.js`) isn't read-only: each heading carries its own
+  small inline ✎ icon to edit that section's content in place, so a
+  typo doesn't force a detour through Sections just to fix it — though
+  notes, "Understand & suggest", and title/section editing are still
+  Sections-only, which is why the toggle always stays available, even
+  for a document with only one heading.
