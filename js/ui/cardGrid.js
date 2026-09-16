@@ -177,8 +177,13 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     h('button', {
       class: 'btn btn-insight',
       type: 'button',
+      title: 'Understand & suggest — ask Claude about this section',
+      'aria-label': 'Understand & suggest — ask Claude about this section',
       onClick: () => openInsightModal(node, breadcrumbTitles),
-    }, '✨ Understand & suggest'),
+    }, [
+      h('span', { class: 'btn-insight-icon' }, '✨'),
+      h('span', { class: 'btn-insight-label' }, 'Understand & suggest'),
+    ]),
   ]));
 
   return card;

@@ -116,7 +116,32 @@ button {
 .changes-badge[hidden] { display: none; }
 .btn-primary { background: var(--accent-default); border-color: var(--accent-default); color: #fff; }
 .btn-ghost { background: transparent; }
-.btn-insight { background: var(--accent-default); color: #fff; border: none; }
+/* Icon-sized by default — a big pinned "Understand & suggest" pill
+   competed with the card's own content for attention despite being a
+   secondary, opt-in action. Expands to its full label on hover/focus
+   (keyboard-reachable, not just mouse), so the functionality is one
+   glance away rather than gone. */
+.btn-insight {
+  background: var(--accent-default); color: #fff; border: none;
+  display: inline-flex; align-items: center; gap: 0;
+  width: 2.3rem; overflow: hidden; white-space: nowrap;
+  transition: width 0.22s ease, gap 0.22s ease, background 0.15s ease;
+}
+.btn-insight-icon { flex-shrink: 0; }
+.btn-insight-label {
+  opacity: 0; transform: translateX(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.btn-insight:hover,
+.btn-insight:focus-visible {
+  width: 12.5rem;
+  gap: 0.4rem;
+  background: color-mix(in srgb, var(--accent-default) 88%, black);
+}
+.btn-insight:hover .btn-insight-label,
+.btn-insight:focus-visible .btn-insight-label {
+  opacity: 1; transform: translateX(0);
+}
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
