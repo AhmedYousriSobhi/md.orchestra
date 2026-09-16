@@ -1236,3 +1236,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   notes, "Understand & suggest", and title/section editing are still
   Sections-only, which is why the toggle always stays available, even
   for a document with only one heading.
+
+- **Stage 63** (same branch) — Five follow-up requests. (1)+(2) The main
+  panel showed a section's content rendered — a formatted wall of HTML —
+  with a separate "Edit content" button needed to actually change
+  anything; redundant now that the preview panel already exists for a
+  formatted read. It's now the raw Markdown source directly, in a plain
+  textarea, editable immediately with no button and no separate edit
+  mode (`ui/editableMarkdownBody.js`, shared by the card view and full
+  document view, which also drops its own now-redundant inline edit
+  icon from Stage 62 for the same reason) — typed changes autosave,
+  debounced, the same model notes already used. The preview panel itself
+  is untouched, own edit button included. (3) Add section and Changes
+  moved out of the header's main scan line into a small toolbar at the
+  top of the sidebar, next to the document tree they act on. (4)+(5)
+  Every action now has a keyboard shortcut — Ctrl/⌘+S saves (works even
+  while typing); Alt+O/D/A/C/M/P/V/R and Alt+, cover Open file/Open
+  folder/Add section/Changes/Map/Preview toggle/view mode toggle/
+  Source/Settings; Alt+N (already existed) still adds a note. A new "⌨"
+  button, or the "?" key, opens a shortcuts guide (`ui/shortcutsPanel.js`)
+  listing all of them from the same table the keydown listener itself
+  reads, so the two can't drift apart.
