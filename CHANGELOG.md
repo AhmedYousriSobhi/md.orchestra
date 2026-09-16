@@ -1376,3 +1376,45 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   📄 file — parent/child position plus a connecting line says "contained
   in" directly, and stays readable at any size; a huge folder just means
   scrolling further, not the whole layout collapsing into noise.
+
+- **Stage 69** (same branch) — Six more requests, three of them real bugs
+  caught along the way. (1) Workspace mode's indented-tree from Stage 68
+  was readable but static; it now reuses `focalGraph.js` directly — the
+  exact same click-to-expand graph the Explorer sidebar already browses
+  this same workspace with — so a folder expands only when you actually
+  click into it, rather than the whole tree always laid out flat. (2) A
+  "⌨ Keyboard shortcuts" entry joins the header button and the "?" key
+  as a third way into the same guide, for anyone browsing Settings
+  looking for it. (3) **Bug**: undoing a section's edit still showed
+  "unsaved changes" even once the content was back to exactly what was
+  on disk — a redundant blur-triggered save (independent of whether the
+  debounce had already fired) pushed a second, no-op entry onto the
+  undo stack right on top of the real one, so one "Undo" click only
+  popped that phantom entry, needing a second to reach the actual edit.
+  `store.js`'s `updateNode()` now only pushes an undo entry (or marks
+  the doc dirty) when the patch genuinely changes something. (4) **Bug**:
+  Ctrl+Z did nothing inside any Markdown field — every "Markdown All in
+  One" typing habit (list continuation, Tab-indent, Ctrl+B/I/`)
+  applied its change via a direct `textarea.value = …` assignment, which
+  silently wipes a textarea's own undo history in Chrome and Firefox
+  alike. `markdownEditing.js` now diffs old vs. new value and applies
+  just the changed range through `execCommand('insertText', …)` —
+  deprecated, but still the one universally-supported way to edit a
+  field that's guaranteed to register as a real edit for undo. (5) The
+  header's "💾 Save" button is gone — every field already autosaves
+  into the in-memory document on its own, and the button (like plain
+  Ctrl+S) only ever wrote the whole file to disk regardless. Ctrl/⌘+S
+  now commits whatever's currently focused right now instead of waiting
+  out its own debounce, without touching disk; Ctrl/⌘+Shift+S is the
+  actual "write to disk" action, and the dirty indicator stays clickable
+  for the same. (6) A section's raw-Markdown textarea now auto-grows to
+  fit its content by default (previously a fixed min-height needed
+  manually dragging the resize handle just to see the rest of what was
+  already there) — and **a related bug**: typing into a "Table of
+  Contents" section and clicking "Regenerate from headings" *before*
+  that typing's own debounce had fired let the stale, pre-regenerate
+  text win moments later, since only the debounce's own timer was ever
+  cancelled, not the parallel flush its blur handler independently
+  schedules (clicking a button blurs the focused field first).
+  Regenerate/Undo now explicitly cancel the section's own pending save
+  before applying their own change.
