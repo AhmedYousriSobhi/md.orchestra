@@ -1257,3 +1257,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   button, or the "?" key, opens a shortcuts guide (`ui/shortcutsPanel.js`)
   listing all of them from the same table the keydown listener itself
   reads, so the two can't drift apart.
+
+- **Stage 64** (same branch) — Three more requests. (1) The sidebar's
+  single "+ New section" button becomes two small icon buttons — 📄+
+  (Add file) and 📑+ (Add section) — plus the underlying ability to
+  actually create a file at all: `workspaceIO.js`/`workspace.js` now
+  retain a directory handle per folder (only possible for a workspace
+  opened via the native folder picker, not the webkitdirectory fallback
+  some browsers need), which a new `createFileInDirectory` writes
+  through; File+ offers every write-capable open workspace, or falls
+  back to a brand-new blank standalone document if none is open. (2)
+  Changes drops its text label for an icon too, hover title simply
+  "Changes". (3) Every file/folder row in the Explorer (and a
+  workspace's own root) now has a right-click context menu
+  (`ui/contextMenu.js`): a file offers Add section (switching to it
+  first if it isn't already active), Copy, and Delete; a folder offers
+  Add file and Paste. Copy/Paste is an in-memory, single-slot clipboard
+  — pasting into the same folder you copied from duplicates it, with "
+  copy"/" copy 2" appended on a name collision. Delete/Copy/Paste/Add
+  file all require a workspace opened via the native folder picker; for
+  the webkitdirectory fallback, they show disabled with a tooltip
+  explaining why instead of silently failing. Folders deliberately have
+  no Delete of their own — a whole directory tree is a much larger
+  blast radius than this menu is meant to risk.
