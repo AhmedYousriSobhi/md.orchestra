@@ -286,6 +286,23 @@ main#main-panel {
 .crumb-current { color: var(--text); font-weight: 600; }
 .crumb-sep { color: var(--text-faint); font-size: 0.75rem; }
 
+/* A short document (or one with nothing to structurally split — see
+   ui/docViewMode.js) defaults to reading as one continuous page instead of
+   being fragmented into a handful of near-empty per-section cards; this
+   toggle is how the user overrides that recommendation either way, for
+   this document specifically. */
+.view-mode-bar {
+  display: flex; gap: 0.2rem; padding: 0.5rem 1.75rem;
+  border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+}
+.view-mode-tab {
+  background: var(--bg-soft); border: none; border-radius: 999px;
+  padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+  color: var(--text-faint); cursor: pointer;
+}
+.view-mode-tab:hover { color: var(--text); }
+.view-mode-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent-default) 16%, var(--bg-soft)); color: var(--accent-default); }
+
 #section-view-wrap {
   flex: 1;
   overflow-y: auto;

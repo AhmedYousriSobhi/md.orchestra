@@ -19,6 +19,10 @@ import {
 import { forgetWorkspaceViewState } from './ui/focalGraph.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
+import { renderFullDocView } from './ui/fullDocView.js';
+import {
+  recommendedMode, docModeKey, getStoredMode, setStoredMode,
+} from './ui/docViewMode.js';
 import { animatedSwap } from './ui/transitions.js';
 import {
   readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
@@ -61,6 +65,9 @@ const el = {
   headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
+  viewModeBar: document.getElementById('view-mode-bar'),
+  viewModeFullBtn: document.getElementById('view-mode-full-btn'),
+  viewModeSectionsBtn: document.getElementById('view-mode-sections-btn'),
   sectionViewWrap: document.getElementById('section-view-wrap'),
   sectionView: document.getElementById('section-view'),
   emptyState: document.getElementById('empty-state'),
@@ -227,6 +234,7 @@ function renderInner() {
   if (!doc) {
     el.emptyState.hidden = false;
     el.sectionView.hidden = true;
+    el.viewModeBar.hidden = true;
     renderSidebar(el.headingTree, null, [], selectSection, handleSidebarMove);
     el.breadcrumb.innerHTML = '';
     el.previewPanel.innerHTML = '';
@@ -279,9 +287,37 @@ function renderInner() {
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
 
+  // The user's own remembered choice for this exact document wins;
+  // failing that, its length/structure recommends one (see
+  // docViewMode.js) — a short document, or one with zero/one heading,
+  // reads better as one continuous page than fragmented into a handful of
+  // near-empty cards. Sections stays available either way (not just for
+  // documents "big enough" to need it): notes, "Understand & suggest",
+  // and title editing are still Sections-only, so it needs to stay
+  // reachable even for a trivial one-heading document.
+  const modeKey = docModeKey({ workspaceRootName, workspaceRelPath, fileName });
+  const viewMode = getStoredMode(modeKey) || recommendedMode(doc);
+  el.viewModeBar.hidden = false;
+  el.viewModeFullBtn.setAttribute('aria-selected', String(viewMode === 'full'));
+  el.viewModeSectionsBtn.setAttribute('aria-selected', String(viewMode === 'sections'));
+
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
-  animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
+  if (viewMode === 'full') {
+    animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName, {
+      onNavigateFile: handleNavigateFile,
+      focusNodeId: node.level > 0 ? node.id : null,
+    }), direction);
+  } else {
+    animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
+  }
+}
+
+function handleViewModeChange(mode) {
+  const { doc, fileName, workspaceRelPath, workspaceRootName } = getState();
+  if (!doc) return;
+  setStoredMode(docModeKey({ workspaceRootName, workspaceRelPath, fileName }), mode);
+  render();
 }
 
 function handlePreviewScopeChange(scope) {
@@ -1230,6 +1266,9 @@ function handleOpenChanges() {
 el.saveBtn.addEventListener('click', handleSave);
 el.dirtyIndicator.addEventListener('click', handleSave);
 el.changesBtn.addEventListener('click', handleOpenChanges);
+
+el.viewModeFullBtn.addEventListener('click', () => handleViewModeChange('full'));
+el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sections'));
 
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', () => {
