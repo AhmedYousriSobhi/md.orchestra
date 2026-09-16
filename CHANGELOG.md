@@ -1465,3 +1465,14 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   are rebuilt) now re-fits every visible textarea whenever that panel's
   own width changes — the same fix also covers the preview-panel
   drag-resize and plain window resizing, not just the sidebar toggle.
+
+- **Stage 73** — **Bug**: the Changes panel could show "0 changes across 1
+  file" in its own header while still listing that file's row below,
+  Save/Discard buttons and all. The recovery-snapshot cache only
+  refreshes on its own 1.5s debounce; opening the panel sooner than that
+  — most visibly right after a section's Undo button brings it back to
+  exactly its saved baseline — read the still-stale cached snapshot from
+  the *previous*, since-undone edit, while the header/badge (which diff
+  the live document directly) already correctly said zero. Opening the
+  panel now cancels that pending debounce and reconciles the cache
+  synchronously first, so the header and the row list can never disagree.
