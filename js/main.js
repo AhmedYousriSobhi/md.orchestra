@@ -1488,6 +1488,17 @@ const changesPanelHandlers = {
 };
 
 function handleOpenChanges() {
+  // snapshotNow() only ever runs on its own 1.5s debounce (snapshotIfDirty,
+  // below) — reaching this function sooner than that (e.g. right after an
+  // Undo that brings the active document back to exactly its saved
+  // baseline) means the recovery snapshot still cached (see recovery.js)
+  // is whatever the *previous*, since-undone edit left behind. The badge/header text
+  // diffs the live in-memory doc and would already say "0 changes," but
+  // without this, the row list below is built straight from that stale
+  // snapshot and shows the file anyway — the exact contradiction this
+  // guards against. Flushing synchronously first keeps both in sync.
+  snapshotIfDirty.cancel();
+  snapshotNow();
   const {
     doc, fileName, workspaceRelPath, workspaceRootName,
   } = getState();
