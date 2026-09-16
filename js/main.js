@@ -1701,17 +1701,6 @@ el.sidebarToggle.addEventListener('click', () => {
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
 });
 
-// Registering this lets a supporting browser offer "Install app" — opening
-// in its own standalone window, like a desktop app, rather than a tab.
-// Meaningless (and untested) inside the real desktop app (electron/), which
-// already has its own standalone window and loads everything from local
-// disk rather than needing an offline cache.
-if (!isElectron && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker registration failed', err));
-  });
-}
-
 ['dragover', 'drop'].forEach((evt) => window.addEventListener(evt, (e) => e.preventDefault()));
 window.addEventListener('drop', async (e) => {
   const file = e.dataTransfer?.files?.[0];

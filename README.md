@@ -16,41 +16,24 @@ session, the last-opened one reopens automatically on launch.
 (Or, with Node already installed: `npm install && npm start` runs it without
 building a package first — useful while developing.)
 
-**In a browser**, if you'd rather not install anything: no build step, serve
-the folder statically (opening `index.html` directly via `file://` will
-break `fetch()`-based AI calls):
+**For quick local development**, `npm run web` serves the folder statically
+with no build step (opening `index.html` directly via `file://` will break
+`fetch()`-based AI calls, and the app's own browser fallback code paths only
+get exercised in a real browser tab like this, not inside Electron):
 
 ```bash
-python3 -m http.server 8000
-# open http://localhost:8000/index.html
+npm run web
+# open http://localhost:8899/index.html
 ```
 
-Or run it in Docker (nginx serving the same static files — no build step
-there either):
-
-```bash
-./run.sh                    # starts the container if needed, then opens it
-                             # in its own window (see below) — the easiest path
-# equivalent, by hand:
-docker compose up -d        # serves on http://localhost:8080
-# or without compose:
-docker build -t md-dashboard . && docker run -p 8080:80 md-dashboard
-```
-
-**Starting the container is not the same as opening it.** `docker compose
-up` / `docker run` only start the web server — nothing about Docker opens a
-browser or a window. `./run.sh` does both: it starts the container (skipping
-that step if one's already serving), then opens the app in its own
-standalone window (Chrome/Edge/Chromium via `--app=`, or a new Firefox
-window as a fallback — Firefox has no equivalent chromeless app mode).
-Without a script, get the same "own window" effect either by opening the
-URL and using the browser's own **Install app** option (it registers a
-manifest + service worker, so it can then be launched like any other app),
-or manually with e.g. `google-chrome --app=http://localhost:8080/index.html`.
-
-If port 8080 is already taken (commonly: a container from an earlier run is
-still up — check with `docker ps`), set `PORT` to use a different one, e.g.
-`PORT=8081 ./run.sh` or `PORT=8081 docker compose up -d`.
+This is a dev convenience, not a supported deployment path — MD.Orchestra
+isn't shipped or maintained as a website. The full static-web/Docker
+deployment (nginx, PWA install, an app-mode launcher script) that used to
+live here has been archived on the `legacy/browser-only-v1` branch, from
+before the move to a real desktop app; that browser experience was never
+equivalent to the desktop one (a one-shot permission grant per folder, no
+persistence across a reload, no write access at all in some browsers) and
+isn't being carried forward.
 
 ## Using it
 
@@ -222,9 +205,16 @@ isolation:
 
 ```
 index.html          shell: header, sidebar (Explorer + Outline), main panel, side panels
-manifest.json, sw.js, icons/   installable app shell (see AI integration
-                     section below the data model)
-Dockerfile, docker-compose.yml, .dockerignore   nginx-served container
+electron/           the desktop app's main process (main.js: window,
+                     allowlisted filesystem IPC) and preload.js (bridges
+                     it into the page as window.electronFS — see
+                     js/core/electronFsAdapter.js)
+Dockerfile.electron, build-desktop.sh   packages the desktop app into a
+                     Linux AppImage via Docker (build-time only — the
+                     result is a normal double-click-to-run binary,
+                     Docker isn't involved at launch)
+icons/               icon.svg (source) + icon.png (rendered from it, for
+                     the packaged app's Linux icon)
 css/                 base, layout, cards, modal, animation styles
 js/
   markdown/          parser.js (md -> section tree), serializer.js (tree -> md),
@@ -233,17 +223,24 @@ js/
                      against the active workspace file), slug.js
                      (GitHub-compatible heading anchors), toc.js (regenerate
                      a Table of Contents), diff.js / sectionMerge.js
-                     (per-section change tracking, for the Changes panel)
+                     (per-section change tracking, for the Changes panel),
+                     docStats.js (length/heading-count heuristics — see
+                     ui/docViewMode.js)
   state/store.js      the single active document + pub/sub (fileName,
                      fileHandle, selectedId, dirty, and which open
-                     workspace/relPath it belongs to, if any)
+                     workspace/relPath it belongs to, if any);
+                     replaceWholeDocument() swaps in a freshly-reparsed
+                     tree wholesale, for full document view's raw-source
+                     editing
   state/workspace.js   every currently-open directory (several can be open
                      at once, each its own independent identity: file
-                     registry, folder tree, relative-link resolution)
-  core/               fileIO.js (single-file read/write, incl. File System
-                     Access), workspaceIO.js (reads a directory — File
-                     System Access on Chrome/Edge, an <input webkitdirectory>
-                     fallback elsewhere), recovery.js (per-file crash-recovery
+                     registry, folder tree, relative-link resolution,
+                     directory handles for creating/deleting files)
+  core/               fileIO.js / workspaceIO.js (single-file / directory
+                     read-write — File System Access API in a browser,
+                     electronFsAdapter.js's real-filesystem bridge inside
+                     the desktop app, an <input webkitdirectory> fallback
+                     elsewhere), recovery.js (per-file crash-recovery
                      snapshots in localStorage)
   ai/                 client.js (Claude fetch), prompts.js, settings.js
   ui/                 sidebar.js (heading tree, drag-and-drop to relocate
@@ -251,15 +248,21 @@ js/
                      workspace, each individually foldable, plus a
                      standalone-file "Open files" group), focalGraph.js (the
                      one-hop-at-a-time directory graph each Explorer block
-                     renders, with per-workspace navigation state),
+                     renders, with per-workspace navigation state and a
+                     right-click context menu — contextMenu.js), newFileModal.js,
                      recoveryPanel.js (offered on load) / changesPanel.js
                      (on demand, from the header) — both list recovery.js's
-                     per-file snapshots, save/open/discard, breadcrumb, card
-                     grid (incl. inline title/content editing), insight
-                     modal, code viewer, notes panel
-                     (multiple independent notes per section), imageAttach.js
-                     (paste/drag/button -> data: URI image, used by notes and
-                     section-content editing), settings/source panels,
+                     per-file snapshots, save/open/discard, breadcrumb,
+                     docViewMode.js (Full document vs. Sections, per
+                     document) + cardGrid.js (Sections: the card grid,
+                     incl. inline title editing) / fullDocView.js (Full
+                     document: the whole file as one raw-Markdown
+                     textarea) + editableMarkdownBody.js (the
+                     always-editable raw-text body shared by both), insight
+                     modal, code viewer, notes panel (multiple independent
+                     notes per section), imageAttach.js (paste/drag/button
+                     -> data: URI image, used by notes and section-content
+                     editing), settings/source/shortcuts panels,
                      add-section modal + tree picker (drag-and-drop
                      placement), dragDrop.js (shared before/inside/after zone
                      detection), mapView.js (Tree / Mind map / Workspace
@@ -270,8 +273,8 @@ js/
                      attached to every raw-Markdown textarea), toast.js
   utils/              dom (incl. an SVG-element helper)/debounce/id/color/theme
   main.js             wires everything together; also the beforeunload
-                     guard, crash-recovery prompt, and service-worker
-                     registration
+                     guard, crash-recovery prompt, and (desktop app only)
+                     remembering/reopening the last-used folder on launch
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
 ```
 
