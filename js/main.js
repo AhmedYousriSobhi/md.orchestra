@@ -87,7 +87,6 @@ const el = {
   previewToggleBtn: document.getElementById('preview-edge-toggle'),
   previewPanel: document.getElementById('preview-panel'),
   previewResizeHandle: document.getElementById('preview-resize-handle'),
-  saveBtn: document.getElementById('save-btn'),
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
   sourceBtn: document.getElementById('source-btn'),
@@ -255,7 +254,6 @@ function renderInner() {
   el.addSectionBtn.disabled = !doc;
   el.mapViewBtn.disabled = !doc;
   el.previewToggleBtn.disabled = !doc;
-  el.saveBtn.disabled = !doc;
   // Drives the edge-toggle tab's docked position (see css/layout.css) — it
   // sits at the preview panel's own edge while open, and the viewport's
   // edge while closed.
@@ -1487,7 +1485,6 @@ function handleOpenChanges() {
   openChangesPanel(enriched, activeId, changesPanelHandlers);
 }
 
-el.saveBtn.addEventListener('click', handleSave);
 el.dirtyIndicator.addEventListener('click', handleSave);
 el.changesBtn.addEventListener('click', handleOpenChanges);
 
@@ -1538,20 +1535,36 @@ document.addEventListener('keydown', (e) => {
 });
 
 /**
- * Every other global shortcut (see ui/shortcutsPanel.js's SHORTCUTS table,
- * the guide's own single source of truth for this list) just clicks the
- * button it stands in for, so there's exactly one code path for each
- * action regardless of how it's triggered. Ctrl/⌘+S is the one exception
- * that works while typing (like any text editor's own save shortcut); the
- * Alt+letter ones and "?" are guarded the same way Alt+N already is above,
- * so they don't hijack an Alt-combo character or a literal "?" typed into
- * a note, a section's content, or a modal field.
+ * Ctrl/⌘+S commits whatever's currently being typed — a section's body, a
+ * note, a title — right now rather than waiting out its own debounce; it
+ * does *not* write to disk (there's no longer a Save button: every field
+ * already autosaves into the in-memory document on its own). Blurring the
+ * focused field and refocusing it a frame later is what actually flushes
+ * it — every one of these fields already has its own immediate-flush
+ * blur handler (see editableMarkdownBody.js/notesPanel.js), so this just
+ * triggers that existing path rather than duplicating it; the refocus
+ * keeps typing uninterrupted, cursor position included (blur alone
+ * doesn't touch selectionStart/End). Ctrl/⌘+Shift+S is the actual
+ * "write this file to disk" action instead — what plain Ctrl+S used to
+ * do, back when there was a Save button to match it.
  */
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
-  if ((key === 's') && (e.ctrlKey || e.metaKey)) {
+  if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.preventDefault();
     if (getState().doc) handleSave();
+    return;
+  }
+  if (key === 's' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    e.preventDefault();
+    const active = document.activeElement;
+    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+      active.blur();
+      requestAnimationFrame(() => active.focus());
+      showToast('Section saved');
+    } else if (getState().doc) {
+      showToast('Nothing being edited right now — Ctrl/⌘+Shift+S saves the whole file to disk');
+    }
     return;
   }
 

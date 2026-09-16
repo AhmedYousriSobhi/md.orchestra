@@ -7,7 +7,8 @@ import { openOverlay, closeOverlay } from './transitions.js';
  * from it, so the two can never silently drift apart.
  */
 export const SHORTCUTS = [
-  { keys: 'Ctrl/⌘ + S', action: 'Save the current file' },
+  { keys: 'Ctrl/⌘ + S', action: 'Save what you’re currently editing (not to disk — every field autosaves already; this just commits it right now)' },
+  { keys: 'Ctrl/⌘ + Shift + S', action: 'Save the whole file to disk' },
   { keys: 'Alt + O', action: 'Open a .md file' },
   { keys: 'Alt + D', action: 'Open a folder' },
   { keys: 'Alt + F', action: 'Add a new file' },
