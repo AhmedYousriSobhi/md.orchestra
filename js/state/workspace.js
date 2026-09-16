@@ -110,6 +110,13 @@ export function addFileToWorkspace(rootName, entry) {
   workspace.tree = buildTree([...workspace.files.values()]);
 }
 
+/** The inverse of addFileToWorkspace, after a file's been deleted from disk. */
+export function removeFileFromWorkspace(rootName, relPath) {
+  const workspace = workspaces.get(rootName);
+  if (!workspace) return;
+  workspace.files.delete(relPath);
+  workspace.tree = buildTree([...workspace.files.values()]);
+}
 
 function normalizeSegments(segments) {
   const out = [];

@@ -104,3 +104,21 @@ export async function createFileInDirectory(dirHandle, fileName, initialText = '
   return fileHandle;
 }
 
+/** A name guaranteed not to collide with anything already in `dirHandle` — `"notes.md"` becomes `"notes copy.md"`, then `"notes copy 2.md"`, `"notes copy 3.md"`, etc. */
+export async function uniqueFileNameIn(dirHandle, baseName) {
+  const match = baseName.match(/^(.*?)(\.[^.]+)?$/);
+  const stem = match[1];
+  const ext = match[2] || '';
+  let candidate = `${stem} copy${ext}`;
+  let n = 2;
+  // eslint-disable-next-line no-await-in-loop -- each check depends on the previous one's result
+  while (await fileExistsIn(dirHandle, candidate)) {
+    candidate = `${stem} copy ${n}${ext}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+export async function deleteFileFromDirectory(dirHandle, fileName) {
+  await dirHandle.removeEntry(fileName);
+}

@@ -225,7 +225,7 @@ function renderGraphHead(workspace, centerPath, onJump) {
  * main.js). `onOpenFile(relPath)` opens a clicked file node exactly like
  * the plain tree's own file rows do.
  */
-export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths = new Set()) {
+export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths = new Set(), onContextMenu) {
   container.innerHTML = '';
   if (!workspace) return;
 
@@ -249,7 +249,7 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
 
   const centerNode = findDirNode(workspace.tree, vs.center) || workspace.tree;
 
-  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths); }
+  function rerender() { renderFocalGraph(container, workspace, activeRelPath, onOpenFile, pendingPaths, onContextMenu); }
   function jumpTo(path) { vs.center = path; vs.expanded = new Set(); rerender(); }
 
   // Jumping to any ancestor — including the immediate parent — is what the
@@ -291,6 +291,11 @@ export function renderFocalGraph(container, workspace, activeRelPath, onOpenFile
     const { group } = buildNodeGroup({
       label: row.node.name, isDir: row.isDir, isActive: row.isActive, isExpanded: row.isExpanded, isPending: row.isPending, count: row.count, onClick,
     });
+    if (onContextMenu) {
+      group.addEventListener('contextmenu', (e) => onContextMenu(e, {
+        rootName: workspace.rootName, relPath: row.node.path, isDir: row.isDir, name: row.node.name,
+      }));
+    }
     nodeLayer.appendChild(group);
     positionNode(vs.knownPos, group, `${row.isDir ? 'dir' : 'file'}:${row.node.path}`, x, y);
 

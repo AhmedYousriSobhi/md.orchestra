@@ -50,14 +50,23 @@ export function forgetWorkspaceCollapsed(rootName) {
  * been touched.
  */
 function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options = {}) {
-  const { pendingPaths = new Set() } = options;
+  const { pendingPaths = new Set(), onContextMenu } = options;
   container.innerHTML = '';
   if (!workspace) return;
 
   const collapsed = getCollapsedWorkspaces().has(workspace.rootName);
   const rerender = () => renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClose, options);
 
-  const head = h('div', { class: 'files-tree-head' }, [
+  const head = h('div', {
+    class: 'files-tree-head',
+    // The workspace's own root, for "Add file"/"Paste" targeting the top
+    // of this folder rather than any particular file/subfolder inside it.
+    onContextmenu: onContextMenu
+      ? (e) => onContextMenu(e, {
+        rootName: workspace.rootName, relPath: '', isDir: true, name: workspace.rootName,
+      })
+      : undefined,
+  }, [
     h('button', {
       class: `nav-chevron${collapsed ? '' : ' nav-chevron-open'}`,
       type: 'button',
@@ -80,7 +89,7 @@ function renderFilesTree(container, workspace, activeRelPath, onOpenFile, onClos
   if (collapsed) return;
   const graphWrap = h('div', { class: 'focal-graph-wrap' });
   container.appendChild(graphWrap);
-  renderFocalGraph(graphWrap, workspace, activeRelPath, onOpenFile, pendingPaths);
+  renderFocalGraph(graphWrap, workspace, activeRelPath, onOpenFile, pendingPaths, onContextMenu);
 }
 
 /**

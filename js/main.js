@@ -11,7 +11,7 @@ import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
-  workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace,
+  workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace, removeFileFromWorkspace,
 } from './state/workspace.js';
 import { renderSidebar } from './ui/sidebar.js';
 import {
@@ -30,12 +30,13 @@ import {
 } from './core/fileIO.js';
 import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
-  createFileInDirectory,
+  createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory,
 } from './core/workspaceIO.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
 import { openShortcutsPanel } from './ui/shortcutsPanel.js';
+import { showContextMenu } from './ui/contextMenu.js';
 import { openNewFileModal, closeNewFileModal } from './ui/newFileModal.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
 import { openMapView } from './ui/mapView.js';
@@ -217,6 +218,7 @@ function renderInner() {
     onOpenFile: openWorkspaceFile,
     onClose: handleCloseWorkspace,
     pendingPathsFor: pendingWorkspacePaths,
+    onContextMenu: openExplorerContextMenu,
   });
   renderExplorerStandaloneEntries();
   if (!el.workspaceTree.hasChildNodes()) {
@@ -639,6 +641,11 @@ async function handleCloseWorkspace(rootName) {
   render();
 }
 
+function parentDirOf(relPath) {
+  const i = relPath.lastIndexOf('/');
+  return i === -1 ? '' : relPath.slice(0, i);
+}
+
 function stemOf(fileName) {
   return fileName.replace(/\.(md|markdown)$/i, '');
 }
@@ -682,6 +689,143 @@ function handleAddFileClick() {
     .map((w) => ({ label: w.rootName, value: { rootName: w.rootName, dirRelPath: '' } }));
   targets.push({ label: 'a new blank standalone document (not saved to disk yet)', value: '__standalone__' });
   openNewFileModal({ targets, onCreate: handleCreateFile });
+}
+
+/** Opening a file from a right-click "Add section" switches to it first (if it isn't already active) so the modal that follows targets the right document, exactly the way clicking it in the tree would. */
+async function handleAddSectionForFile(rootName, relPath) {
+  const current = getState();
+  if (current.workspaceRootName !== rootName || current.workspaceRelPath !== relPath) {
+    await openWorkspaceFile(rootName, relPath);
+  }
+  openAddSectionModal();
+}
+
+/** The Explorer's own single-slot "clipboard" for Copy/Paste — deliberately in-memory only (not the OS clipboard, which has no sane way to carry a filename alongside its content); gone once the tab closes. */
+let fileClipboard = null;
+
+async function handleCopyFile(rootName, relPath, name) {
+  const entry = getWorkspaceFile(rootName, relPath);
+  if (!entry) return;
+  try {
+    const text = await readWorkspaceFileText(entry);
+    fileClipboard = { name, text };
+    showToast(`Copied "${name}" — right-click a folder (or this file) to Paste.`);
+  } catch (err) {
+    showToast(`Could not copy "${name}": ${err.message}`, { type: 'error' });
+  }
+}
+
+async function handlePasteInto(rootName, dirRelPath) {
+  if (!fileClipboard) return;
+  const dirHandle = getWorkspaceDirHandle(rootName, dirRelPath);
+  if (!dirHandle) { showToast('That folder no longer supports pasting files.', { type: 'error' }); return; }
+  try {
+    const name = await uniqueFileNameIn(dirHandle, fileClipboard.name);
+    const fileHandle = await createFileInDirectory(dirHandle, name, fileClipboard.text);
+    const relPath = dirRelPath ? `${dirRelPath}/${name}` : name;
+    addFileToWorkspace(rootName, {
+      relPath, name, fileHandle, webkitFile: null,
+    });
+    render();
+    showToast(`Pasted as "${name}"`);
+  } catch (err) {
+    showToast(`Could not paste: ${err.message}`, { type: 'error' });
+  }
+}
+
+/** Deletes a file from disk, permanently — the sidebar's own confirmation step (see openExplorerContextMenu) is the only guard against a misclick, so this itself never asks again. Clears the active document if it was the one just deleted, the same as closing the workspace it belonged to. */
+async function handleDeleteFile(rootName, relPath, name) {
+  const dirHandle = getWorkspaceDirHandle(rootName, parentDirOf(relPath));
+  if (!dirHandle) { showToast('That folder no longer supports deleting files.', { type: 'error' }); return; }
+  try {
+    await deleteFileFromDirectory(dirHandle, name);
+  } catch (err) {
+    showToast(`Could not delete "${name}": ${err.message}`, { type: 'error' });
+    return;
+  }
+  removeFileFromWorkspace(rootName, relPath);
+  const current = getState();
+  if (current.workspaceRootName === rootName && current.workspaceRelPath === relPath) {
+    clearRecoverySnapshot({ fileName: current.fileName, workspaceRelPath: relPath, workspaceRootName: rootName });
+    currentBaseline = null;
+    setState({
+      doc: null, fileName: null, fileHandle: null, selectedId: null, dirty: false, workspaceRelPath: null, workspaceRootName: null,
+    });
+  }
+  render();
+  showToast(`Deleted "${name}"`);
+}
+
+/**
+ * The Explorer's right-click menu — Add section/Copy/Delete on a file row,
+ * Add file/Paste on a directory row (including a workspace's own root —
+ * see filesPanel.js). Delete/Copy/Paste/Add file are only meaningful for a
+ * workspace opened via the native folder picker (see
+ * workspaceSupportsWrite): the webkitdirectory fallback some browsers need
+ * hands out plain File objects with no live handle to write through, so
+ * those actions show disabled rather than silently failing. Folder rows
+ * deliberately have no Delete of their own — deleting a whole directory
+ * tree is a much larger blast radius than this menu is meant to risk.
+ */
+function openExplorerContextMenu(event, {
+  rootName, relPath, isDir, name,
+}) {
+  const canWrite = workspaceSupportsWrite(rootName);
+  const noWriteTitle = 'Only available for a folder opened via the native folder picker';
+
+  if (isDir) {
+    showContextMenu(event, [
+      {
+        label: '📄+ Add file here',
+        disabled: !canWrite,
+        title: canWrite ? '' : noWriteTitle,
+        onClick: () => openNewFileModal({
+          targets: [{ label: relPath ? `${rootName}/${relPath}` : rootName, value: { rootName, dirRelPath: relPath } }],
+          onCreate: handleCreateFile,
+        }),
+      },
+      {
+        label: '📋 Paste',
+        disabled: !canWrite || !fileClipboard,
+        title: !canWrite ? noWriteTitle : (!fileClipboard ? 'Copy a file first' : ''),
+        onClick: () => handlePasteInto(rootName, relPath),
+      },
+    ]);
+    return;
+  }
+
+  showContextMenu(event, [
+    { label: '+ Add section', onClick: () => handleAddSectionForFile(rootName, relPath) },
+    'separator',
+    {
+      label: '📋 Copy',
+      disabled: !canWrite,
+      title: canWrite ? '' : noWriteTitle,
+      onClick: () => handleCopyFile(rootName, relPath, name),
+    },
+    {
+      label: '📋 Paste (alongside this file)',
+      disabled: !canWrite || !fileClipboard,
+      title: !canWrite ? noWriteTitle : (!fileClipboard ? 'Copy a file first' : ''),
+      onClick: () => handlePasteInto(rootName, parentDirOf(relPath)),
+    },
+    'separator',
+    {
+      label: '🗑 Delete',
+      danger: true,
+      disabled: !canWrite,
+      title: canWrite ? '' : noWriteTitle,
+      onClick: async () => {
+        const ok = await confirmDialog({
+          title: `Delete "${name}"?`,
+          message: "This deletes the file from disk. This can't be undone.",
+          confirmLabel: 'Delete',
+          danger: true,
+        });
+        if (ok) handleDeleteFile(rootName, relPath, name);
+      },
+    },
+  ]);
 }
 
 /**
