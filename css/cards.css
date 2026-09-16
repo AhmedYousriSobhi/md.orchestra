@@ -33,22 +33,6 @@
 
 .card-body.rendered-markdown { color: var(--text-soft); }
 .card-empty-note { color: var(--text-faint); font-style: italic; font-size: 0.88rem; }
-/* The notes empty-state specifically (unlike the other, purely
-   informational uses of .card-empty-note) is itself the way to add the
-   first note — styled and behaving like an actual writable field's
-   placeholder rather than inert text, so it doesn't read as something you
-   could type into directly but can't. */
-.card-empty-note-writable {
-  display: block; width: 100%; text-align: left;
-  border: 1px dashed color-mix(in srgb, var(--note-badge-text) 45%, var(--border));
-  border-radius: 8px; background: none; padding: 0.6rem 0.7rem;
-  cursor: pointer; font-family: inherit;
-}
-.card-empty-note-writable:hover {
-  color: var(--note-badge-text);
-  border-color: var(--note-badge-text);
-  background: color-mix(in srgb, var(--note-badge-text) 8%, transparent);
-}
 
 .content-edit-textarea {
   width: 100%; min-height: 10rem; resize: vertical;
@@ -165,23 +149,20 @@ pre.code-pre, pre.hljs {
 .preview-sticky-note p:last-child { margin-bottom: 0; }
 .preview-sticky-note a { color: #6b4f00; }
 
-/* The notes "drawer": a clearly separate, tinted zone below a section's
-   actual content — same warm note color used everywhere else a note shows
-   up (the preview's sticky notes, the note-count badge on preview cards) —
-   rather than just a thin divider line, so it reads unmistakably as
-   "annotations about this section" rather than a continuation of the
-   section's own content. */
-.notes-editor {
-  margin-top: 1.25rem;
-  padding: 0.85rem 1rem 1rem;
-  background: var(--note-badge-bg);
-  border: 1px solid color-mix(in srgb, var(--note-badge-text) 30%, var(--border));
-  border-radius: var(--radius-md);
-}
+/* A quiet divider below a section's own content, not a competing tinted
+   panel — a solid colored "drawer" here used to visually outweigh the
+   section's actual content above it, exactly backwards for something
+   that's meant to be a secondary annotation, not the main event. Only
+   ever rendered once there's at least one note (see cardGrid.js), so
+   there's no permanent empty box to compete with anything in the first
+   place; the warm note color still marks the individual note cards
+   themselves (and the preview's sticky notes), just not this wrapper. */
+.notes-editor { margin-top: 1.25rem; padding-top: 0.7rem; border-top: 1px dashed var(--border); }
 .notes-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.7rem; }
 .notes-editor-title {
   display: flex; align-items: center; gap: 0.45rem;
-  font-size: 0.85rem; font-weight: 700; color: var(--note-badge-text);
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text-faint);
 }
 .notes-count-badge {
   display: inline-flex; align-items: center; justify-content: center;

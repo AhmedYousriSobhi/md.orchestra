@@ -39,6 +39,9 @@ export function focusNewestNoteTextarea(previousCount) {
  * A section can hold several independent notes (not just one) — each its
  * own small card with its own textarea, debounced autosave, and delete
  * button. `handlers` is { onUpdate(id, text), onAdd(), onDelete(id) }.
+ * Only ever called with a non-empty `notes` — cardGrid.js renders nothing
+ * at all here when there are none yet (see there for why), so there's no
+ * empty state to account for in this module.
  */
 export function createNotesSection(notes, handlers) {
   const list = h('div', { class: 'notes-list' });
@@ -49,16 +52,12 @@ export function createNotesSection(notes, handlers) {
   return h('div', { class: 'notes-editor' }, [
     h('div', { class: 'notes-editor-head' }, [
       h('span', { class: 'notes-editor-title' }, [
-        '📝 Your notes',
-        notes.length ? h('span', { class: 'notes-count-badge' }, String(notes.length)) : null,
+        '📝 Notes',
+        h('span', { class: 'notes-count-badge' }, String(notes.length)),
       ]),
       addBtn,
     ]),
-    notes.length ? list : h('button', {
-      class: 'card-empty-note card-empty-note-writable',
-      type: 'button',
-      onClick: handlers.onAdd,
-    }, 'No notes yet — click to write one…'),
+    list,
   ]);
 }
 

@@ -122,23 +122,37 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     ]));
   }
 
-  card.appendChild(createNotesSection(notes, {
-    onUpdate: (id, text) => {
-      const parts = currentParts();
-      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === id ? { ...n, text } : n)) }) });
-    },
-    onAdd: () => {
-      const countBefore = document.querySelectorAll('.notes-textarea').length;
-      updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
-      focusNewestNoteTextarea(countBefore);
-    },
-    onDelete: (id) => {
-      const parts = currentParts();
-      updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.filter((n) => n.id !== id) }) });
-    },
-  }));
+  const handleAddNote = () => {
+    const countBefore = document.querySelectorAll('.notes-textarea').length;
+    updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
+    focusNewestNoteTextarea(countBefore);
+  };
+
+  // Notes only get their own (deliberately understated — see cards.css)
+  // section once there's actually one to show; an empty notes drawer
+  // permanently below every section's content competed with that content
+  // for attention despite having nothing in it yet. With none yet, adding
+  // the first one is just another action alongside Edit content/Undo —
+  // the same visual weight as everything else that isn't the document
+  // itself.
+  if (notes.length > 0) {
+    card.appendChild(createNotesSection(notes, {
+      onUpdate: (id, text) => {
+        const parts = currentParts();
+        updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.map((n) => (n.id === id ? { ...n, text } : n)) }) });
+      },
+      onAdd: handleAddNote,
+      onDelete: (id) => {
+        const parts = currentParts();
+        updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, notes: parts.notes.filter((n) => n.id !== id) }) });
+      },
+    }));
+  }
 
   const actions = [editContentBtn, undoBtn];
+  if (!notes.length) {
+    actions.push(h('button', { class: 'code-btn', type: 'button', onClick: handleAddNote }, '📝 Add note'));
+  }
 
   if (looksLikeTocSection(node)) {
     actions.push(h('button', {
