@@ -1476,3 +1476,16 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   the live document directly) already correctly said zero. Opening the
   panel now cancels that pending debounce and reconciles the cache
   synchronously first, so the header and the row list can never disagree.
+
+- **Stage 74** — Documentation pass: `docs/UI_UX_REVIEW.md` grounds a set
+  of already-made UI decisions (removing the header Save button, the
+  sidebar toolbar consolidation, the Workspace map's collapsed-by-default
+  tree) in actual UX research (NN/g's minimalism and aesthetic-usability
+  heuristics, progressive disclosure, keyboard-first/command-palette
+  guidance) rather than taste alone, and flags a command palette as the
+  single highest-leverage next step. `README.md` is rewritten to match
+  the app's *current* UI (the old copy still described the pre-Electron,
+  Save-button-having version) with a real demo GIF captured via
+  Playwright against the running app. `TESTING.md` lays out the concrete
+  use cases MD.Orchestra is designed around and a 43-case functional test
+  matrix spanning every area exercised by hand so far.
