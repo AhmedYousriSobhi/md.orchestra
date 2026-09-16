@@ -1190,3 +1190,14 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   folder closes instead of leaking it for the rest of the session, and
   removed several confirmed-dead exports and CSS classes (verified
   zero references before removing each one).
+
+- **Stage 60** — Follow-up: "No notes yet on this section." read as
+  inert text on an otherwise interactive card, but looked like it
+  should be directly writable. It's now a real button styled as an
+  invitation (dashed border, hover state) — clicking it, "+ Add
+  note", or Alt+N all now also focus the new note's own textarea
+  immediately, so adding a note lands you ready to type rather than
+  looking at an empty field. Needed a short rAF poll rather than
+  acting right after the state update, since the section view's own
+  re-render is animated and the new textarea doesn't exist in the DOM
+  until that finishes.
