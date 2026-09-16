@@ -1452,3 +1452,16 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   itself is untouched and still backs the sidebar Explorer, which suits
   a narrow one-hop view — the two remain a deliberate, different
   tradeoff for two different spaces, not one replacing the other.
+
+- **Stage 72** (same branch) — **Bug**: a section's textarea auto-grows to
+  fit its own content (Stage 69), but only ever recomputed that on the
+  textarea's own `input` event — toggling the ☰ sidebar changes how much
+  width it has to wrap text into without touching the textarea at all,
+  so the old height stuck around: too tall once the panel widened and
+  the same text needed fewer lines, or clipping text once it narrowed
+  back. A single `ResizeObserver` on `#section-view-wrap` (the one stable
+  panel every section/full-doc textarea actually renders inside, so it
+  covers every mounted one without needing per-card teardown as cards
+  are rebuilt) now re-fits every visible textarea whenever that panel's
+  own width changes — the same fix also covers the preview-panel
+  drag-resize and plain window resizing, not just the sidebar toggle.
