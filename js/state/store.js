@@ -86,6 +86,22 @@ export function getSelectedPath() {
   return getPath(state.doc, state.selectedId);
 }
 
+/**
+ * Replace the whole document tree wholesale — used when the user edits
+ * the raw Markdown source directly (see ui/fullDocView.js) rather than
+ * through one specific section's own updateNode(). `newDoc` comes from a
+ * fresh parseMarkdown() call, so every node in it has a brand-new id
+ * (parseMarkdown has no way to know which old node a given line "used to
+ * be"); the current selection resets to the new document's own root
+ * rather than pointing at an id that no longer exists anywhere. Per-node
+ * undo history for the old ids is simply left orphaned in undoStacks — a
+ * raw-source edit is undone via the textarea's own native undo instead.
+ */
+export function replaceWholeDocument(newDoc) {
+  if (!state.doc) return;
+  setState({ doc: newDoc, selectedId: newDoc.id, dirty: true });
+}
+
 /** Replace one node's bodyMarkdown (and optionally title) in place, then mark the doc dirty. Snapshots the node's prior state first, for undoNode(). */
 export function updateNode(id, patch) {
   if (!state.doc) return;

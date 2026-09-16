@@ -1,56 +1,74 @@
 import { h } from '../utils/dom.js';
-import { buildSlugMaps } from '../markdown/slug.js';
-import { createEditableMarkdownBody } from './editableMarkdownBody.js';
+import { serializeMarkdown } from '../markdown/serializer.js';
+import { parseMarkdown } from '../markdown/parser.js';
+import { replaceWholeDocument } from '../state/store.js';
+import { debounce } from '../utils/debounce.js';
+import { attachMarkdownEditingHelpers } from './markdownEditing.js';
+import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 
 /**
- * One node's own heading, plus its "main" content as a plain, always-
- * editable Markdown textarea (see editableMarkdownBody.js — the same
- * component cardGrid.js's focused card uses) rather than a rendered,
- * read-only view: full document view is the document's raw source, one
- * continuous page, not a formatted read of it — that's the preview
- * panel's job (previewPanel.js, unchanged).
+ * Render the entire document as its own literal Markdown source — one
+ * plain textarea holding exactly what serializeMarkdown(doc) would write
+ * to disk (heading marker characters, note/AI-insert HTML comments,
+ * everything), not a formatted or fragmented view of it. This is the
+ * "pure .md file" alternative to cardGrid.js's per-section cards (see
+ * docViewMode.js for when it's chosen); the preview panel is still where
+ * a *rendered* read lives.
+ *
+ * A new heading typed directly into the text becomes a real new section
+ * the moment it's saved — there's no separate "Add section" step needed
+ * in this view, since editing the source *is* the document's structure.
+ * Saving here means reparsing the whole text and replacing the in-memory
+ * tree wholesale (state/store.js's replaceWholeDocument), unlike every
+ * other editable field in the app (a section's body, a note, a title),
+ * which patches one specific node in place — there's no way to know which
+ * old node a given line in the freshly-typed text "used to be".
  */
-function buildSectionBlock(node, idToSlug) {
-  const frag = document.createDocumentFragment();
-
-  if (node.level > 0) {
-    const slug = idToSlug.get(node.id);
-    const headingEl = h(`h${node.level}`, {}, node.title);
-    headingEl.dataset.sectionId = node.id;
-    if (slug) headingEl.id = slug;
-    frag.appendChild(headingEl);
-  }
-
-  frag.appendChild(createEditableMarkdownBody(node));
-
-  node.children.forEach((child) => frag.appendChild(buildSectionBlock(child, idToSlug)));
-  return frag;
-}
-
-/**
- * Render the entire document as one continuous page of raw Markdown
- * instead of fragmenting it into per-section cards (see docViewMode.js
- * for when this is chosen over cardGrid.js's renderSectionView).
- * `focusNodeId` — the currently-selected node from state/store.js,
- * unrelated to this mode but shared with section view so switching modes
- * or clicking the Explorer/Outline keeps your place — scrolls to that
- * heading once rendered, if it's not the document root.
- */
-export function renderFullDocView(container, doc, fileName, { focusNodeId } = {}) {
+export function renderFullDocView(container, doc, fileName) {
   container.innerHTML = '';
   const card = h('article', { class: 'card card-full-doc' });
   card.appendChild(h('div', { class: 'card-head' }, [
     h('h2', { class: 'card-title' }, fileName || 'Document'),
   ]));
 
-  const { idToSlug } = buildSlugMaps(doc);
-  const bodyEl = h('div', { class: 'full-doc-body' });
-  bodyEl.appendChild(buildSectionBlock(doc, idToSlug));
-  card.appendChild(bodyEl);
-  container.appendChild(card);
+  const textarea = h('textarea', {
+    class: 'content-edit-textarea full-doc-source-textarea',
+    spellcheck: 'false',
+  });
+  textarea.value = serializeMarkdown(doc);
+  attachMarkdownEditingHelpers(textarea);
+  wireImageAttach(textarea);
 
-  if (focusNodeId) {
-    const target = bodyEl.querySelector(`[data-section-id="${focusNodeId}"]`);
-    if (target) target.scrollIntoView({ block: 'start' });
-  }
+  const status = h('span', { class: 'editable-md-status' }, '');
+
+  const save = (value) => {
+    const parsed = parseMarkdown(value);
+    replaceWholeDocument(parsed);
+  };
+  const debouncedSave = debounce((value) => {
+    save(value);
+    status.textContent = 'Saved';
+    setTimeout(() => { status.textContent = ''; }, 1200);
+  }, 700);
+
+  textarea.addEventListener('input', () => {
+    status.textContent = 'Saving…';
+    debouncedSave(textarea.value);
+  });
+  // Same reasoning as editableMarkdownBody.js's own blur handler: deferred
+  // so a blur *caused* by clicking elsewhere (a different file, an
+  // Explorer row) finishes being handled against the DOM as it existed
+  // when the click landed, before a resulting re-render can replace it.
+  textarea.addEventListener('blur', () => {
+    debouncedSave.cancel();
+    setTimeout(() => save(textarea.value), 0);
+  });
+
+  card.appendChild(h('div', { class: 'editable-md-toolbar' }, [
+    createAttachImageButton(textarea),
+    status,
+    h('span', { class: 'editing-hint' }, 'This is the file’s raw Markdown source, in full — type a new "## Heading" directly to add a section.'),
+  ]));
+  card.appendChild(textarea);
+  container.appendChild(card);
 }

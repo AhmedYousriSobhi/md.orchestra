@@ -104,16 +104,12 @@
 /* ---- full-document view (ui/fullDocView.js) ---- */
 /* No single top-level section to take an accent color from, so the card's
    usual colored left border is dropped in favor of a neutral one. */
-.card-full-doc { border-left-color: var(--border); }
-.full-doc-body { max-width: 760px; margin: 0 auto; }
-.full-doc-body :is(h1,h2,h3,h4,h5,h6) {
-  color: var(--text); font-weight: 700; margin: 1.7rem 0 0.5rem; scroll-margin-top: 1rem;
-}
-.full-doc-body :is(h1,h2,h3,h4,h5,h6):first-child { margin-top: 0; }
-.full-doc-body h1 { font-size: 1.55rem; }
-.full-doc-body h2 { font-size: 1.3rem; }
-.full-doc-body h3 { font-size: 1.1rem; }
-.full-doc-body h4, .full-doc-body h5, .full-doc-body h6 { font-size: 1rem; }
+.card-full-doc { border-left-color: var(--border); display: flex; flex-direction: column; }
+/* The file's own raw Markdown source, in full — a plain-text editor, not
+   a formatted reading view (that's the preview panel's job), so it's
+   sized to fill the canvas rather than wrap at a comfortable reading
+   width the way rendered prose does. */
+.full-doc-source-textarea { flex: 1; min-height: 70vh; resize: vertical; }
 
 .mermaid-wrap {
   margin: 0.75rem 0; padding: 0.75rem; background: #fff; border: 1px solid var(--border);

@@ -312,9 +312,7 @@ function renderInner() {
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
   if (viewMode === 'full') {
-    animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName, {
-      focusNodeId: node.level > 0 ? node.id : null,
-    }), direction);
+    animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName), direction);
   } else {
     animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
   }
