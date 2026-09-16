@@ -63,7 +63,17 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
   // Raw Markdown, always editable — no separate "enter edit mode" step.
   // The formatted, read-friendly version of this content lives in the
   // preview panel now (previewPanel.js), which stays untouched.
-  card.appendChild(createEditableMarkdownBody(node));
+  const editableBody = createEditableMarkdownBody(node);
+  card.appendChild(editableBody);
+
+  // A pending debounced save from this section's own textarea (see
+  // editableMarkdownBody.js) races an *external* mutation of the same
+  // node otherwise: Undo/Regenerate change node.bodyMarkdown directly,
+  // but that stale save is still armed and fires moments later, silently
+  // overwriting the result with whatever was typed right before the
+  // click. Cancelling it first makes the click's own result the last
+  // word, whichever of the two happens.
+  const cancelPendingBodySave = () => editableBody.cancelPendingSave?.();
 
   // Steps back through this section's own edit history (see store.js's
   // updateNode/undoNode) — content edits, notes, title renames, an inserted
@@ -76,6 +86,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     disabled: !canUndoNode(node.id),
     title: 'Undo the last change to this section',
     onClick: () => {
+      cancelPendingBodySave();
       if (undoNode(node.id)) showToast('Undid the last change to this section');
     },
   }, '↩ Undo');
@@ -137,6 +148,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
       class: 'code-btn',
       type: 'button',
       onClick: () => {
+        cancelPendingBodySave();
         const regenerated = generateTocMarkdown(getState().doc, { excludeId: node.id });
         updateNode(node.id, { bodyMarkdown: joinBody({ ...currentParts(), main: regenerated }) });
         showToast('Table of contents regenerated from the current headings');

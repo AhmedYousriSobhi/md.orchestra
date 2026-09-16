@@ -102,17 +102,34 @@ export function replaceWholeDocument(newDoc) {
   setState({ doc: newDoc, selectedId: newDoc.id, dirty: true });
 }
 
-/** Replace one node's bodyMarkdown (and optionally title) in place, then mark the doc dirty. Snapshots the node's prior state first, for undoNode(). */
+/**
+ * Replace one node's bodyMarkdown (and optionally title) in place, then
+ * mark the doc dirty. Snapshots the node's prior state first, for
+ * undoNode() — but only when `patch` actually changes something: a
+ * section's own editable body/notes debounce their autosave, and *also*
+ * flush unconditionally on blur in case that debounce hadn't fired yet
+ * (see editableMarkdownBody.js) — meaning a call here with a patch
+ * identical to the node's current state is routine, not a bug, and must
+ * stay a no-op for undo's sake: pushing a real entry for it would mean
+ * "Undo" has to pop that phantom, unchanged entry first before it can
+ * reach the edit the user actually wants to undo. setState() still runs
+ * either way, since a render may be overdue regardless (that same "don't
+ * rebuild mid-edit" focus guard elsewhere may have suppressed one while
+ * this node's own field still had focus).
+ */
 export function updateNode(id, patch) {
   if (!state.doc) return;
   const node = findNode(state.doc, id);
   if (!node) return;
-  const stack = undoStacks.get(id) || [];
-  stack.push({ bodyMarkdown: node.bodyMarkdown, title: node.title });
-  if (stack.length > MAX_UNDO_DEPTH) stack.shift();
-  undoStacks.set(id, stack);
-  Object.assign(node, patch);
-  setState({ doc: state.doc, dirty: true });
+  const changed = Object.keys(patch).some((key) => patch[key] !== node[key]);
+  if (changed) {
+    const stack = undoStacks.get(id) || [];
+    stack.push({ bodyMarkdown: node.bodyMarkdown, title: node.title });
+    if (stack.length > MAX_UNDO_DEPTH) stack.shift();
+    undoStacks.set(id, stack);
+    Object.assign(node, patch);
+  }
+  setState({ doc: state.doc, dirty: state.dirty || changed });
 }
 
 export function canUndoNode(id) {

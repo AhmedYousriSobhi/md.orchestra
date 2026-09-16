@@ -26,7 +26,18 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
 
   const status = h('span', { class: 'editable-md-status' }, '');
 
+  // Set once an *external* mutation of this same node (cardGrid.js's
+  // Regenerate-from-headings / Undo buttons) needs to win over whatever's
+  // still pending here — cancelling the debounce alone isn't enough,
+  // since the blur handler below (which typically fires first, as
+  // clicking any button blurs this field before that button's own click
+  // handler runs) schedules its *own* independent flush via a bare
+  // setTimeout, which debouncedSave.cancel() has no power over. A fresh
+  // keystroke re-arms it, in the unlikely case this element somehow
+  // survives to be typed into again rather than getting rebuilt fresh.
+  let cancelled = false;
   const save = (value) => {
+    if (cancelled) return;
     const parts = splitBody(node.bodyMarkdown);
     updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, main: value }) });
   };
@@ -37,6 +48,7 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
   }, 900);
 
   textarea.addEventListener('input', () => {
+    cancelled = false;
     status.textContent = 'Saving…';
     debouncedSave(textarea.value);
   });
@@ -44,13 +56,19 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
   // blur handler: blurring this textarea is very often *caused* by
   // clicking something else entirely (a different heading, a workspace
   // file), and save() ultimately re-renders that same area — doing it
-  // immediately would replace the very element mid-click.
+  // immediately would replace the very element mid-click. Redundant with
+  // the debounce if it already fired (store.js's updateNode() no-ops a
+  // patch that doesn't actually change anything rather than pushing a
+  // phantom undo entry) — but still needed to *trigger* a render at all
+  // once focus moves on, since one was very possibly suppressed while
+  // this field had focus (see main.js's own "don't rebuild mid-edit"
+  // guard).
   textarea.addEventListener('blur', () => {
     debouncedSave.cancel();
     setTimeout(() => save(textarea.value), 0);
   });
 
-  return h('div', { class: 'editable-md-body' }, [
+  const wrap = h('div', { class: 'editable-md-body' }, [
     textarea,
     h('div', { class: 'editable-md-toolbar' }, [
       createAttachImageButton(textarea),
@@ -58,4 +76,9 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
       h('span', { class: 'editing-hint' }, EDITING_HINT),
     ]),
   ]);
+  wrap.cancelPendingSave = () => {
+    debouncedSave.cancel();
+    cancelled = true;
+  };
+  return wrap;
 }
