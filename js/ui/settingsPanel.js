@@ -3,6 +3,7 @@ import { openOverlay, closeOverlay } from './transitions.js';
 import { getAiSettings, saveAiSettings, clearAiSettings, CLAUDE_MODELS } from '../ai/settings.js';
 import { getTheme, setTheme } from '../utils/theme.js';
 import { showToast } from './toast.js';
+import { openShortcutsPanel } from './shortcutsPanel.js';
 
 let panelEl = null;
 
@@ -66,6 +67,13 @@ function build() {
     h('div', { class: 'side-panel-body' }, [
       h('label', { class: 'settings-label' }, 'Appearance'),
       buildThemeToggle(),
+      h('hr', { class: 'settings-divider' }),
+      h('label', { class: 'settings-label' }, 'Help'),
+      h('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        onClick: () => { closeOverlay(overlay); openShortcutsPanel(); },
+      }, '⌨ Keyboard shortcuts'),
       h('hr', { class: 'settings-divider' }),
       h('p', { class: 'settings-help' }, 'Provider support today is limited to Claude (Anthropic). Your key is stored only in this browser’s localStorage and is sent directly to api.anthropic.com — never anywhere else.'),
       h('label', { class: 'settings-label', for: 'ai-model-select' }, 'Model'),
