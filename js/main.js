@@ -504,14 +504,24 @@ function clearRecoverySnapshot(identity) {
   updateChangesBadge();
 }
 
-// The standard "leave site?" browser confirmation — works the same whether
-// this is a normal tab or a window opened from an installed PWA shortcut.
-window.addEventListener('beforeunload', (e) => {
-  if (getState().dirty) {
-    e.preventDefault();
-    e.returnValue = '';
-  }
-});
+// The standard "leave site?" browser confirmation. Electron only, not a
+// browser tab: exposed for electron/main.js's own window-close handler to
+// call (a plain executeJavaScript() reaches this regardless of
+// contextIsolation, the same way devtools would) — a BrowserWindow's own
+// close button has no equivalent native "leave site?" prompt the way a
+// browser tab does, so confirming before quitting with unsaved changes
+// has to be driven from the main process instead, deciding whether to
+// actually let the window close.
+window.__mdOrchestraIsDirty = () => getState().dirty;
+
+if (!isElectron) {
+  window.addEventListener('beforeunload', (e) => {
+    if (getState().dirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+}
 
 /** A live handle for `snapshot`'s own file, when one's resolvable — a workspace file's is always available again via getWorkspaceFile(); a standalone file's only if it was opened this session through the real file picker (see standaloneHandles). Used so restoring a pending edit (loadSnapshotAsActive) can still Save directly instead of falling back to a download. */
 function resolveHandleFor(snapshot) {

@@ -42,6 +42,51 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'index.html'));
+
+  // js/main.js's own beforeunload guard shows a browser tab's native "leave
+  // site?" prompt when the active document has unsaved changes — a
+  // mechanism that doesn't carry over to a BrowserWindow's own close
+  // button: Chromium still runs beforeunload and still blocks the unload,
+  // but nothing here was telling *Electron* to then show a real dialog and
+  // actually decide whether to proceed, so clicking the window's own ✕
+  // just silently did nothing every time the guard fired. This intercepts
+  // the window's close directly instead: ask the page (a plain
+  // executeJavaScript call reaches into it regardless of contextIsolation,
+  // same as devtools would) whether it's dirty, and only *then* show a
+  // real native confirm — closing for real if the user confirms (or if
+  // there was nothing unsaved to begin with), leaving the window open on
+  // Cancel.
+  let confirmedClose = false;
+  win.on('close', (e) => {
+    if (confirmedClose) return;
+    e.preventDefault();
+    win.webContents.executeJavaScript('window.__mdOrchestraIsDirty ? window.__mdOrchestraIsDirty() : false')
+      .then((isDirty) => {
+        if (!isDirty) {
+          confirmedClose = true;
+          win.close();
+          return;
+        }
+        const choice = dialog.showMessageBoxSync(win, {
+          type: 'question',
+          buttons: ['Quit', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          message: 'This file has unsaved changes.',
+          detail: 'Quitting now will lose them. Quit anyway?',
+        });
+        if (choice === 0) {
+          confirmedClose = true;
+          win.close();
+        }
+      })
+      .catch(() => {
+        // The page failed to answer (e.g. it's already gone) — err toward
+        // actually closing rather than leaving the window stuck forever.
+        confirmedClose = true;
+        win.close();
+      });
+  });
 }
 
 app.whenReady().then(() => {
