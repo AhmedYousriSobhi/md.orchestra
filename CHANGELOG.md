@@ -1418,3 +1418,18 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   schedules (clicking a button blurs the focused field first).
   Regenerate/Undo now explicitly cancel the section's own pending save
   before applying their own change.
+
+- **Stage 70** (same branch) — Real-world desktop testing surfaced a bug
+  the browser/dev-server testing this whole branch leaned on couldn't
+  have caught: clicking the packaged app's own window ✕ with unsaved
+  changes did nothing at all. `js/main.js`'s `beforeunload` guard (a
+  browser tab's native "leave site?" prompt) doesn't carry over to a
+  `BrowserWindow`'s own close button — Chromium still blocked the
+  unload, but nothing told Electron to then show a real dialog and
+  decide whether to proceed. `electron/main.js` now intercepts the
+  window's own `'close'` event directly, asks the page whether it's
+  dirty, and only shows a native "Quit"/"Cancel" confirm when there's
+  actually something to lose — closing for real on confirmation (or
+  immediately, with no dialog, when nothing's unsaved). Verified against
+  the real close event, not just app state, via Playwright's Electron
+  driver.
