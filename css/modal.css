@@ -187,6 +187,11 @@
 .map-node:hover .map-dot, .map-node:focus-visible .map-dot { r: 6; }
 .map-node:focus-visible { outline: none; }
 .map-node-current .map-label { fill: var(--accent, var(--accent-default)); font-weight: 700; }
+/* A folder row in Workspace mode — structure, not something to open — so
+   it reads as inert rather than inviting a click that does nothing. */
+.map-node-inert { cursor: default; }
+.map-node-inert .map-label { fill: var(--text-faint); font-weight: 600; }
+.map-node-inert:hover .map-label, .map-node-inert:focus-visible .map-label { fill: var(--text-faint); font-weight: 600; }
 
 .map-mode-toggle { display: flex; gap: 0.3rem; background: var(--bg-soft); border-radius: 999px; padding: 0.2rem; }
 .map-mode-btn {
