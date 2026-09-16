@@ -1280,3 +1280,20 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   explaining why instead of silently failing. Folders deliberately have
   no Delete of their own — a whole directory tree is a much larger
   blast radius than this menu is meant to risk.
+
+- **Stage 65** (same branch) — Full document view still fell short of
+  "the pure .md file, like the source": each heading was a real element
+  with its own editable body under it, closer than the old per-section
+  cards but still not the file itself. It's now one plain textarea
+  holding exactly `serializeMarkdown(doc)` — heading marker characters,
+  note/AI-insert comments, everything, precisely what the read-only
+  Source panel already showed, now editable and the actual document.
+  Typing a new "## Heading" directly and letting it save creates a real
+  new section on its own, since editing the source *is* editing the
+  structure — no separate Add-section step needed in this view. Saving
+  here reparses the whole text and replaces the tree wholesale
+  (`store.js`'s new `replaceWholeDocument`) rather than patching one
+  section in place, since a freshly re-typed line has no way to know
+  which old node it "used to be" — the selection resets to the document
+  root and old per-section undo history is left orphaned (the
+  textarea's own native undo covers a raw-source edit instead).
