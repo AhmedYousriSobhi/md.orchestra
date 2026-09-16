@@ -3,6 +3,7 @@ import { paletteFor } from '../utils/colors.js';
 import { openOverlay, closeOverlay } from './transitions.js';
 import { getState, selectSection } from '../state/store.js';
 import { renderMindMap } from './mindMap.js';
+import { renderFocalGraph } from './focalGraph.js';
 
 let overlayEl = null;
 let mapMode = 'tree';
@@ -41,18 +42,8 @@ function layoutTree(doc) {
   return { nodes, edges, rows: row, maxX };
 }
 
-/**
- * The indented-tree layout, shared by document Tree mode and Workspace
- * mode (see buildWorkspaceMapDoc) — parent/child position and a
- * connecting line say everything both need: a document's own heading
- * nesting, or a folder's actual nesting on disk. `nodeMeta(node)` is
- * optional (only Workspace mode passes it): `{ isDir, clickable }`, used
- * to prefix a 📁/📄 icon and mute a non-interactive folder row rather
- * than let it look identically clickable to a file — document Tree mode
- * has no such distinction (every heading is equally "clickable"), so it's
- * simply omitted there.
- */
-function buildSvg(doc, selectedId, onPick, nodeMeta) {
+/** The indented-tree layout for a document's own heading structure (Tree mode) — parent/child position and a connecting line say everything it needs. Workspace mode uses focalGraph.js instead (see openMapView), the same click-to-expand graph the Explorer sidebar already browses this exact workspace with. */
+function buildSvg(doc, selectedId, onPick) {
   const { nodes, edges, rows, maxX } = layoutTree(doc);
   const width = maxX + LABEL_MAX * 6.4 + 24;
   const height = Math.max(rows * ROW_H, ROW_H) + 16;
@@ -73,62 +64,27 @@ function buildSvg(doc, selectedId, onPick, nodeMeta) {
 
   const nodeLayer = svg('g', { class: 'map-nodes' });
   nodes.forEach(({ node, x, y, topIndex }) => {
-    const meta = nodeMeta ? nodeMeta(node) : null;
-    // A plain, uniform color for file-system hierarchy (folders/files
-    // don't have a "topic" the way a document's own top-level sections
-    // do) — the rainbow-per-top-level-section palette stays for an actual
-    // document's heading tree, where it's genuinely meaningful.
-    const accent = meta ? 'var(--text-faint)' : paletteFor(topIndex).accent;
+    const accent = paletteFor(topIndex).accent;
     const isCurrent = node.id === selectedId;
-    const clickable = !meta || meta.clickable;
     const cy = y + ROW_H / 2;
-    const label = meta ? `${meta.isDir ? '📁' : '📄'} ${truncate(node.title)}` : truncate(node.title);
 
     const group = svg('g', {
-      class: `map-node${isCurrent ? ' map-node-current' : ''}${clickable ? '' : ' map-node-inert'}`,
+      class: `map-node${isCurrent ? ' map-node-current' : ''}`,
       style: `--accent:${accent}`,
-      tabindex: clickable ? '0' : '-1',
-      role: clickable ? 'button' : undefined,
+      tabindex: '0',
+      role: 'button',
       'aria-label': node.title,
-      onClick: clickable ? () => onPick(node.id) : undefined,
-      onKeydown: clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(node.id); } } : undefined,
+      onClick: () => onPick(node.id),
+      onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(node.id); } },
     });
-    if (!meta) group.appendChild(svg('circle', { cx: x, cy, r: isCurrent ? MARKER_R + 2 : MARKER_R, class: 'map-dot' }));
-    group.appendChild(svg('text', { x: meta ? x : x + MARKER_R + 8, y: cy, class: 'map-label', 'dominant-baseline': 'middle' }, label));
+    group.appendChild(svg('circle', { cx: x, cy, r: isCurrent ? MARKER_R + 2 : MARKER_R, class: 'map-dot' }));
+    group.appendChild(svg('text', { x: x + MARKER_R + 8, y: cy, class: 'map-label', 'dominant-baseline': 'middle' }, truncate(node.title)));
     group.appendChild(svg('title', {}, node.title || ''));
     nodeLayer.appendChild(group);
   });
   root.appendChild(nodeLayer);
 
   return root;
-}
-
-/**
- * Convert a workspace's plain folder/file tree (state/workspace.js's
- * `{name, path, type, children}` shape) into the {id, title, level,
- * children} shape buildSvg's tree layout expects (the same shape a parsed
- * document's heading tree already has) — its own synthetic "document",
- * one node per file or folder instead of one per heading. `idInfo` maps
- * each synthetic id back to {type, relPath} so a click can tell a file
- * node (open it) from a folder node (nothing to open, just structure).
- */
-function buildWorkspaceMapDoc(workspace) {
-  const idInfo = new Map();
-  let counter = 0;
-  function convert(node, depth) {
-    const id = `wsmap-${counter}`;
-    counter += 1;
-    idInfo.set(id, { type: node.type, relPath: node.path });
-    return {
-      id,
-      title: node.type === 'dir' ? (node.name || workspace.rootName) : node.name,
-      level: depth,
-      children: node.type === 'dir' ? node.children.map((child) => convert(child, depth + 1)) : [],
-    };
-  }
-  const root = convert(workspace.tree, 1);
-  root.title = workspace.rootName;
-  return { doc: { children: [root] }, idInfo };
 }
 
 export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
@@ -197,27 +153,23 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
       // needs real layout dimensions, which only exist once it's in the DOM
       requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, doc, selectedId, onPick); });
     } else {
-      subtitleEl.textContent = `${workspace.rootName} — folder structure only, not file content; click a file to open it`;
-      const { doc: wsDoc, idInfo } = buildWorkspaceMapDoc(workspace);
-      const onPickWorkspaceNode = (id) => {
-        const info = idInfo.get(id);
-        if (info && info.type === 'file' && onOpenWorkspaceFile) {
-          handleClose();
-          onOpenWorkspaceFile(workspace.rootName, info.relPath);
-        }
-      };
-      // The same plain indented-tree layout Tree mode uses for a document's
-      // headings — a physics-based mind map free-floats every node with no
-      // regard for how deep it's nested, which reads fine for a few dozen
-      // headings but turns an actual directory (parent folders, nested
-      // subfolders, files) into an unreadable hairball; fixed rows plus a
-      // connecting line say "this is inside that" the way file-system
-      // hierarchy actually needs, however many files there are — you just
-      // scroll further, rather than everything degrading into noise.
-      scroll.appendChild(buildSvg(wsDoc, null, onPickWorkspaceNode, (node) => {
-        const info = idInfo.get(node.id);
-        return { isDir: info?.type === 'dir', clickable: info?.type === 'file' };
-      }));
+      subtitleEl.textContent = `${workspace.rootName} — click a folder to expand it, a file to open it`;
+      // The same one-hop-at-a-time, click-to-expand graph the Explorer
+      // sidebar already uses to browse this exact workspace (focalGraph.js)
+      // — a physics-based mind map free-floats every node with no regard
+      // for how deep it's nested, which reads fine for a few dozen headings
+      // but turns an actual directory (parent folders, nested subfolders,
+      // files, however many there are) into an unreadable hairball; a real
+      // expand/collapse graph never shows more at once than what's
+      // actually been drilled into, the way file-system navigation
+      // actually works, rather than dumping the whole tree in one flat
+      // list.
+      const graphWrap = h('div', { class: 'focal-graph-wrap map-workspace-graph' });
+      scroll.appendChild(graphWrap);
+      renderFocalGraph(graphWrap, workspace, null, (relPath) => {
+        handleClose();
+        onOpenWorkspaceFile(workspace.rootName, relPath);
+      });
     }
   }
   treeBtn.addEventListener('click', () => { mapMode = 'tree'; renderMode(); });
