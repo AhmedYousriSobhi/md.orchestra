@@ -1323,3 +1323,23 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   True lazy per-directory listing on expand (rather than one recursive
   scan at open time) is a deliberately flagged follow-up, not included
   here.
+
+- **Stage 67** (same branch) — The desktop app from Stage 66 still needed
+  a local Node/Electron toolchain to actually produce a runnable build.
+  `Dockerfile.electron` + `build-desktop.sh` package it into a single-file
+  Linux AppImage using only Docker: a multi-stage build runs
+  electron-builder in a plain `node:20` image, then a final `scratch`
+  stage holds just the output, exported on its own via `docker build
+  --target artifacts --output dist .` — no Node/Electron toolchain, and
+  no display, needed on the machine doing the building (packaging only
+  moves/zips files; it never launches Electron itself). The produced
+  AppImage is then a normal double-click-to-run binary — Docker plays no
+  part at launch, the same way the existing web Dockerfile's nginx
+  container has no bearing on how a browser later renders the page.
+  Verified by building the actual AppImage through this exact pipeline
+  and launching *that binary* (not the `npm start` dev path) via
+  Playwright's Electron driver — real window, `window.electronFS`
+  present, zero console errors. Also adds `icons/icon.png`, rendered from
+  the existing `icons/icon.svg` via headless Chromium (electron-builder's
+  Linux target needs a raster icon), so there isn't a second icon asset
+  to keep in sync by hand.
