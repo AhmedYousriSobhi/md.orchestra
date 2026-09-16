@@ -19,8 +19,38 @@ function fireInput(textarea) {
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/**
+ * Apply `value` to `textarea` the way a real keystroke would, rather than
+ * `textarea.value = value` — a direct assignment silently wipes the
+ * browser's own undo/redo history for that field (Chrome and Firefox both
+ * reset it whenever `.value` is set programmatically), so every one of
+ * these typing habits — continuing a list, Tab-indenting, Ctrl+B/I/` —
+ * would otherwise leave Ctrl+Z unable to undo anything past that point.
+ * `execCommand('insertText', …)` is deprecated but, unlike its
+ * non-deprecated replacements (`setRangeText` included — its own
+ * interaction with the undo stack isn't part of the spec, just an
+ * implementation detail some browsers happen to get right), it's still
+ * the one universally-supported way to edit a field's content that's
+ * guaranteed to register as a real edit for undo purposes, which is the
+ * entire reason it's still in use here despite the deprecation. Falls
+ * back to a direct assignment (breaking undo, but still landing the edit
+ * correctly) only if execCommand is ever actually unavailable.
+ */
 function setValue(textarea, value, selStart, selEnd = selStart) {
-  textarea.value = value;
+  const old = textarea.value;
+  let prefixLen = 0;
+  const maxPrefix = Math.min(old.length, value.length);
+  while (prefixLen < maxPrefix && old[prefixLen] === value[prefixLen]) prefixLen += 1;
+  let suffixLen = 0;
+  const maxSuffix = Math.min(old.length - prefixLen, value.length - prefixLen);
+  while (suffixLen < maxSuffix && old[old.length - 1 - suffixLen] === value[value.length - 1 - suffixLen]) suffixLen += 1;
+  const replacement = value.slice(prefixLen, value.length - suffixLen);
+
+  textarea.focus();
+  textarea.setSelectionRange(prefixLen, old.length - suffixLen);
+  const applied = typeof document.execCommand === 'function' && document.execCommand('insertText', false, replacement);
+  if (!applied) textarea.value = value;
+
   textarea.selectionStart = selStart;
   textarea.selectionEnd = selEnd;
   fireInput(textarea);
