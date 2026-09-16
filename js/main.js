@@ -55,6 +55,7 @@ const el = {
   explorerSection: document.getElementById('explorer-section'),
   explorerToggle: document.getElementById('explorer-toggle'),
   workspaceTree: document.getElementById('workspace-tree'),
+  sidebarResizeHandle: document.getElementById('sidebar-resize-handle'),
   outlineSection: document.getElementById('outline-section'),
   outlineToggle: document.getElementById('outline-toggle'),
   headingTree: document.getElementById('heading-tree'),
@@ -193,8 +194,12 @@ function renderInner() {
   // itself based on which file happens to be active.
   const workspaces = getWorkspaces();
   el.sidebar.classList.toggle('sidebar-graph-mode', workspaces.length > 0);
-  el.explorerSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('explorer'));
-  el.outlineSection.classList.toggle('sidebar-section-collapsed', isSidebarSectionCollapsed('outline'));
+  const explorerCollapsed = isSidebarSectionCollapsed('explorer');
+  const outlineCollapsed = isSidebarSectionCollapsed('outline');
+  el.explorerSection.classList.toggle('sidebar-section-collapsed', explorerCollapsed);
+  el.outlineSection.classList.toggle('sidebar-section-collapsed', outlineCollapsed);
+  // Nothing to split while either side is folded down to just its header.
+  el.sidebarResizeHandle.hidden = explorerCollapsed || outlineCollapsed;
   renderWorkspacesPanel(el.workspaceTree, workspaces, workspaceRootName, workspaceRelPath, {
     onOpenFile: openWorkspaceFile,
     onClose: handleCloseWorkspace,
@@ -1318,6 +1323,64 @@ function endPreviewResize(e) {
 }
 el.previewResizeHandle.addEventListener('pointerup', endPreviewResize);
 el.previewResizeHandle.addEventListener('pointercancel', endPreviewResize);
+
+/**
+ * Drag-to-resize for the split between Explorer and Outline, via the
+ * dedicated handle between them (same real-flex-sibling approach as the
+ * preview's own resize handle above). Explorer's share is a percentage of
+ * the sidebar's own content height, stored as a CSS variable and
+ * persisted — a percentage rather than a pixel width because the
+ * sidebar's total height varies with the viewport, unlike the preview
+ * panel's horizontal width.
+ */
+const SIDEBAR_SPLIT_KEY = 'mdDashboard.sidebarSplit';
+const SIDEBAR_SPLIT_MIN_PCT = 0.15;
+const SIDEBAR_SPLIT_MAX_PCT = 0.85;
+
+function applySidebarSplit(pct) {
+  document.documentElement.style.setProperty('--explorer-height', `${(pct * 100).toFixed(2)}%`);
+}
+
+(function restoreSidebarSplit() {
+  const stored = Number(localStorage.getItem(SIDEBAR_SPLIT_KEY));
+  if (Number.isFinite(stored) && stored > 0 && stored < 1) applySidebarSplit(stored);
+}());
+
+let sidebarResizeStartY = null;
+let sidebarResizeStartExplorerHeight = null;
+let sidebarResizeTotalHeight = null;
+
+el.sidebarResizeHandle.addEventListener('pointerdown', (e) => {
+  sidebarResizeStartY = e.clientY;
+  sidebarResizeStartExplorerHeight = el.explorerSection.getBoundingClientRect().height;
+  sidebarResizeTotalHeight = el.sidebar.getBoundingClientRect().height - el.sidebarResizeHandle.getBoundingClientRect().height;
+  el.sidebarResizeHandle.classList.add('sidebar-resize-active');
+  el.sidebarResizeHandle.setPointerCapture(e.pointerId);
+});
+el.sidebarResizeHandle.addEventListener('pointermove', (e) => {
+  if (sidebarResizeStartY === null || !sidebarResizeTotalHeight) return;
+  const nextHeight = sidebarResizeStartExplorerHeight + (e.clientY - sidebarResizeStartY);
+  const pct = Math.min(SIDEBAR_SPLIT_MAX_PCT, Math.max(SIDEBAR_SPLIT_MIN_PCT, nextHeight / sidebarResizeTotalHeight));
+  applySidebarSplit(pct);
+});
+function endSidebarResize(e) {
+  if (sidebarResizeStartY === null) return;
+  sidebarResizeStartY = null;
+  sidebarResizeStartExplorerHeight = null;
+  const total = sidebarResizeTotalHeight;
+  sidebarResizeTotalHeight = null;
+  el.sidebarResizeHandle.classList.remove('sidebar-resize-active');
+  if (total) {
+    try {
+      localStorage.setItem(SIDEBAR_SPLIT_KEY, String(el.explorerSection.getBoundingClientRect().height / total));
+    } catch { /* ignore */ }
+  }
+  if (e) {
+    try { el.sidebarResizeHandle.releasePointerCapture(e.pointerId); } catch { /* already released, e.g. on pointercancel */ }
+  }
+}
+el.sidebarResizeHandle.addEventListener('pointerup', endSidebarResize);
+el.sidebarResizeHandle.addEventListener('pointercancel', endSidebarResize);
 
 el.sourceBtn.addEventListener('click', openSourcePanel);
 el.settingsBtn.addEventListener('click', openSettingsPanel);

@@ -22,6 +22,15 @@ header#app-header {
 #app-header .spacer { flex: 1; }
 #app-header input[type="file"] { display: none; }
 
+/* Every header action used to sit in one flat row with no visual grouping
+   at all — file ops, save/changes/new-section, the map, source/settings,
+   all read as the same undifferentiated line of buttons. A thin divider
+   between each functional group (not a full redesign — same buttons, same
+   single row) gives the eye somewhere to break the row up without
+   changing what anything does. */
+.toolbar-group { display: flex; align-items: center; gap: 0.6rem; padding-right: 0.75rem; margin-right: 0.05rem; border-right: 1px solid color-mix(in srgb, var(--text-faint) 35%, transparent); }
+.toolbar-group-end { border-right: none; padding-right: 0; margin-right: 0; }
+
 .dirty-indicator {
   font-size: 0.75rem;
   color: var(--text-faint);
@@ -78,18 +87,23 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 /* Two fixed-size panes, VSCode-style: Explorer (every open
    directory/standalone file) on top, Outline (the active document's own
    heading breakdown) below — neither ever reorders or hides itself based
-   on which file is currently active (see main.js's renderInner). Each
-   takes an equal share of the sidebar's own fixed height and scrolls its
-   own overflowing content independently, rather than one long document
-   or a big folder pushing the other pane off-screen. Each is also
-   independently collapsible via its own header (a standing preference,
-   like the other sidebar display toggles) — a collapsed pane shrinks to
-   just its header, letting the other one grow to fill the space. */
+   on which file is currently active (see main.js's renderInner). Explorer
+   takes a user-adjustable share of the sidebar's own fixed height (drag
+   #sidebar-resize-handle between them — see main.js), Outline fills
+   whatever's left; each scrolls its own overflowing content independently,
+   rather than one long document or a big folder pushing the other pane
+   off-screen. Each is also independently collapsible via its own header (a
+   standing preference, like the other sidebar display toggles) — a
+   collapsed pane shrinks to just its header, letting the other one grow to
+   fill the space (and hides the resize handle, which has nothing to split
+   while either side is folded away). */
 .sidebar-section {
-  display: flex; flex-direction: column; flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column; min-height: 0;
 }
-.sidebar-section + .sidebar-section { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
-.sidebar-section-collapsed { flex: 0 0 auto; }
+#explorer-section { flex: 0 0 var(--explorer-height, 50%); }
+#outline-section { flex: 1 1 auto; }
+#explorer-section.sidebar-section-collapsed,
+#outline-section.sidebar-section-collapsed { flex: 0 0 auto; }
 .sidebar-section-head {
   display: flex; align-items: center; gap: 0.35rem; width: 100%; flex-shrink: 0;
   background: none; border: none; padding: 0.2rem 0.3rem; margin-bottom: 0.4rem;
@@ -101,6 +115,32 @@ aside#sidebar.sidebar-graph-mode { width: 320px; }
 .sidebar-section-collapsed .sidebar-section-chevron { transform: rotate(-90deg); }
 .sidebar-section-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 1rem; }
 .sidebar-section-collapsed .sidebar-section-body { display: none; }
+
+/* The draggable divider between Explorer and Outline — a real flex
+   sibling (not absolutely positioned) so it takes up genuine layout
+   space, the same approach as .preview-resize-handle. */
+.sidebar-resize-handle {
+  flex-shrink: 0;
+  height: 10px;
+  margin: 0 0 0.2rem;
+  position: relative;
+  z-index: 2;
+  cursor: row-resize;
+  touch-action: none;
+}
+.sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 2px 0;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.sidebar-resize-active::after {
+  background: var(--accent-default);
+}
+.sidebar-resize-handle[hidden] { display: none; }
 
 /* One block per open workspace (see filesPanel.js's renderWorkspacesPanel) — several can be open at once, each its own independent folder. */
 .workspace-block + .workspace-block {
