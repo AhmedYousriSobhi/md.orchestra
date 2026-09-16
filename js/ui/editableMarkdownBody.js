@@ -23,6 +23,20 @@ function autosize(textarea) {
   textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
+/**
+ * scrollHeight only reflects the *current* width — sizing a textarea once
+ * (on creation, or as its own content changes) goes stale the moment
+ * something else changes how much horizontal room it has: the ☰ sidebar
+ * toggle, dragging the preview-panel divider, resizing the window. None of
+ * those fire an 'input' event on the textarea itself, so nothing would
+ * otherwise notice the same text now wraps onto a different number of
+ * lines. Called by main.js whenever the panel these textareas live in
+ * changes width, for whichever of them currently happen to be mounted.
+ */
+export function resizeEditableMarkdownTextareas() {
+  document.querySelectorAll('.editable-md-textarea').forEach(autosize);
+}
+
 export function createEditableMarkdownBody(node, { placeholder = 'Nothing here yet — start typing…' } = {}) {
   const { main } = splitBody(node.bodyMarkdown);
   const textarea = h('textarea', { class: 'content-edit-textarea editable-md-textarea', placeholder });

@@ -21,6 +21,7 @@ import { forgetWorkspaceViewState } from './ui/focalGraph.js';
 import { forgetWorkspaceGraphState } from './ui/workspaceGraph.js';
 import { renderBreadcrumb } from './ui/breadcrumb.js';
 import { renderSectionView } from './ui/cardGrid.js';
+import { resizeEditableMarkdownTextareas } from './ui/editableMarkdownBody.js';
 import { renderFullDocView } from './ui/fullDocView.js';
 import {
   recommendedMode, docModeKey, getStoredMode, setStoredMode,
@@ -1723,6 +1724,16 @@ el.sidebarToggle.addEventListener('click', () => {
   const isNarrowViewport = window.matchMedia('(max-width: 860px)').matches;
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
 });
+
+// Section textareas auto-grow to fit their content (see
+// editableMarkdownBody.js), but that sizing is only ever recomputed when
+// their own text changes — it goes stale the moment something *else*
+// changes how much width they have to wrap into instead: the ☰ toggle
+// above, dragging the preview-panel divider, or just resizing the window.
+// One observer on the panel they actually live in, rather than one per
+// textarea, both catches every one of those cases and needs no teardown
+// as cards are rebuilt (this container itself never is).
+new ResizeObserver(() => resizeEditableMarkdownTextareas()).observe(el.sectionViewWrap);
 
 ['dragover', 'drop'].forEach((evt) => window.addEventListener(evt, (e) => e.preventDefault()));
 window.addEventListener('drop', async (e) => {
