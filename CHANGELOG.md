@@ -1201,3 +1201,17 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   acting right after the state update, since the section view's own
   re-render is animated and the new textarea doesn't exist in the DOM
   until that finishes.
+
+- **Stage 61** — Five UI/UX requests, as a design pass: (1) the notes
+  panel used to sit in a solidly-tinted box below every section's
+  content, always visible even empty, competing with that content for
+  attention — it's now only rendered once there's actually a note, and
+  the wrapper lost its color fill in favor of a quiet dashed divider.
+  (2) "Understand & suggest" shrank to an icon by default, expanding
+  to its full label on hover *and* keyboard focus. (3) covered by (1).
+  (4) the header's buttons (file ops, save/changes/new-section, map,
+  source/settings) are now grouped with a thin divider between each
+  functional cluster instead of one flat row. (5) Explorer and Outline
+  can now be resized against each other via a drag handle between
+  them, persisted as a percentage of the sidebar's own height (hidden
+  while either pane is collapsed).
