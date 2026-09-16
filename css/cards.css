@@ -50,7 +50,9 @@
 .editable-md-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; flex-wrap: wrap; }
 .editable-md-toolbar .editing-hint { margin-top: 0; }
 .editable-md-status { font-size: 0.78rem; color: var(--text-faint); min-width: 3.2rem; }
-.editable-md-textarea { min-height: 8rem; }
+/* Auto-grows to fit its own content (see editableMarkdownBody.js) — manual
+   resize would just fight that on the next keystroke. */
+.editable-md-textarea { min-height: 4rem; max-height: none; resize: none; overflow: hidden; }
 
 .card-grid {
   display: grid;

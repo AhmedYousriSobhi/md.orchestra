@@ -17,12 +17,26 @@ const EDITING_HINT = 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/�
  * (previewPanel.js, unchanged); this is the raw source, not a read view of
  * it, used by both cardGrid.js's focused card and fullDocView.js.
  */
+/** Grows (or shrinks) `textarea` to exactly fit its own content — no scrollbar, no manual drag-to-resize needed just to see the rest of what's already there. */
+function autosize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
 export function createEditableMarkdownBody(node, { placeholder = 'Nothing here yet — start typing…' } = {}) {
   const { main } = splitBody(node.bodyMarkdown);
   const textarea = h('textarea', { class: 'content-edit-textarea editable-md-textarea', placeholder });
   textarea.value = main;
   attachMarkdownEditingHelpers(textarea);
   wireImageAttach(textarea);
+
+  // Sized to fit the whole section by default, not just whatever a fixed
+  // min-height happens to show — scrollHeight only reads correctly once
+  // this is actually laid out in the DOM, which the caller (cardGrid.js/
+  // fullDocView.js) does synchronously right after this returns, so the
+  // next animation frame is the first point it's reliably available.
+  requestAnimationFrame(() => autosize(textarea));
+  textarea.addEventListener('input', () => autosize(textarea));
 
   const status = h('span', { class: 'editable-md-status' }, '');
 
