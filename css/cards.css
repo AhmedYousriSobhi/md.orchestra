@@ -31,7 +31,6 @@
   font-family: inherit; background: var(--bg-soft);
 }
 
-.card-body.rendered-markdown { color: var(--text-soft); }
 .card-empty-note { color: var(--text-faint); font-style: italic; font-size: 0.88rem; }
 
 .content-edit-textarea {
@@ -43,6 +42,15 @@
 .edit-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; flex-wrap: wrap; }
 .edit-toolbar .editing-hint { margin-top: 0; }
 .edit-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+
+/* A section's raw Markdown, always editable (editableMarkdownBody.js) —
+   no separate view/edit toggle, the formatted read view lives in the
+   preview panel instead (previewPanel.js). */
+.editable-md-body { margin-top: 0.2rem; }
+.editable-md-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.editable-md-toolbar .editing-hint { margin-top: 0; }
+.editable-md-status { font-size: 0.78rem; color: var(--text-faint); min-width: 3.2rem; }
+.editable-md-textarea { min-height: 8rem; }
 
 .card-grid {
   display: grid;
@@ -97,44 +105,15 @@
 /* No single top-level section to take an accent color from, so the card's
    usual colored left border is dropped in favor of a neutral one. */
 .card-full-doc { border-left-color: var(--border); }
-/* Deliberately NOT .rendered-markdown: that class flattens every heading to
-   the same small size, correct for a single section's own card body (each
-   already has its own separate card title) but wrong here, where real
-   heading hierarchy is the entire point of reading one continuous page. */
-.full-doc-body { color: var(--text); max-width: 760px; margin: 0 auto; }
-/* Each heading shares a row with its own small edit affordance (see
-   fullDocView.js's buildSectionBlock) — the row itself carries the
-   vertical rhythm between sections, so the heading inside it can stay at
-   margin: 0 and let flexbox lay the two out on one line. */
-.full-doc-heading-row { display: flex; align-items: baseline; gap: 0.5rem; margin: 1.7rem 0 0.6rem; }
-.full-doc-heading-row:first-child { margin-top: 0; }
-.full-doc-heading-row :is(h1,h2,h3,h4,h5,h6) { flex: 1; margin: 0; color: var(--text); font-weight: 700; scroll-margin-top: 1rem; }
-.full-doc-edit-btn { margin-left: auto; opacity: 0.35; flex-shrink: 0; }
-.full-doc-heading-row:hover .full-doc-edit-btn, .full-doc-edit-btn:focus-visible { opacity: 1; }
+.full-doc-body { max-width: 760px; margin: 0 auto; }
+.full-doc-body :is(h1,h2,h3,h4,h5,h6) {
+  color: var(--text); font-weight: 700; margin: 1.7rem 0 0.5rem; scroll-margin-top: 1rem;
+}
+.full-doc-body :is(h1,h2,h3,h4,h5,h6):first-child { margin-top: 0; }
 .full-doc-body h1 { font-size: 1.55rem; }
 .full-doc-body h2 { font-size: 1.3rem; }
 .full-doc-body h3 { font-size: 1.1rem; }
 .full-doc-body h4, .full-doc-body h5, .full-doc-body h6 { font-size: 1rem; }
-.full-doc-body p { margin: 0.6rem 0; line-height: 1.65; }
-.full-doc-body ul, .full-doc-body ol { padding-left: 1.4rem; margin: 0.6rem 0; }
-.full-doc-body li { margin: 0.25rem 0; }
-.full-doc-body a { color: var(--accent-default); }
-.full-doc-body blockquote {
-  margin: 0.75rem 0; padding: 0.5rem 0.9rem; border-left: 3px solid var(--border);
-  color: var(--text-soft); background: var(--bg-soft); border-radius: 0 8px 8px 0;
-}
-.full-doc-body table { border-collapse: collapse; width: 100%; margin: 0.9rem 0; font-size: 0.88rem; }
-.full-doc-body th, .full-doc-body td { border: 1px solid var(--border); padding: 0.5rem 0.65rem; text-align: left; }
-.full-doc-body thead th { background: var(--bg-soft); font-weight: 600; }
-.full-doc-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--bg-soft) 60%, var(--surface)); }
-.full-doc-body details {
-  margin: 0.75rem 0; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; background: var(--bg-soft);
-}
-.full-doc-body summary { cursor: pointer; font-weight: 600; color: var(--text); }
-.full-doc-body code:not(pre code) {
-  background: var(--bg-soft); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em;
-  font-family: "SFMono-Regular", Consolas, monospace;
-}
 
 .mermaid-wrap {
   margin: 0.75rem 0; padding: 0.75rem; background: #fff; border: 1px solid var(--border);

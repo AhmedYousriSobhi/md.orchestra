@@ -12,11 +12,10 @@ import {
   getState, selectSection, updateNode, removeSection, canUndoNode, undoNode,
 } from '../state/store.js';
 import { createNotesSection, focusNewestNoteTextarea } from './notesPanel.js';
+import { createEditableMarkdownBody } from './editableMarkdownBody.js';
 import { openCodeViewer } from './codeViewer.js';
 import { openInsightModal } from './insightModal.js';
 import { showToast } from './toast.js';
-import { attachMarkdownEditingHelpers } from './markdownEditing.js';
-import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 import { confirmDialog } from './confirmDialog.js';
 
 const LEVEL_LABEL = ['DOC', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
@@ -56,35 +55,15 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
   // closure here would silently revert whichever field wasn't just edited.
   const currentParts = () => splitBody(node.bodyMarkdown);
   const onNavigate = (id) => selectSection(id);
-  const renderBody = () => renderMarkdownToSafeHtml(main);
 
   const headEl = h('div', { class: 'card-head' });
   card.appendChild(headEl);
   renderTitle(headEl, node, fileName);
 
-  const bodyEl = h('div', { class: 'card-body rendered-markdown' });
-  function showRenderedBody() {
-    bodyEl.innerHTML = '';
-    if (main) {
-      bodyEl.innerHTML = renderBody();
-      enhanceRenderedContent(bodyEl, {
-        onOpenCode: ({ lang, code }) => openCodeViewer({ lang, code, title: node.title }),
-        slugIndex,
-        onNavigate,
-        onNavigateFile,
-      });
-    } else {
-      bodyEl.appendChild(h('p', { class: 'card-empty-note' }, 'No content directly under this heading.'));
-    }
-  }
-  showRenderedBody();
-  card.appendChild(bodyEl);
-
-  const editContentBtn = h('button', {
-    class: 'code-btn',
-    type: 'button',
-    onClick: () => enterContentEditMode(bodyEl, main, node, showRenderedBody),
-  }, '✎ Edit content');
+  // Raw Markdown, always editable — no separate "enter edit mode" step.
+  // The formatted, read-friendly version of this content lives in the
+  // preview panel now (previewPanel.js), which stays untouched.
+  card.appendChild(createEditableMarkdownBody(node));
 
   // Steps back through this section's own edit history (see store.js's
   // updateNode/undoNode) — content edits, notes, title renames, an inserted
@@ -132,9 +111,8 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
   // section once there's actually one to show; an empty notes drawer
   // permanently below every section's content competed with that content
   // for attention despite having nothing in it yet. With none yet, adding
-  // the first one is just another action alongside Edit content/Undo —
-  // the same visual weight as everything else that isn't the document
-  // itself.
+  // the first one is just another action alongside Undo — the same visual
+  // weight as everything else that isn't the document itself.
   if (notes.length > 0) {
     card.appendChild(createNotesSection(notes, {
       onUpdate: (id, text) => {
@@ -149,7 +127,7 @@ function buildFocusedCard(node, accent, breadcrumbTitles, fileName, slugIndex, o
     }));
   }
 
-  const actions = [editContentBtn, undoBtn];
+  const actions = [undoBtn];
   if (!notes.length) {
     actions.push(h('button', { class: 'code-btn', type: 'button', onClick: handleAddNote }, '📝 Add note'));
   }
@@ -254,38 +232,6 @@ function enterTitleEditMode(headEl, node, fileName) {
   headEl.appendChild(input);
   input.focus();
   input.select();
-}
-
-function enterContentEditMode(bodyEl, main, node, onDone) {
-  bodyEl.innerHTML = '';
-  const textarea = h('textarea', { class: 'content-edit-textarea' });
-  textarea.value = main;
-  attachMarkdownEditingHelpers(textarea);
-  wireImageAttach(textarea);
-
-  if (!main.trim() && looksLikeTocSection(node)) {
-    // Starting to fill in an empty "Table of Contents" section: give it a
-    // first draft from the document's current headings straight away,
-    // same idea as "Regenerate from headings" but offered up front.
-    textarea.value = generateTocMarkdown(getState().doc, { excludeId: node.id });
-  }
-
-  const save = () => {
-    const parts = splitBody(node.bodyMarkdown);
-    updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, main: textarea.value }) });
-  };
-  const cancel = () => onDone();
-
-  bodyEl.appendChild(textarea);
-  bodyEl.appendChild(h('div', { class: 'edit-toolbar' }, [
-    createAttachImageButton(textarea),
-    h('span', { class: 'editing-hint' }, 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in'),
-  ]));
-  bodyEl.appendChild(h('div', { class: 'edit-actions' }, [
-    h('button', { class: 'btn btn-primary', type: 'button', onClick: save }, 'Save content'),
-    h('button', { class: 'btn btn-ghost', type: 'button', onClick: cancel }, 'Cancel'),
-  ]));
-  textarea.focus();
 }
 
 function buildPreviewCard(node, accent) {

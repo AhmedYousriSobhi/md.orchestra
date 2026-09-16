@@ -305,7 +305,6 @@ function renderInner() {
   lastPathLength = path.length;
   if (viewMode === 'full') {
     animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName, {
-      onNavigateFile: handleNavigateFile,
       focusNodeId: node.level > 0 ? node.id : null,
     }), direction);
   } else {
