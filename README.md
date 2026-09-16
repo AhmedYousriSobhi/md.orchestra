@@ -1,4 +1,11 @@
-# MD.Orchestra
+# MD.Orchestra — legacy browser-only snapshot
+
+> **This branch is an archive, not active development.** It's the app exactly
+> as it was before the move to a desktop-app architecture (Electron, real
+> filesystem access, npm/package.json) — kept here on its own branch purely
+> for documentation and rollback access to the plain static-file, browser-only
+> version. Active work continues on `master` and the feature branches that
+> merge into it; don't build on top of this branch.
 
 An AI-assisted dashboard that reads a Markdown document — or a whole directory of them — presents it as a navigable set of colored cards, lets you capture notes and Claude-generated suggestions against any section, and writes everything back into the source Markdown file(s) on request.
 
