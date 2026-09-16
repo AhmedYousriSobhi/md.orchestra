@@ -16,7 +16,7 @@ export const SHORTCUTS = [
   { keys: 'Alt + C', action: 'Open Changes (every file with unsaved edits)' },
   { keys: 'Alt + M', action: 'Open the workspace Map' },
   { keys: 'Alt + P', action: 'Toggle the preview panel' },
-  { keys: 'Alt + V', action: 'Toggle Full document / Sections view' },
+  { keys: 'Alt + V', action: 'Toggle Full text / Sections view' },
   { keys: 'Alt + R', action: 'Open the raw Markdown source panel' },
   { keys: 'Alt + ,', action: 'Open Settings' },
   { keys: '?', action: 'Show this shortcuts guide' },
