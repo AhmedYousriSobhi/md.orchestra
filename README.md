@@ -4,8 +4,21 @@ An AI-assisted dashboard that reads a Markdown document — or a whole directory
 
 ## Running it
 
-No build step. Serve the folder statically (opening `index.html` directly
-via `file://` will break `fetch()`-based AI calls):
+**As a desktop app (recommended):** a real window, backed by the actual
+filesystem — no browser permission prompts, no re-picking a folder every
+session, the last-opened one reopens automatically on launch.
+
+```bash
+./build-desktop.sh          # builds it via Docker — no Node/Electron needed locally
+./dist/MD.Orchestra-*.AppImage   # run the result directly, no install step
+```
+
+(Or, with Node already installed: `npm install && npm start` runs it without
+building a package first — useful while developing.)
+
+**In a browser**, if you'd rather not install anything: no build step, serve
+the folder statically (opening `index.html` directly via `file://` will
+break `fetch()`-based AI calls):
 
 ```bash
 python3 -m http.server 8000

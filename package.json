@@ -6,10 +6,33 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "web": "python3 -m http.server 8899"
+    "web": "python3 -m http.server 8899",
+    "build": "electron-builder --linux AppImage"
   },
   "devDependencies": {
     "electron": "^33.0.0",
+    "electron-builder": "^26.15.3",
     "playwright": "^1.63.0"
+  },
+  "build": {
+    "appId": "com.mdorchestra.app",
+    "productName": "MD.Orchestra",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "js/**/*",
+      "css/**/*",
+      "icons/**/*",
+      "index.html",
+      "manifest.json",
+      "!**/*.md"
+    ],
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "icons/icon.png",
+      "category": "Office"
+    }
   }
 }

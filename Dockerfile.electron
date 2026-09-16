@@ -1,0 +1,19 @@
+# Builds the MD.Orchestra desktop app into a single-file Linux AppImage —
+# so producing a runnable app needs only Docker, not a Node/Electron
+# toolchain on the host. This container never runs the app itself
+# (Electron's GUI needs a real display, which packaging doesn't); it only
+# assembles files, so a plain Node image is enough.
+FROM node:20-bookworm AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# Exported on its own via `docker build --target artifacts --output dist .`
+# (see build-desktop.sh) — keeps the output to just the AppImage and its
+# metadata, not this whole build image.
+FROM scratch AS artifacts
+COPY --from=build /app/dist /
