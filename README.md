@@ -1,202 +1,131 @@
 # MD.Orchestra
 
-An AI-assisted dashboard that reads a Markdown document — or a whole directory of them — presents it as a navigable set of colored cards, lets you capture notes and Claude-generated suggestions against any section, and writes everything back into the source Markdown file(s) on request.
+![Electron](https://img.shields.io/badge/desktop-Electron-47848F?logo=electron&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Linux%20(AppImage)-lightgrey)
+![No bundler](https://img.shields.io/badge/build-plain%20ES%20modules-blueviolet)
 
-## Running it
+**A desktop workspace for Markdown, built for people who live in `.md`
+files.** Open a single file or a whole folder of them, browse it as a
+navigable outline instead of a wall of text, edit any section in place,
+and save straight back to the real file on disk — no upload, no lock-in
+format, no server.
 
-**As a desktop app (recommended):** a real window, backed by the actual
-filesystem — no browser permission prompts, no re-picking a folder every
-session, the last-opened one reopens automatically on launch.
+![MD.Orchestra demo](docs/assets/demo.gif)
+
+## Why
+
+Most note-taking apps want to own your files (their own database, their
+own sync, their own export step to get plain Markdown back out). Most
+Markdown editors are either a bare text box or a full WYSIWYG that
+fights the raw source. MD.Orchestra is neither: it's a real Electron
+desktop app backed by the actual filesystem, that treats a heading
+structure as something to *navigate*, not just scroll through, while
+the file on disk stays exactly what it always was — plain Markdown, open
+in any other editor at the same time if you want.
+
+## Features
+
+- **Open a file or a whole folder** — several folders can be open at once,
+  each keeping its own identity, the way a multi-root workspace does.
+- **Two ways to read the same document** — a raw **Full text** source view,
+  or **Sections**: the heading tree broken into individually editable
+  cards, picked automatically by document length/structure (and always
+  overridable).
+- **A real map of your workspace** — a node-link graph of an entire open
+  folder's structure (click a folder to expand it, a file to open it), plus
+  a Tree/Mind-map view of one document's own heading structure.
+- **Per-section notes and Claude-assisted suggestions**, without touching
+  the section's actual content until you choose to insert one.
+- **Drag-and-drop restructuring** — reposition or re-nest a heading (and
+  everything under it) by dragging it in the sidebar outline.
+- **A live preview** docked alongside the editor, GitHub/PDF-style
+  rendering (tables, code, Mermaid diagrams), editable in place.
+- **Keyboard-first**: Ctrl/⌘+S commits whatever you're editing, Ctrl/⌘+Shift+S
+  writes the file to disk, and every shortcut is listed in one place
+  (Settings → Keyboard shortcuts, or press `?`).
+- **A `git status`-style Changes panel** tracking unsaved edits across every
+  open file — switching files never silently discards anything.
+- **Crash recovery** — unsaved edits are snapshotted locally and offered
+  back on the next launch.
+- **System/Light/Dark appearance**, remembered across launches.
+
+## Quick start
+
+**Prerequisites:** none, if you just want to run the packaged app — see
+below. Building from source needs [Node.js](https://nodejs.org) 18+ (and
+Docker, only for the AppImage build path).
+
+### Run the desktop app
 
 ```bash
-./build-desktop.sh          # builds it via Docker — no Node/Electron needed locally
-./dist/MD.Orchestra-*.AppImage   # run the result directly, no install step
+./build-desktop.sh              # builds it via Docker — no Node/Electron needed locally
+./dist/MD.Orchestra-*.AppImage  # run the result directly, no install step
 ```
 
-(Or, with Node already installed: `npm install && npm start` runs it without
-building a package first — useful while developing.)
+Or, with Node already installed:
 
-**For quick local development**, `npm run web` serves the folder statically
-with no build step (opening `index.html` directly via `file://` will break
-`fetch()`-based AI calls, and the app's own browser fallback code paths only
-get exercised in a real browser tab like this, not inside Electron):
+```bash
+npm install
+npm start
+```
+
+Either way you get a real window backed by the actual filesystem: the
+native OS folder/file picker, full read/write access to whatever you open
+(no browser permission prompts), and the last-opened folder reopens
+automatically next time.
+
+### Dev mode (browser, no build step)
 
 ```bash
 npm run web
 # open http://localhost:8899/index.html
 ```
 
-This is a dev convenience, not a supported deployment path — MD.Orchestra
-isn't shipped or maintained as a website. The full static-web/Docker
-deployment (nginx, PWA install, an app-mode launcher script) that used to
-live here has been archived on the `legacy/browser-only-v1` branch, from
-before the move to a real desktop app; that browser experience was never
-equivalent to the desktop one (a one-shot permission grant per folder, no
-persistence across a reload, no write access at all in some browsers) and
-isn't being carried forward.
+This is a convenience for developing/testing in a real browser tab — not a
+supported way to use the app day to day (see [Known
+limitations](#known-limitations)).
 
 ## Using it
 
-1. Load a document: use **Open .md file** (grants direct save-back on
-   Chrome/Edge) or drag/drop a file — or use **📁 Open folder** to load a
-   whole directory of them at once (several folders can be open
-   simultaneously; each keeps its own identity). Standalone files and
-   folders can be open side by side too.
-2. Browse the heading tree in the sidebar — collapsed to just the active
-   path by default, click the ▸ chevrons to expand others — or open
-   **🗺️ Map** for a whole-document diagram, either the indented **🌳 Tree**
-   or an Obsidian-style **🧠 Mind map**: a continuously-live force layout
-   (not a one-shot diagram) that auto-fits the whole thing into view no
-   matter how large the document is, reacts to the cursor with a Dock/Apple
-   Watch-style magnify-and-pull effect, and supports scroll-to-zoom,
-   drag-to-pan the background, and dragging a node to reposition it. The
-   main panel drills into whatever section you pick and shows its own
-   content plus a card grid of its subsections. In-document links (e.g. a
-   Table of Contents) jump to the right section instead of doing nothing.
-   Drag any heading in the sidebar onto another one to relocate it — drop
-   on the top/bottom third of a row to place it immediately before/after
-   that heading (as a sibling, at that exact spot — including promoting or
-   demoting it to/from the top level), or the middle third to nest it
-   inside as that heading's last subsection.
-3. Click a card's insight icon to open the AI popup: get a Claude summary,
-   clarity suggestions, and optionally insert the suggestion straight into
-   that section.
-4. Use **+ Add note** on a card (or press **Alt+N** from anywhere, as long
-   as you're not typing in a field) to jot down as many separate notes as
-   you want on that section — each is its own field with its own delete
-   button. Paste an image, drag one in, or use the **📎 Image** button to attach it
-   (works in notes and while editing section content — it's embedded as a
-   `data:` URI, so the section stays portable in one `.md` file). Use
-   **✎ Edit content** / the pencil next to the
-   title to change the section's actual content and heading text (not just
-   an annotation), and **🗑 Delete section** to remove it. Every section has
-   its own **↩ Undo**, too (disabled until there's something to undo): it
-   steps back one edit at a time through that section's own history —
-   content edits, notes, a title rename, an inserted AI suggestion, a
-   regenerated ToC — independently of any other section, in case an
-   edit turns out to be a mistake. A section titled
-   something like "Table of Contents" gets a **🔄 Regenerate from
-   headings** action that rebuilds its bullet list from the document's
-   current structure — and typing that title in the first place drafts
-   one immediately, before you even save.
-   Every one of these Markdown text fields picks up a few habits from
-   editors like VS Code's Markdown All in One: Enter continues a list
-   (numbered lists auto-increment; an empty item exits the list instead of
-   leaving a stray bullet), Tab/Shift+Tab indents a list line, and
-   Ctrl/Cmd+B, +I, +\` wrap the selection in bold/italic/code.
-5. Use **+ New section** to write a whole new part of the document: a
-   title, heading level, and exactly where it goes — click a heading in the
-   tree to drop it inside (as the last subsection), or drag the handle onto
-   the tree and hover a row's top/bottom/middle third to place it precisely
-   before/after/inside that heading, rather than only "first/last of its
-   parent."
-6. Click **💾 Save** any time — it writes straight back to the file if it
-   was opened with **Open .md file** (or a workspace folder, on a browser
-   that grants live handles — see below), otherwise it downloads the
-   current Markdown. It's the only save control for the *active* document,
-   and it glows while there are unsaved changes. The **Source** panel is
-   read-only, for double-checking the generated Markdown or copying it
-   elsewhere.
+1. **Load something**: the 📂/🗂️ icons at the top of the sidebar open a
+   single file or a whole folder; you can also drag a `.md` file straight
+   onto the window.
+2. **Browse it**: the sidebar's **Explorer** shows every open
+   file/folder (click into a directory to expand it); the **Outline** below
+   it shows the active document's own heading tree. Open **🗺️ Map** for a
+   whole-document diagram (**Tree** or **Mind map**) or, with a folder open,
+   **Workspace** — the whole directory as one node-link graph.
+3. **Read or edit**: toggle **📝 Full text** / **🗃️ Sections** for how the
+   active document is displayed. Every Markdown field (section content,
+   notes) supports the usual editor habits — Enter continues a list,
+   Tab/Shift+Tab indents, Ctrl/⌘+B/I/`` ` `` wrap the selection — with full
+   native undo history.
+4. **Annotate**: **Add note** on any section for a running commentary that
+   never touches the section's real content; the ✨ insight icon asks
+   Claude for a summary or suggestion you can optionally insert.
+5. **Restructure**: drag any heading in the sidebar onto another one to
+   reposition or re-nest it; **+ Add file** / **+ Add section** create new
+   ones at an exact spot in the tree.
+6. **Save**: Ctrl/⌘+S commits whatever field you're currently in;
+   Ctrl/⌘+Shift+S writes the whole file to disk. **📝 Changes** lists every
+   file with something unsaved, across every open folder, section by
+   section — save or discard individually, with nothing lost by just
+   switching to a different file first.
+7. **Configure**: **Settings** holds your Anthropic API key (stored only in
+   `localStorage`, sent only to `api.anthropic.com`), the Claude model, and
+   System/Light/Dark appearance.
 
-   Only one document is ever open for editing at a time, but you can still
-   accumulate unsaved changes in more than one file across a session (e.g.
-   edit a workspace file, switch to a standalone file without saving
-   first, edit that too). **📝 Changes**, in the header, lists every one
-   of them — like
-   a compact `git status` — with a badge showing how many. Its badge and
-   each file's row count individual *sections*, not files — editing two
-   different sections of the same file shows as two separate, individually
-   clickable chips under that file, each jumping straight to that exact
-   section. Clicking anywhere on a row (not just its buttons) or a chip
-   switches to it immediately, no confirmation prompt: switching away from
-   the file you're currently on doesn't actually discard anything (its
-   changes stay tracked right here, in this same list), so there's nothing
-   to warn about — that confirm still appears for every path that's
-   actually destructive: closing the app with unsaved changes, or loading
-   something over a file *without* going through this list. Each file also
-   gets **💾 Save** (writes it straight to
-   disk without switching away from whatever you're currently doing, if it
-   still has a live handle — otherwise downloads it, same as the main Save
-   button) and **🗑 Discard**: for another file, drops that pending copy
-   for good; for the currently active document — which appears in the
-   same list when it's dirty, marked "●" — reverts it back to its last
-   saved version instead, since there's a real in-memory edit to throw
-   away, not just a cached copy. Saving normally (the main Save button)
-   also opens this list automatically afterward if anything *else* still
-   has unsaved changes, so a save is never quietly assumed to have
-   covered everything.
-7. Open **Settings** to provide your Anthropic API key and pick a Claude
-   model (the key is stored only in `localStorage` on your machine and is
-   sent directly to `api.anthropic.com` — never to any other service), and
-   to switch between System/Light/Dark appearance.
-8. Toggle **👁 Preview** for a clean, GitHub/PDF-style view of the
-   Markdown — a single flowing page (real headings, tables, code,
-   mermaid) instead of the card-based editing layout — docked on the
-   right so it can stay open alongside the editor rather than blocking
-   it like the other side panels. Notes show up too, each styled as its
-   own colored sticky note rather than blended into the running text. A
-   "This section" / "Whole document" toggle at its top switches between
-   just what you're currently looking at (plus its subsections) and the
-   entire file, and it updates live as you edit, including mid-keystroke
-   in a note or the content editor. Hover any section's content there
-   for a **✎** button — it's editable in place: the same plain-Markdown
-   editor the card view's own "Edit content" uses, just reachable
-   without leaving the preview, and Save writes straight back to that
-   exact section of the document (Whole document scope included — you
-   can edit any section shown, not only the one you started on). Drag the
-   handle on its left edge to resize it (280px–70% of the viewport); your
-   chosen width is remembered across reloads.
+See [TESTING.md](TESTING.md) for the concrete use cases this app is
+designed around, in more depth.
 
-### Working with a directory
+## Design philosophy
 
-**📁 Open folder** reads every `.md`/`.markdown` file in a directory (and
-its subfolders — dotfiles/dotfolders like `.git` are skipped) and adds it
-to the sidebar's **Explorer** pane. Opening a second (or third...) folder
-adds it alongside the first rather than replacing it — each open
-directory keeps its own identity (files, navigation state, folder-fold
-state), the way a VSCode multi-root workspace treats each folder as
-independent. The button relabels to **Add folder** once one is already
-open.
-
-The sidebar is two fixed, independently-collapsible panes: **Explorer**
-always shows every open directory (each as a focal-neighborhood graph —
-one hop of the current directory at a time, deeper subfolders collapsed
-into a "+N" node until expanded) plus any standalone files, regardless of
-which one is currently active; **Outline** below it always shows the
-active document's own heading breakdown. Neither reorders or hides itself
-based on what you're editing. Each open folder can be individually folded
-down to just its header (a small chevron on its own row, remembered across
-reloads); a standalone file gets its own row too, grouped under an "Open
-files" label, and stays listed — whether or not it has unsaved changes —
-until you explicitly close it.
-
-Switching between any two files — a different file in the same folder, a
-file in a *different* open folder, or a standalone file — never asks for
-confirmation and never loses anything: whatever you were on gets flushed
-to a recovery snapshot first if it's dirty, and switching back to a file
-with pending edits restores them exactly as you left them (see **📝
-Changes** above). Closing a folder (✕ on its own row) only affects that
-folder's own active file, if any; every other open folder is untouched.
-
-A relative Markdown link in one file's content — `[the guide](sub/guide.md)`,
-or with an anchor, `[a step](sub/guide.md#some-heading)` — resolves against
-the other files in the *same* folder and switches to that file (and jumps
-to the matching heading) instead of doing nothing or trying to navigate
-the browser away; a link to something outside that folder (including a
-different open folder), or a normal external URL, is left completely
-alone. On Chrome/Edge this uses the File System Access API
-(`showDirectoryPicker`), which keeps a live handle per file so **Save**
-writes straight back to disk for every one of them, the same guarantee
-**Open .md file** already gives a single file. Firefox has no such API, so
-there `📁 Open folder` falls back to an `<input webkitdirectory>` —
-everything else works identically, but without a live handle **Save**
-downloads instead (again, exactly like opening a single file without the
-File System Access API).
-
-The 🗺️ **Map** button's third mode, **Workspace**, lays out an entire open
-folder's structure (every file and subfolder) as one force-directed graph,
-the same style as the single-document Mind map — click a file node to
-open it.
+MD.Orchestra's UI choices are checked against actual UX research, not just
+taste — see [docs/UI_UX_REVIEW.md](docs/UI_UX_REVIEW.md) for the sources
+and how they map onto specific decisions already made here (removing the
+header's Save button in favor of a shortcut, consolidating file actions
+into one toolbar row, the Workspace map's collapsed-by-default tree) and a
+short list of concrete next steps a command palette among them.
 
 ## Architecture
 
@@ -228,95 +157,75 @@ js/
                      ui/docViewMode.js)
   state/store.js      the single active document + pub/sub (fileName,
                      fileHandle, selectedId, dirty, and which open
-                     workspace/relPath it belongs to, if any);
-                     replaceWholeDocument() swaps in a freshly-reparsed
-                     tree wholesale, for full document view's raw-source
-                     editing
+                     workspace/relPath it belongs to, if any)
   state/workspace.js   every currently-open directory (several can be open
-                     at once, each its own independent identity: file
-                     registry, folder tree, relative-link resolution,
-                     directory handles for creating/deleting files)
+                     at once, each its own independent identity)
   core/               fileIO.js / workspaceIO.js (single-file / directory
                      read-write — File System Access API in a browser,
                      electronFsAdapter.js's real-filesystem bridge inside
-                     the desktop app, an <input webkitdirectory> fallback
-                     elsewhere), recovery.js (per-file crash-recovery
+                     the desktop app), recovery.js (per-file crash-recovery
                      snapshots in localStorage)
   ai/                 client.js (Claude fetch), prompts.js, settings.js
-  ui/                 sidebar.js (heading tree, drag-and-drop to relocate
-                     sections), filesPanel.js (Explorer: one block per open
-                     workspace, each individually foldable, plus a
-                     standalone-file "Open files" group), focalGraph.js (the
-                     one-hop-at-a-time directory graph each Explorer block
-                     renders, with per-workspace navigation state and a
-                     right-click context menu — contextMenu.js), newFileModal.js,
-                     recoveryPanel.js (offered on load) / changesPanel.js
-                     (on demand, from the header) — both list recovery.js's
-                     per-file snapshots, save/open/discard, breadcrumb,
-                     docViewMode.js (Full document vs. Sections, per
-                     document) + cardGrid.js (Sections: the card grid,
-                     incl. inline title editing) / fullDocView.js (Full
-                     document: the whole file as one raw-Markdown
-                     textarea) + editableMarkdownBody.js (the
-                     always-editable raw-text body shared by both), insight
-                     modal, code viewer, notes panel (multiple independent
-                     notes per section), imageAttach.js (paste/drag/button
-                     -> data: URI image, used by notes and section-content
-                     editing), settings/source/shortcuts panels,
-                     add-section modal + tree picker (drag-and-drop
-                     placement), dragDrop.js (shared before/inside/after zone
-                     detection), mapView.js (Tree / Mind map / Workspace
-                     modes) + mindMap.js's live, cursor-reactive
-                     force-directed graph renderer (shared by the Mind map
-                     and Workspace modes), markdownEditing.js (list
-                     continuation / indent / bold-italic-code shortcuts,
-                     attached to every raw-Markdown textarea), toast.js
-  utils/              dom (incl. an SVG-element helper)/debounce/id/color/theme
-  main.js             wires everything together; also the beforeunload
-                     guard, crash-recovery prompt, and (desktop app only)
-                     remembering/reopening the last-used folder on launch
+  ui/                 sidebar.js, filesPanel.js + focalGraph.js (the
+                     Explorer's one-hop-at-a-time directory graph),
+                     workspaceGraph.js (the Workspace map's full-directory
+                     node-link tree), mapView.js (Tree / Mind map /
+                     Workspace modes) + mindMap.js, cardGrid.js /
+                     fullDocView.js + editableMarkdownBody.js,
+                     changesPanel.js / recoveryPanel.js, settings/source/
+                     shortcuts panels, markdownEditing.js (list
+                     continuation / indent / formatting shortcuts)
+  utils/              dom (incl. an SVG-element helper) / debounce / id / color / theme
+  main.js             wires everything together
 test/parser.selftest.html   in-browser assertions for parse/serialize round-trip
 ```
 
 ### Data model
 
 Each heading becomes a node: `{ id, level, title, bodyMarkdown, children[] }`.
-`bodyMarkdown` is the section's own raw Markdown (everything after the
-heading up to its first child heading) — kept verbatim, so re-serializing an
-untouched document reproduces its structure and content faithfully (blank
-lines between blocks are normalized to one, but nothing is reworded, reordered,
-or lost). Notes and AI insertions are appended into `bodyMarkdown` between
-`<!-- dashboard:note:... -->` / `<!-- dashboard:ai-insert:... -->` marker
-comments, so reloading a previously-saved file re-hydrates them into the
-right UI slot instead of duplicating them.
+`bodyMarkdown` is the section's own raw Markdown, kept verbatim — so
+re-serializing an untouched document reproduces its structure and content
+faithfully. Notes and AI insertions are appended into `bodyMarkdown` between
+marker comments, so reloading a previously-saved file re-hydrates them into
+the right UI slot instead of duplicating them.
 
 ### AI integration
 
-Calls go straight from the browser to `https://api.anthropic.com/v1/messages`
-with the `anthropic-dangerous-direct-browser-access: true` header. There is
-no backend/proxy. Only Claude is supported for now; the settings panel is
-structured so another provider could be added later without touching the
-rest of the app.
+Calls go straight from the renderer to `https://api.anthropic.com/v1/messages`.
+There is no backend/proxy. Only Claude is supported for now.
+
+## Testing
+
+See [TESTING.md](TESTING.md) for the use cases this app is built around and
+the full functional test matrix (document loading, editing/undo, view
+modes, workspace navigation, saving, recovery, and the Electron shell's own
+allowlist/close-confirmation behavior). There's no committed automated
+suite yet — every check listed there has been run by hand against a real
+Chromium/Electron instance over the course of development.
+
+Also see [docs/RELIABILITY_ARCHITECTURE_REVIEW.md](docs/RELIABILITY_ARCHITECTURE_REVIEW.md)
+for a filesystem-focused audit (crash consistency, atomic writes, recovery
+cache design, and security boundary review) of the Electron shell
+specifically.
 
 ## Known limitations
 
+- The recovery cache lives in `localStorage`, not a real on-disk cache
+  directory, and there's no detection of a file changed externally (git,
+  another editor) while it's open here — see
+  [docs/RELIABILITY_ARCHITECTURE_REVIEW.md](docs/RELIABILITY_ARCHITECTURE_REVIEW.md).
 - The Claude calls were verified with a mocked API response (success, a
-  401, and a missing-key case) — not against the real Anthropic API, since
-  doing so would require a real key. The request shape follows Anthropic's
-  documented direct-browser-access contract; if it turns out to need
-  adjusting, `js/ai/client.js` is the only place that matters.
-- The File System Access "save back to the original file" path
-  (`js/core/fileIO.js`, used by **Save**) was verified with a mocked
-  file handle (confirms it requests `readwrite` permission and writes the
-  correct content) rather than a real native file-picker dialog, which
-  headless testing can't drive. The download fallback path was verified
-  directly and works.
-- The self-test's round-trip checks (`test/parser.selftest.html`) require
-  the project to be served over HTTP (see *Running it*) — they silently
-  skip under `file://` because `fetch()` can't read local files that way.
-- The document map (🗺️) lays every heading out in one screen with its own
-  scroll region, sized for the typical case; a document with hundreds of
-  headings will still need to scroll within that region to see all of it.
+  401, and a missing-key case), not the real Anthropic API — the request
+  shape follows Anthropic's documented direct-access contract;
+  `js/ai/client.js` is the only place that matters if it needs adjusting.
+- `npm run web` (browser dev mode) is a development convenience, not an
+  equivalent, supported way to use the app — no native filesystem access,
+  no persisted folder across a reload. The full static-web/Docker
+  deployment this project used before the move to Electron is archived on
+  the `legacy/browser-only-v1` branch.
+- The document map lays every node out in one scrollable region sized for
+  the typical case; a very large document/folder still needs scrolling
+  within that region to see all of it.
 
 ## Progress log
 
