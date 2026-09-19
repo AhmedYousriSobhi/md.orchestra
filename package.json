@@ -9,9 +9,12 @@
   "scripts": {
     "start": "electron .",
     "web": "python3 -m http.server 8899",
-    "build": "electron-builder --linux AppImage"
+    "build": "electron-builder --linux AppImage",
+    "build:web-assets": "rm -rf web-dist && mkdir -p web-dist && cp -r index.html js css icons web-dist/",
+    "cap:sync": "npm run build:web-assets && cap sync android"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
     "electron": "^33.0.0",
     "electron-builder": "^26.15.3",
     "playwright": "^1.63.0"
@@ -44,6 +47,9 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@daniele-rolli/capacitor-scoped-storage": "^0.1.0",
     "electron-updater": "^6.8.9"
   }
 }
