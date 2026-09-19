@@ -26,7 +26,7 @@ import { renderFullDocView } from './ui/fullDocView.js';
 import {
   recommendedMode, docModeKey, getStoredMode, setStoredMode,
 } from './ui/docViewMode.js';
-import { animatedSwap } from './ui/transitions.js';
+import { animatedSwap, closeOverlay } from './ui/transitions.js';
 import {
   readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
 } from './core/fileIO.js';
@@ -1810,3 +1810,58 @@ async function reopenLastElectronFolder() {
   }
 }
 reopenLastElectronFolder();
+
+/**
+ * The hardware/gesture back button on Android has no equivalent anywhere
+ * else this app runs — without handling it at all, Capacitor's own default
+ * behavior is to try the WebView's own browser-style history (which this
+ * single-page app never pushes real entries into) and otherwise do
+ * nothing, leaving back feeling dead on every screen that isn't the exact
+ * state the app happened to launch into. Once a listener is registered
+ * here, that automatic fallback stops entirely — this becomes the *only*
+ * thing back does, so it has to cover every case itself: close whatever's
+ * on top (any open overlay, or the mobile slide-in sidebar) one layer at a
+ * time, the same order Escape already closes things in, and only once
+ * there's truly nothing left open, minimize rather than kill the app —
+ * Android's own convention for what "back" means on a root screen, never
+ * a hard exit.
+ */
+if (isCapacitor) {
+  window.Capacitor.Plugins.App.addListener('backButton', () => {
+    const openOverlays = document.querySelectorAll('.overlay.overlay-open');
+    if (openOverlays.length) {
+      openOverlays.forEach((ov) => closeOverlay(ov));
+      return;
+    }
+    if (el.sidebar.classList.contains('sidebar-open')) {
+      el.sidebar.classList.remove('sidebar-open');
+      return;
+    }
+    window.Capacitor.Plugins.App.minimizeApp();
+  });
+
+  // The status bar is drawn by the OS, not this page — left alone, it
+  // stays whatever default color/icon-style Android picked, which reads
+  // as a visible seam between "the app" and "a browser tab" the instant
+  // the app opens. Matched to the current theme here, and re-matched
+  // every time the theme itself changes (see settingsPanel.js's
+  // buildThemeToggle) so switching Light/Dark mid-session doesn't leave
+  // the status bar out of sync with the page beneath it.
+  const StatusBar = window.Capacitor.Plugins.StatusBar;
+  function syncStatusBarToTheme() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+      || (!document.documentElement.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    // Matches header#app-header's own background (var(--surface) in
+    // css/base.css) exactly, not an approximation — the status bar sits
+    // directly above it, so anything else reads as a visible seam.
+    StatusBar.setBackgroundColor({ color: dark ? '#1e2233' : '#ffffff' }).catch(() => {});
+    StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => {});
+  }
+  syncStatusBarToTheme();
+  // 'system' mode (no data-theme attribute) tracks the OS preference
+  // directly; an explicit Light/Dark choice fires the theme-changed event
+  // below instead (see utils/theme.js's applyTheme) — between the two,
+  // every way the effective theme can change is covered.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncStatusBarToTheme);
+  document.addEventListener('md-orchestra:theme-changed', syncStatusBarToTheme);
+}
