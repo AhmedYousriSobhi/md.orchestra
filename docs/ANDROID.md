@@ -35,18 +35,24 @@ the Android app is finished.
   placed the tab floating in the middle of the screen over whatever
   content was under it. Now hidden at that width when Preview is already
   open, since its own ✕ already closes it.
+- **A real device test round** (see "First real-device test" below) that
+  drove a genuine security/battery/polish hardening pass: the hardware
+  back button now actually does something sensible, the status bar and
+  app icon/splash match the real brand instead of Capacitor's defaults,
+  the API key can no longer end up in Android's cloud backup, and any
+  uncaught JS error now shows as a real toast instead of a silently dead
+  button — directly because a silently dead button is exactly what the
+  first test round ran into.
 
 ## What's genuinely not done yet
 
 Said plainly, so nothing here is silently oversold:
 
-- **No real-device or emulator testing.** This sandbox has neither an
-  Android device nor an emulator attached — everything above was verified
-  by reading the plugin's actual native source (Java) to get the API
-  contract right, and by confirming the app builds into a real, correctly-
-  structured APK. Whether the folder picker, file read/write, and the rest
-  of the app actually behave correctly when tapped through on a real
-  device is **untested** and should be the very next thing checked.
+- **Still only one round of real-device testing**, and it surfaced one
+  bug (see below) not yet fully root-caused. Whether the folder picker,
+  file read/write, and the rest of the app behave correctly when tapped
+  through for real is otherwise still mostly unverified beyond that one
+  round.
 - **No single-file "Open .md file" on Android.** The scoped-storage plugin
   only offers a folder-tree picker (`ACTION_OPEN_DOCUMENT_TREE`) — there's
   no SAF single-document equivalent wired up. The generic `<input
@@ -60,15 +66,50 @@ Said plainly, so nothing here is silently oversold:
   full-screen) happen to hold up reasonably well at phone width — good
   enough to *begin* on — but nothing here was purpose-built for a phone
   screen, and a proper pass deserves its own scoped look rather than being
-  assumed done because one layout bug got fixed.
-- **No app icon/splash screen of our own.** The generated Android project
-  still uses Capacitor's own default launcher icon and splash image, not
-  `icons/icon.svg`.
+  assumed done because a couple of layout bugs got fixed.
+- **No touch gestures.** Real-device feedback specifically called out that
+  the in-app Keyboard Shortcuts panel makes little sense with no physical
+  keyboard, and suggested gestures instead. That's a real, separate design
+  effort (swipe-to-go-back, long-press menus, etc.) — not something to
+  improvise as a side effect of something else, so it's noted here as
+  scoped-but-not-started rather than attempted piecemeal.
 - **No release signing, Play Store, or F-Droid packaging.** `build-android.sh`
   produces a debug build only, installable for testing
   (`adb install -r dist-android/app-debug.apk`) but not something to
   distribute as-is. See `MORE.md`'s research notes on Android distribution
   for the F-Droid-vs-Google-Play tradeoffs once this is further along.
+- **ProGuard/R8 minification stays off** (`minifyEnabled false` in
+  `android/app/build.gradle`, Capacitor's own default) deliberately —
+  turning it on for a real release build needs correct `keep` rules for
+  every plugin's reflection-based loading, and getting that wrong silently
+  breaks the app in a way this sandbox has no way to catch without a real
+  device to test the result on. Left alone until it can actually be
+  verified, not flipped on and hoped for.
+
+## First real-device test
+
+The first APK ever built here was installed on a real phone. Two things
+came back:
+
+1. **The Preview peek-tab looked broken** — already explained above: the
+   APK sent for that test was built 21 seconds *before* the CSS fix for
+   exactly that bug landed. Not a new bug, a stale build on my part; the
+   next build included the fix.
+2. **Several header buttons appeared unresponsive** — Map and Source are
+   *correctly* inert with no document loaded (both are `disabled` until
+   one is), but the ☰ sidebar toggle reportedly did nothing either, and
+   that one has no such explanation. It's the one way to reach the
+   folder-open button on this build (the sidebar holds the whole file
+   toolbar, and is off-screen by default at phone width), so it matters a
+   lot. Read through every plausible cause in the code — the click
+   handler itself, z-index/stacking around the header, anything that
+   could swallow the tap — and found nothing definitively wrong. Rather
+   than keep guessing blind, added a global uncaught-error toast (see
+   `js/main.js`) so the *next* test either shows a real error message
+   (finally something concrete to fix) or confirms the tap genuinely does
+   nothing with no error at all (pointing at something more subtle, like
+   a touch-event quirk specific to this WebView). Unresolved until the
+   next real-device round says which.
 
 ## Building it
 
