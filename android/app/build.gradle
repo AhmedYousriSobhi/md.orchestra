@@ -30,6 +30,19 @@ repositories {
     }
 }
 
+// capacitor-cordova-android-plugins (the Cordova compatibility bridge
+// Capacitor still ships for plugins written against the older Cordova
+// API) pulls in an old, pre-1.8 Kotlin stdlib split across separate
+// kotlin-stdlib-jdk7/-jdk8 artifacts. Since Kotlin 1.8, that same
+// functionality lives directly in kotlin-stdlib itself, so having both on
+// the classpath at once is a real duplicate-class conflict, not just a
+// version mismatch Gradle can quietly resolve on its own — excluding the
+// two old split artifacts here is the standard fix for it.
+configurations.all {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+}
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
