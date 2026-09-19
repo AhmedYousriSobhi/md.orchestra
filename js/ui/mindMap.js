@@ -342,7 +342,24 @@ export function renderMindMap(container, doc, selectedId, onPick) {
     }
   }
 
+  // A continuous rAF loop is fine on a plugged-in desktop tab; on a phone
+  // it's a direct battery drain for as long as this view happens to be
+  // left open — including while the app itself is backgrounded, since
+  // requestAnimationFrame's own browser-level throttling while hidden
+  // isn't guaranteed consistent across WebView implementations the way it
+  // is in a real desktop browser. Explicitly stopping on visibilitychange
+  // (and picking back up when visible again) means this costs nothing at
+  // all while it can't be seen, on any platform, not just Android.
   let rafId = null;
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    } else if (rafId === null) {
+      tick();
+    }
+  }
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   function tick() {
     step(nodes, edges);
     nodes.forEach((n) => {
@@ -377,6 +394,7 @@ export function renderMindMap(container, doc, selectedId, onPick) {
   container.appendChild(fitBtn);
 
   return function stop() {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     if (rafId !== null) cancelAnimationFrame(rafId);
   };
 }
