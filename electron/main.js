@@ -1,6 +1,9 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const {
+  app, BrowserWindow, dialog, ipcMain,
+} = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
+const crypto = require('crypto');
 
 // Every folder/file path the user has explicitly picked (via the native
 // dialog), plus everything under it — the desktop-app equivalent of the
@@ -27,6 +30,129 @@ function allow(type, targetPath) {
 function assertAllowed(targetPath) {
   if (!isAllowed(targetPath)) {
     throw new Error(`Not allowed: "${targetPath}" is outside every folder/file you've opened.`);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Atomic file writes: temp file in the same directory -> fsync it ->
+// rename over the target -> fsync the directory. A plain fs.writeFile()
+// opens the existing file, truncates it, then streams the new bytes in —
+// a crash (SIGKILL, power loss, a full disk) between the truncate and the
+// write completing leaves the file shorter than either version, not the
+// old one and not the new one. POSIX rename() is atomic, so a crash at any
+// point before it leaves the real file byte-for-byte untouched (with at
+// worst a harmless, unpublished .tmp-* file next to it); a crash after it
+// is indistinguishable from a normal save. The directory fsync matters
+// too: the rename isn't guaranteed durable on disk until the directory
+// entry pointing at it is flushed, not just the file's own data.
+// ---------------------------------------------------------------------
+async function atomicWriteFile(filePath, content) {
+  const dir = path.dirname(filePath);
+  const tmpPath = path.join(dir, `.${path.basename(filePath)}.tmp-${crypto.randomBytes(8).toString('hex')}`);
+  // rename() replaces the target's inode (and therefore its permission
+  // bits) with the temp file's — so without this, every save through here
+  // would silently narrow an existing file from whatever it actually was
+  // (e.g. group/other-readable) down to whatever the temp file happened to
+  // be created with, which fs.writeFile()'s in-place open+truncate never
+  // did. Match the file's current mode when it already exists; a brand
+  // new file gets a normal, non-secretive default.
+  const existingMode = await fs.stat(filePath).then((st) => st.mode & 0o777).catch(() => 0o644);
+  const fh = await fs.open(tmpPath, 'w', existingMode);
+  try {
+    await fh.writeFile(content, 'utf-8');
+    await fh.sync();
+  } catch (err) {
+    await fh.close().catch(() => {});
+    await fs.unlink(tmpPath).catch(() => {});
+    throw err;
+  }
+  await fh.close();
+  try {
+    await fs.rename(tmpPath, filePath);
+  } catch (err) {
+    await fs.unlink(tmpPath).catch(() => {});
+    throw err;
+  }
+  const dirHandle = await fs.open(dir, 'r');
+  try {
+    await dirHandle.sync();
+  } finally {
+    await dirHandle.close();
+  }
+}
+
+// ---------------------------------------------------------------------
+// Stale-overwrite detection: the mtime/size a file had the last time this
+// process actually read (or wrote) its bytes, keyed by absolute path.
+// Editing a file here while it also changes on disk (git checkout, vim,
+// another process) used to be a silent lost update on the next save —
+// write-file below now refuses to overwrite a file whose on-disk state
+// has moved since we last saw it, rather than blindly trusting whatever's
+// in the renderer's memory. No baseline recorded yet (a file this session
+// has never actually read) is not an error — there's nothing to compare
+// against, same as a brand-new file being created for the first time.
+// ---------------------------------------------------------------------
+const knownStat = new Map();
+
+async function recordStat(filePath) {
+  try {
+    const st = await fs.stat(filePath);
+    knownStat.set(filePath, { mtimeMs: st.mtimeMs, size: st.size });
+  } catch {
+    knownStat.delete(filePath);
+  }
+}
+
+async function assertNotChangedExternally(filePath) {
+  const expected = knownStat.get(filePath);
+  if (!expected) return;
+  let current = null;
+  try {
+    const st = await fs.stat(filePath);
+    current = { mtimeMs: st.mtimeMs, size: st.size };
+  } catch {
+    current = null;
+  }
+  if (current && (current.mtimeMs !== expected.mtimeMs || current.size !== expected.size)) {
+    throw new Error(`"${path.basename(filePath)}" changed on disk since it was opened here — reload it before saving, or you'll overwrite that change.`);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Which folders the user has ever actually granted access to via the
+// real native picker, persisted to disk (not just the in-memory
+// allowlist, which starts empty every launch). reallow-folder (below)
+// re-grants access to the *last-opened* folder on startup without a
+// fresh dialog prompt — the renderer remembers which path that was, in
+// its own localStorage, but a renderer-supplied path is not something
+// this process can trust on its own: only a path this same process
+// already saw come back from a real dialog.showOpenDialog() call is
+// eligible to be re-granted.
+// ---------------------------------------------------------------------
+const grantedFoldersFile = () => path.join(app.getPath('userData'), 'granted-folders.json');
+
+async function readGrantedFolders() {
+  try {
+    const raw = await fs.readFile(grantedFoldersFile(), 'utf-8');
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter((p) => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function rememberGrantedFolder(folderPath) {
+  const resolved = path.resolve(folderPath);
+  const list = await readGrantedFolders();
+  if (list.includes(resolved)) return;
+  list.push(resolved);
+  try {
+    await fs.mkdir(path.dirname(grantedFoldersFile()), { recursive: true });
+    await atomicWriteFile(grantedFoldersFile(), JSON.stringify(list));
+  } catch {
+    // Best-effort — worst case, the next launch's reallow-folder call
+    // just fails closed and asks the user to re-pick the folder, which is
+    // the safe direction to fail in.
   }
 }
 
@@ -105,6 +231,7 @@ ipcMain.handle('pick-folder', async () => {
   if (result.canceled || !result.filePaths.length) return null;
   const [folderPath] = result.filePaths;
   allow('dir', folderPath);
+  await rememberGrantedFolder(folderPath);
   return { path: folderPath, name: path.basename(folderPath) };
 });
 
@@ -117,6 +244,7 @@ ipcMain.handle('pick-file', async () => {
   const [filePath] = result.filePaths;
   allow('file', filePath);
   const text = await fs.readFile(filePath, 'utf-8');
+  await recordStat(filePath);
   return { path: filePath, name: path.basename(filePath), text };
 });
 
@@ -129,12 +257,16 @@ ipcMain.handle('read-dir', async (event, dirPath) => {
 
 ipcMain.handle('read-file', async (event, filePath) => {
   assertAllowed(filePath);
-  return fs.readFile(filePath, 'utf-8');
+  const text = await fs.readFile(filePath, 'utf-8');
+  await recordStat(filePath);
+  return text;
 });
 
 ipcMain.handle('write-file', async (event, filePath, content) => {
   assertAllowed(filePath);
-  await fs.writeFile(filePath, content, 'utf-8');
+  await assertNotChangedExternally(filePath);
+  await atomicWriteFile(filePath, content);
+  await recordStat(filePath);
 });
 
 ipcMain.handle('exists', async (event, targetPath) => {
@@ -150,6 +282,11 @@ ipcMain.handle('exists', async (event, targetPath) => {
 ipcMain.handle('delete-file', async (event, filePath) => {
   assertAllowed(filePath);
   await fs.unlink(filePath);
+  // Keyed the same (unresolved) way recordStat()/assertNotChangedExternally()
+  // key it above — resolving here and not there would leave a stale entry
+  // behind that a file later re-created at this exact path would then get
+  // incorrectly flagged against.
+  knownStat.delete(filePath);
 });
 
 /**
@@ -159,8 +296,23 @@ ipcMain.handle('delete-file', async (event, filePath) => {
  * preference), but the allowlist itself is main-process, in-memory state
  * that a fresh launch starts empty. This re-grants it without a fresh
  * dialog prompt, the same trust a real desktop app extends to a workspace
- * you've already explicitly opened before.
+ * you've already explicitly opened before — but only after checking this
+ * exact path is one this process itself actually saw come back from a
+ * real native folder picker at some point (see rememberGrantedFolder),
+ * and that it's still a real, existing directory rather than something
+ * since deleted or renamed. A renderer that can't point to a path in that
+ * persisted history — including one making the call up entirely — gets
+ * nothing.
  */
 ipcMain.handle('reallow-folder', async (event, folderPath) => {
-  allow('dir', folderPath);
+  const resolved = path.resolve(folderPath);
+  const granted = await readGrantedFolders();
+  if (!granted.includes(resolved)) {
+    throw new Error(`Not allowed: "${folderPath}" was never granted through the folder picker.`);
+  }
+  const stat = await fs.stat(resolved).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw new Error(`"${folderPath}" no longer exists — pick it again.`);
+  }
+  allow('dir', resolved);
 });

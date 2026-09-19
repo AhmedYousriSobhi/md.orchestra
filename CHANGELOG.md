@@ -1489,3 +1489,31 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   Playwright against the running app. `TESTING.md` lays out the concrete
   use cases MD.Orchestra is designed around and a 43-case functional test
   matrix spanning every area exercised by hand so far.
+
+- **Stage 75** (branch `fix/electron-fs-p0-hardening`) — Fixes the three
+  P0s `docs/RELIABILITY_ARCHITECTURE_REVIEW.md` flagged in the Electron
+  shell's filesystem layer. (1) **Security**: `reallow-folder` used to
+  grant the renderer access to *any* path it named, with zero validation
+  — now it only re-grants a path this same process already saw come back
+  from a real native folder picker (persisted to a small JSON file under
+  Electron's own `userData` dir, checked and re-verified as a still-real
+  directory before trusting it again). (2) **Crash consistency**: writes
+  went straight through `fs.writeFile` in place — a crash mid-write could
+  truncate the real file. `write-file` now writes to a temp file in the
+  same directory, `fsync`s it, `rename()`s it over the target (atomic on
+  POSIX), and `fsync`s the directory too, so a crash at any point before
+  the rename leaves the original untouched. The temp file is created with
+  the target's own existing permission bits, not a fixed default — a
+  naive version of this fix would have silently narrowed every saved
+  file's mode to owner-only on each save, since `rename()` carries the
+  *new* inode's permissions, not the old file's. (3) **Stale overwrites**:
+  editing a file here while it also changed on disk (git, another editor)
+  used to be a silent lost update — `write-file` now compares the file's
+  current mtime/size against what was last read, and refuses to overwrite
+  it if they've diverged, surfacing a clear "changed on disk" error
+  instead. All three verified against the actual built AppImage (not just
+  the dev server) via Chrome DevTools Protocol calls into the real IPC
+  handlers: a never-granted path is rejected, a legitimately-granted one
+  works end-to-end through the real auto-reopen-last-folder flow, a
+  normal save preserves file mode with zero leftover temp files, and a
+  simulated external edit is detected and left on disk untouched.
