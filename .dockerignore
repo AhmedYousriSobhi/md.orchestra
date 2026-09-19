@@ -2,4 +2,11 @@
 .gitignore
 node_modules
 dist
+dist-android
+web-dist
 .claude
+android/.gradle
+android/build
+android/app/build
+android/app/src/main/assets/public
+android/capacitor-cordova-android-plugins/build

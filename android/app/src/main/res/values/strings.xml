@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MD.Orchestra</string>
+    <string name="title_activity_main">MD.Orchestra</string>
+    <string name="package_name">com.mdorchestra.app</string>
+    <string name="custom_url_scheme">com.mdorchestra.app</string>
+</resources>

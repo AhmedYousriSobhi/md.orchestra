@@ -1,0 +1,42 @@
+# Builds the MD.Orchestra Android app into a debug APK — same idea as
+# Dockerfile.electron: a real Android SDK + Gradle toolchain lives only in
+# this throwaway build image, not on the host. The result is a plain,
+# installable-for-testing APK; signing a release build for the Play Store
+# or F-Droid is a separate, later step this doesn't attempt.
+FROM eclipse-temurin:21-jdk-jammy AS build
+WORKDIR /app
+
+# Node, for the web-asset copy step and the Capacitor CLI's own sync command.
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates gnupg \
+  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+# Android SDK command-line tools — just enough to satisfy this project's
+# compileSdkVersion (see android/variables.gradle), not a full Android
+# Studio install.
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+RUN mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools" \
+  && curl -fsSL -o /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip \
+  && unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools" \
+  && mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest" \
+  && rm /tmp/cmdline-tools.zip
+ENV PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools"
+
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 || true
+RUN sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build:web-assets && npx cap sync android
+
+WORKDIR /app/android
+RUN chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+# Exported on its own via `docker build --target artifacts --output dist-android .`
+# (see build-android.sh) — keeps the output to just the APK, not this
+# whole multi-GB build image with the SDK/Gradle caches in it.
+FROM scratch AS artifacts
+COPY --from=build /app/android/app/build/outputs/apk/debug/app-debug.apk /

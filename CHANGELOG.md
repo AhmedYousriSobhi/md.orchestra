@@ -1545,3 +1545,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   the project's GitHub Releases, correctly reports "no published versions"
   since none exist yet without crashing anything, and the whole section is
   absent in browser dev mode, where there's no packaged build to update.
+
+- **Stage 78** (branch `feature/android-app`) — The beginning of an
+  Android build, via [Capacitor](https://capacitorjs.com/) wrapping the
+  same HTML/CSS/JS this app already is rather than a rewrite. New
+  `js/core/capacitorFsAdapter.js` implements the same handle shape
+  `electronFsAdapter.js` and the browser File System Access API already
+  do, backed by `@daniele-rolli/capacitor-scoped-storage` (a free,
+  open-source Storage Access Framework wrapper) — so `workspaceIO.js`'s
+  existing directory-walking/create/delete logic works completely
+  unchanged against it, the same "add a third adapter, not a rewrite"
+  pattern this codebase already uses for Electron vs. browser.
+  `./build-android.sh` (Docker only, mirroring `build-desktop.sh`) builds
+  a real debug APK — verified, not assumed: it failed twice on genuine
+  Gradle/Kotlin toolchain issues (a JDK-21-only Capacitor module against a
+  JDK 17 build image; a duplicate-Kotlin-stdlib classpath conflict from
+  the Cordova compatibility layer), both root-caused and fixed, and the
+  resulting APK confirmed to be a real signed package containing this
+  project's actual `index.html`/`main.js`, not just "the script ran."
+  Along the way, a real phone-width bug: the Preview panel's peek-tab used
+  a desktop-only offset formula that placed it floating mid-screen once
+  Preview goes full-screen below the existing 860px breakpoint — fixed.
+  See `docs/ANDROID.md` for what's genuinely verified here vs. still
+  missing (there's no real-device testing yet, no single-file open, no
+  mobile-specific UI pass, no app icon of its own, no release signing) —
+  a beginning, deliberately not oversold as more than that.
