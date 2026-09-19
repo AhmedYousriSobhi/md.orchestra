@@ -1764,6 +1764,16 @@ el.settingsBtn.addEventListener('click', openSettingsPanel);
 el.sidebarToggle.addEventListener('click', () => {
   const isNarrowViewport = window.matchMedia('(max-width: 860px)').matches;
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
+  // TEMPORARY diagnostic — a real-device report said this button appears to
+  // do nothing on Android, with no JS error surfacing either (see the
+  // global error toast above). This bisects the two remaining
+  // possibilities in one step: if this toast itself never appears, the tap
+  // isn't reaching this handler at all; if it does appear (with the
+  // sidebar still not visibly opening), the handler runs fine and the bug
+  // is in the sidebar's own CSS/visibility instead. Remove once resolved.
+  if (isCapacitor) {
+    showToast(`sidebar-toggle fired — narrow=${isNarrowViewport}, sidebar classes: ${el.sidebar.className || '(none)'}`, { duration: 6000 });
+  }
 });
 
 // Section textareas auto-grow to fit their content (see
