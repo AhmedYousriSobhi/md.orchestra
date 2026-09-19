@@ -1,7 +1,6 @@
 import { isElectron, electronPickFolder, electronReopenFolder } from './electronFsAdapter.js';
-import { isCapacitor, capacitorPickFolder, reopenCapacitorFolder } from './capacitorFsAdapter.js';
 
-export const supportsDirectoryPicker = isElectron || isCapacitor || (typeof window !== 'undefined' && 'showDirectoryPicker' in window);
+export const supportsDirectoryPicker = isElectron || (typeof window !== 'undefined' && 'showDirectoryPicker' in window);
 
 const MD_RE = /\.(md|markdown)$/i;
 
@@ -43,26 +42,20 @@ async function collectFromDirectoryHandle(dirHandle, prefix = '', dirHandles) {
  */
 export async function openDirectoryPicker() {
   if (!supportsDirectoryPicker) return null;
-  // eslint-disable-next-line no-nested-ternary -- three backends, same shape either way
-  const dirHandle = isElectron ? await electronPickFolder()
-    : isCapacitor ? await capacitorPickFolder()
-      : await window.showDirectoryPicker();
+  const dirHandle = isElectron ? await electronPickFolder() : await window.showDirectoryPicker();
   if (!dirHandle) return null;
   const dirHandles = new Map();
   const files = await collectFromDirectoryHandle(dirHandle, '', dirHandles);
-  // dirHandle.path only carries a meaningful, launch-surviving identity in
-  // Electron/Capacitor mode (see electronFsAdapter.js/capacitorFsAdapter.js)
-  // — main.js uses it to remember this folder across app launches.
+  // dirHandle.path only exists in Electron mode (see electronFsAdapter.js) —
+  // main.js uses it to remember this folder across app launches.
   return {
     rootName: dirHandle.name, files, dirHandles, rootPath: dirHandle.path,
   };
 }
 
-/** Silently reopens a folder from a previous Electron/Capacitor launch by its remembered identity (an absolute path on desktop, a persisted SAF tree URI on Android) — see electronReopenFolder/reopenCapacitorFolder. Only ever called when isElectron or isCapacitor. */
+/** Silently reopens a folder from a previous Electron launch by its remembered absolute path — see electronFsAdapter.js's electronReopenFolder. Only ever called when isElectron. */
 export async function reopenWorkspaceAtPath(rootPath, rootName) {
-  const dirHandle = isElectron
-    ? await electronReopenFolder(rootPath, rootName)
-    : reopenCapacitorFolder(rootPath, rootName);
+  const dirHandle = await electronReopenFolder(rootPath, rootName);
   const dirHandles = new Map();
   const files = await collectFromDirectoryHandle(dirHandle, '', dirHandles);
   return {

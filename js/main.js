@@ -35,7 +35,6 @@ import {
   createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory, reopenWorkspaceAtPath,
 } from './core/workspaceIO.js';
 import { isElectron } from './core/electronFsAdapter.js';
-import { isCapacitor } from './core/capacitorFsAdapter.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -105,14 +104,11 @@ const el = {
 el.previewPanel.hidden = !getPreviewOpen();
 
 /**
- * The last-opened folder for either "real app" backend — Electron's
- * absolute path, or Capacitor/Android's persisted SAF tree URI (see
- * handleWorkspaceOpened and the startup reopen below) — meaningless in the
- * browser, where there's no such thing as an identity that survives the
- * tab closing. Reopening it silently on launch, the way VSCode reopens
- * your last workspace, is the whole point of moving off the browser's
- * "grant access, once" model. The key name is a holdover from when this
- * only ever meant Electron; not worth a migration just to rename it.
+ * The desktop app's own last-opened folder (see handleWorkspaceOpened and
+ * the startup reopen below) — meaningless in the browser, where there's no
+ * such thing as a path that survives the tab closing. Reopening it
+ * silently on launch, the way VSCode reopens your last workspace, is the
+ * whole point of moving off the browser's "grant access, once" model.
  */
 const LAST_ELECTRON_FOLDER_KEY = 'mdDashboard.lastElectronFolder';
 
@@ -677,7 +673,7 @@ async function handleCloseWorkspace(rootName) {
   // Closing means closing: don't silently bring it back on the next launch
   // (see reopenLastElectronFolder above) just because it was the most
   // recently opened one.
-  if ((isElectron || isCapacitor) && getRememberedElectronFolder()?.rootName === rootName) {
+  if (isElectron && getRememberedElectronFolder()?.rootName === rootName) {
     try { localStorage.removeItem(LAST_ELECTRON_FOLDER_KEY); } catch { /* ignore */ }
   }
   render();
@@ -1019,7 +1015,7 @@ async function reopenCleanStandaloneFile(fileName) {
 async function handleWorkspaceOpened({
   rootName, files, dirHandles = null, rootPath = null,
 }) {
-  if ((isElectron || isCapacitor) && rootPath) rememberElectronFolder(rootPath, rootName);
+  if (isElectron && rootPath) rememberElectronFolder(rootPath, rootName);
   if (!files.length) {
     showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
     return;
@@ -1763,17 +1759,16 @@ window.addEventListener('drop', async (e) => {
 });
 
 /**
- * Silently reopens the last-used folder on launch, on either "real app"
- * backend — the same trust VSCode extends to reopening your last
- * workspace, made possible by Electron/Capacitor keeping a real,
- * launch-surviving identity (LAST_ELECTRON_FOLDER_KEY above) rather than a
- * browser permission grant that never survives a reload anyway. Never
- * runs in the browser; never blocks the rest of startup if the folder's
- * moved or been deleted since — just a toast, the same failure path a
- * manual re-open would hit.
+ * Silently reopens the desktop app's last-used folder on launch — the
+ * same trust VSCode extends to reopening your last workspace, made
+ * possible by the desktop app keeping a real path (LAST_ELECTRON_FOLDER_KEY
+ * above) rather than a browser permission grant that never survives a
+ * reload anyway. Never runs in the browser; never blocks the rest of
+ * startup if the folder's moved or been deleted since — just a toast, the
+ * same failure path a manual re-open would hit.
  */
 async function reopenLastElectronFolder() {
-  if (!isElectron && !isCapacitor) return;
+  if (!isElectron) return;
   const remembered = getRememberedElectronFolder();
   if (!remembered) return;
   try {

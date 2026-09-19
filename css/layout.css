@@ -493,12 +493,4 @@ aside#preview-panel[hidden] { display: none; }
     position: absolute; inset: 0; z-index: 16; width: auto;
   }
   #breadcrumb-bar, #section-view-wrap { padding-left: 1rem; padding-right: 1rem; }
-  /* .edge-toggle's own desktop rule (see above) slides it left by the
-     preview panel's own *desktop* width whenever preview is open, so it
-     stays peeking out from the panel's edge — but the preview panel is
-     full-screen at this width instead, so that same offset instead drops
-     the button somewhere in the middle of the screen, overlapping
-     whatever content is under it. Nothing needs peeking at when the panel
-     already covers everything; its own ✕ closes it. */
-  #app-body.preview-open .edge-toggle { display: none; }
 }

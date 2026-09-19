@@ -15,7 +15,4 @@ You made it past the README. Here's everything it didn't bother you with.
 - **[docs/RELIABILITY_ARCHITECTURE_REVIEW.md](docs/RELIABILITY_ARCHITECTURE_REVIEW.md)**
   — an honest audit of what happens if your laptop dies mid-save. Spoiler:
   there's still real work to do here, and this doc says exactly what.
-- **[docs/ANDROID.md](docs/ANDROID.md)** — the beginning of an Android
-  build, what's actually verified vs. still missing, and how to build it
-  yourself.
 - **[CHANGELOG.md](CHANGELOG.md)** — the whole build, stage by stage.
