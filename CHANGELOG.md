@@ -1527,3 +1527,21 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   legible at a glance instead of left for the viewer to guess: navigating
   and editing a section, browsing the whole-folder graph, and the
   autosave-then-explicit-save flow through the Changes panel.
+
+- **Stage 77** — Auto-update, the one clear gap a look at what users
+  actually expect from a desktop app turned up: until now, getting a new
+  version meant re-running `build-desktop.sh` by hand. `electron-updater`
+  now checks the app's own GitHub Releases (via `package.json`'s new
+  `build.publish` config) a few seconds after launch, and again on demand
+  from **Settings → Software update** — silent when there's nothing new,
+  and a plain "Restart now / Later" dialog when there is (Later still
+  installs it on the next natural quit, rather than the update just
+  sitting there forgotten). Settings also now remembers the *last* check's
+  outcome so opening it doesn't show a stale "up to date" placeholder that
+  contradicts a real check that already ran in the background — a real
+  gap this caught while testing, not a hypothetical one. Verified against
+  the actual packaged AppImage (not the dev server, which electron-updater
+  has nothing to talk to): the background check makes a genuine request to
+  the project's GitHub Releases, correctly reports "no published versions"
+  since none exist yet without crashing anything, and the whole section is
+  absent in browser dev mode, where there's no packaged build to update.

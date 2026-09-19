@@ -16,3 +16,17 @@ contextBridge.exposeInMainWorld('electronFS', {
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   reallowFolder: (folderPath) => ipcRenderer.invoke('reallow-folder', folderPath),
 });
+
+// Auto-update status/controls — separate from electronFS since it has
+// nothing to do with the user's own files, just this app's own version.
+// onStatus returns an unsubscribe function, the same shape every other
+// "subscribe to a stream of events" API in this codebase uses.
+contextBridge.exposeInMainWorld('electronUpdater', {
+  getVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onStatus: (callback) => {
+    const listener = (event, status) => callback(status);
+    ipcRenderer.on('update-status', listener);
+    return () => ipcRenderer.removeListener('update-status', listener);
+  },
+});

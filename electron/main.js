@@ -4,6 +4,7 @@ const {
 const path = require('path');
 const fs = require('fs/promises');
 const crypto = require('crypto');
+const { autoUpdater } = require('electron-updater');
 
 // Every folder/file path the user has explicitly picked (via the native
 // dialog), plus everything under it — the desktop-app equivalent of the
@@ -156,6 +157,62 @@ async function rememberGrantedFolder(folderPath) {
   }
 }
 
+// ---------------------------------------------------------------------
+// Auto-update: electron-updater checks electron-builder's own GitHub
+// Releases feed (configured via package.json's "build.publish", and only
+// present at all in a real packaged build — see the app.isPackaged guard
+// below, since an unpacked `npm start` dev run has no app-update.yml for
+// it to read and would otherwise just throw). A background check runs
+// once shortly after launch; the renderer can also trigger one on demand
+// (Settings → Check for updates) — both paths funnel through the same
+// event handlers below, which push a status to whichever window is open
+// so the UI can show something better than nothing happening.
+// ---------------------------------------------------------------------
+autoUpdater.autoDownload = true;
+// "Later" in the dialog below has to actually mean something — installing
+// on the next quit regardless (not only when quitAndInstall() is called
+// directly) is what makes that true, rather than a downloaded update
+// silently going nowhere until someone happens to open Settings again.
+autoUpdater.autoInstallOnAppQuit = true;
+
+let mainWindow = null;
+// The Settings panel's own status listener only exists while Settings is
+// actually open — a status pushed before that (the background check on
+// launch fires 3s in, almost always before anyone's clicked Settings) would
+// otherwise just be missed, leaving the panel stuck on its generic initial
+// text even after a real check already ran and found something worth
+// showing. Remembering the latest one here lets get-app-version hand it
+// over on open, alongside the version it already returns.
+let lastStatus = null;
+
+function sendUpdateStatus(status) {
+  lastStatus = status;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-status', status);
+  }
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdateStatus({ state: 'checking' }));
+autoUpdater.on('update-not-available', () => sendUpdateStatus({ state: 'up-to-date' }));
+autoUpdater.on('update-available', (info) => sendUpdateStatus({ state: 'downloading', version: info.version }));
+autoUpdater.on('error', (err) => sendUpdateStatus({ state: 'error', message: err?.message || String(err) }));
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus({ state: 'ready', version: info.version });
+  // Reuses the same window's own close-confirmation logic (see the
+  // 'close' handler below) rather than bypassing it: quitAndInstall()
+  // quits the app like any other quit, so unsaved work still gets its
+  // normal "quit anyway?" prompt first if there's any.
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'info',
+    buttons: ['Restart now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    message: `MD.Orchestra ${info.version} is ready to install.`,
+    detail: 'Restart now to finish updating, or keep working — it installs next time you quit either way.',
+  });
+  if (choice === 0) autoUpdater.quitAndInstall();
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -167,6 +224,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = win;
   win.loadFile(path.join(__dirname, '..', 'index.html'));
 
   // js/main.js's own beforeunload guard shows a browser tab's native "leave
@@ -220,6 +278,13 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+  // Unpacked (npm start) runs have no app-update.yml for electron-updater
+  // to read — it throws immediately if asked to check in that case, so
+  // this only ever runs against a real packaged build. A few seconds'
+  // delay keeps it out of the way of the window's own first paint.
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000);
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -315,4 +380,19 @@ ipcMain.handle('reallow-folder', async (event, folderPath) => {
     throw new Error(`"${folderPath}" no longer exists — pick it again.`);
   }
   allow('dir', resolved);
+});
+
+ipcMain.handle('get-app-version', () => ({ version: app.getVersion(), isPackaged: app.isPackaged, lastStatus }));
+
+/** On-demand check (Settings → Check for updates) — status still arrives via the same 'update-status' push the background check on launch uses, not this call's own return value, so the two paths behave identically from the renderer's side. */
+ipcMain.handle('check-for-updates', async () => {
+  if (!app.isPackaged) {
+    sendUpdateStatus({ state: 'error', message: 'Updates only work in a packaged build, not a dev run.' });
+    return;
+  }
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    sendUpdateStatus({ state: 'error', message: err?.message || String(err) });
+  }
 });

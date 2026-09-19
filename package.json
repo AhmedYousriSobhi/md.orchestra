@@ -31,9 +31,19 @@
       "!**/*.md"
     ],
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "icons/icon.png",
       "category": "Office"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AhmedYousriSobhi",
+      "repo": "md.orchestra"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
