@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This app only ever talks to https:// endpoints (the CDN scripts in
+  index.html, api.anthropic.com) — Android already blocks plaintext HTTP by
+  default from API 28 onward with no config needed, but this project's own
+  minSdkVersion is 23 (see variables.gradle), where that protection isn't
+  automatic. Disallowing cleartext explicitly here closes that gap on
+  anything below API 28 too, rather than relying on a version-dependent
+  default this app doesn't actually need any exception to.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
