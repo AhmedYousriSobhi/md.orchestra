@@ -4,16 +4,31 @@
 
 **Your `.md` folder, but you can actually see it.**
 
-![MD.Orchestra demo](docs/assets/demo.gif)
+[![License: MIT](https://img.shields.io/github/license/AhmedYousriSobhi/md.orchestra?color=blue)](LICENSE)
+![Electron](https://img.shields.io/badge/desktop-Electron-47848F?logo=electron&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
+[![Last commit](https://img.shields.io/github/last-commit/AhmedYousriSobhi/md.orchestra)](CHANGELOG.md)
 
 </div>
 
 You know that folder — forty Markdown files deep, and every time you open
-one you're just scrolling, hunting for the one heading you needed. MD.Orchestra
-turns it into something you can *navigate*: click through headings like
-folders, drop a note on a paragraph without touching its words, drag a
-section somewhere else entirely. It all lands right back in the same plain
-`.md` files. No database, no lock-in, no "now it's trapped in our app."
+one you're just scrolling, hunting for the one heading you needed.
+MD.Orchestra turns it into something you can *navigate*: click through
+headings like folders, drop a note on a paragraph without touching its
+words, drag a section somewhere else entirely. It all lands right back in
+the same plain `.md` files. No database, no lock-in, no "now it's trapped
+in our app."
+
+## See it in action
+
+**Navigate and edit — click any heading, it's editable right there.**
+![Open a folder, browse it, edit a section, watch the preview update live](docs/assets/demo-edit.gif)
+
+**The whole folder, as a graph you can click through.**
+![Open the workspace map, expand a folder, jump straight into a file](docs/assets/demo-map.gif)
+
+**Every unsaved edit tracked, until you decide what to do with it.**
+![See the dirty indicator, open Changes, save it back to disk](docs/assets/demo-save.gif)
 
 ## Get it running
 
@@ -38,3 +53,11 @@ home.
 
 That's it. If you're the type who reads changelogs for fun, the rest lives
 in **[MORE.md](MORE.md)**.
+
+---
+
+<div align="center">
+
+Licensed under [MIT](LICENSE).
+
+</div>

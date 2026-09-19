@@ -1517,3 +1517,13 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   works end-to-end through the real auto-reopen-last-folder flow, a
   normal save preserves file mode with zero leftover temp files, and a
   simulated external edit is detected and left on disk untouched.
+
+- **Stage 76** — README polish: an MIT `LICENSE` (referenced from both a
+  badge and the footer), plus `license`/`author` fields in `package.json`
+  to match. The single plain screen-recording GIF is replaced with three
+  short, purpose-built ones — each captured against the real running app
+  via Playwright, then annotated frame-by-frame (highlight boxes, arrows,
+  numbered callouts) so the actions being demonstrated are actually
+  legible at a glance instead of left for the viewer to guess: navigating
+  and editing a section, browsing the whole-folder graph, and the
+  autosave-then-explicit-save flow through the Changes panel.
