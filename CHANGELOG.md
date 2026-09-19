@@ -1570,3 +1570,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   missing (there's no real-device testing yet, no single-file open, no
   mobile-specific UI pass, no app icon of its own, no release signing) —
   a beginning, deliberately not oversold as more than that.
+
+- **Stage 79** (branch `feature/android-app`) — The first real device ran
+  this build, and it found real things: a genuinely stale APK (built 21
+  seconds before a CSS fix that would've covered it), and header buttons
+  that seemed unresponsive. Map/Source turned out to be correctly
+  `disabled` with no document loaded — but the ☰ sidebar toggle's
+  unresponsiveness is still unexplained after reading through every
+  plausible cause in the code, so instead of guessing further, a global
+  `window.onerror`/`unhandledrejection` handler now surfaces any uncaught
+  error as a real, readable toast — everywhere, not just Android, since a
+  packaged app's user has no devtools to go find the error in themselves.
+  That test round also drove a real security/battery/polish pass: the
+  hardware back button now closes whatever's open (any overlay, then the
+  mobile sidebar) before minimizing rather than doing nothing or killing
+  the app; the mind-map's continuous animation loop now pauses on the
+  standard Page Visibility API instead of draining battery whenever the
+  app is backgrounded or the tab is hidden, on any platform; the status
+  bar and app icon/splash now match this project's actual brand instead
+  of Capacitor's generic defaults, including a proper dark-mode splash;
+  `android:allowBackup` is off (Settings' own copy promises the Anthropic
+  API key never leaves this browser's localStorage — Android's default
+  cloud auto-backup would have silently swept it up regardless) and
+  cleartext HTTP is disallowed outright. See `docs/ANDROID.md` for the
+  full, still-honest account of what a second real-device round still
+  needs to confirm.
