@@ -62,6 +62,32 @@ import { getTheme, applyTheme } from './utils/theme.js';
 // the module in sync with whatever was actually applied.
 applyTheme(getTheme());
 
+// A desktop browser tab always has devtools one keystroke away, so a script
+// error there is at worst an inconvenience to go look for. Inside a
+// packaged app — especially the Android WebView, which has no visible
+// console at all outside a USB-tethered remote-debugging session — the
+// exact same error instead just reads as "nothing happened," the app
+// silently doing nothing in response to whatever was tapped. Surfacing it
+// as a real, readable toast instead is what turns "the button doesn't
+// work" into an actual bug report. Deliberately over the default toast
+// duration (errors are worth reading, not glancing at) and deduplicated by
+// message so one error thrown repeatedly (e.g. from inside a render loop)
+// doesn't paper the screen in identical toasts.
+const recentErrorMessages = new Set();
+function reportUncaughtError(message) {
+  const key = String(message).slice(0, 200);
+  if (recentErrorMessages.has(key)) return;
+  recentErrorMessages.add(key);
+  setTimeout(() => recentErrorMessages.delete(key), 10000);
+  showToast(`Something went wrong: ${key}`, { type: 'error', duration: 9000 });
+}
+window.addEventListener('error', (e) => {
+  reportUncaughtError(e.error?.message || e.message || 'unknown error');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  reportUncaughtError(e.reason?.message || String(e.reason) || 'unknown rejection');
+});
+
 const el = {
   appBody: document.getElementById('app-body'),
   sidebar: document.getElementById('sidebar'),
