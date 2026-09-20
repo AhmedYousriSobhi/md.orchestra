@@ -120,19 +120,29 @@ export function attachPanZoom(root, world, container, {
   }
 
   function handlePointerDown(e) {
-    if (!shouldStartPan(e)) return;
-    userInteracted = true;
-    // A second finger touching down mid-gesture can occasionally race the
-    // UA's own pointer-capture bookkeeping; failing to capture only means
-    // move events might stop firing if that finger drifts off this
-    // element, not that the gesture itself is invalid.
-    try { root.setPointerCapture(e.pointerId); } catch { /* see above */ }
+    // Every finger's position is tracked regardless of what's underneath
+    // it, so a second finger touching down is always recognized as the
+    // start of a pinch -- even when the first finger happened to land on a
+    // clickable node. shouldStartPan() only gates a *single*-finger drag
+    // (so tapping/dragging a node isn't hijacked into panning the canvas
+    // underneath it); a second finger is unambiguous zoom intent that
+    // filter must never swallow. Without this, a dense graph (Workspace
+    // mode's tree, packed with small clickable nodes) made pinch nearly
+    // impossible to trigger, since real fingers routinely land on a node.
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.size === 2) {
+      userInteracted = true;
       panState = null;
       root.classList.remove('panzoom-panning');
+      // A second finger touching down mid-gesture can occasionally race the
+      // UA's own pointer-capture bookkeeping; failing to capture only means
+      // move events might stop firing if that finger drifts off this
+      // element, not that the gesture itself is invalid.
+      try { root.setPointerCapture(e.pointerId); } catch { /* see above */ }
       startPinch();
-    } else if (activePointers.size === 1) {
+    } else if (activePointers.size === 1 && shouldStartPan(e)) {
+      userInteracted = true;
+      try { root.setPointerCapture(e.pointerId); } catch { /* see above */ }
       startPan(e.clientX, e.clientY, e.pointerId);
     }
   }

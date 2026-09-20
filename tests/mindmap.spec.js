@@ -81,3 +81,45 @@ test('two-finger pinch zooms the mind map', async ({ page }) => {
   });
   expect(scaleAfter).toBeGreaterThan(scaleBefore);
 });
+
+test('pinch still zooms when the first finger lands on a node', async ({ page }) => {
+  await page.goto('/index.html');
+  await openDemoFile(page);
+  await openMindMap(page);
+
+  const scaleBefore = await page.evaluate(() => {
+    const world = document.querySelector('.mindmap-world');
+    return new DOMMatrix(getComputedStyle(world).transform).a;
+  });
+
+  // shouldStartPan() excludes a first finger landing on a real node (so a
+  // tap/drag there isn't hijacked into panning) -- but a second finger
+  // touching down anywhere is unambiguous pinch intent and must still be
+  // recognized. A synthetic pinch centered on the canvas doesn't exercise
+  // this at all, since it rarely lands on an actual node.
+  await page.evaluate(() => {
+    const svgEl = document.querySelector('.map-canvas-container svg');
+    const node = document.querySelector('.mindmap-node');
+    const nodeRect = node.getBoundingClientRect();
+    const svgRect = svgEl.getBoundingClientRect();
+    const nx = nodeRect.left + nodeRect.width / 2;
+    const ny = nodeRect.top + nodeRect.height / 2;
+    const ox = svgRect.left + svgRect.width - 20;
+    const oy = svgRect.top + svgRect.height - 20;
+    const fireOn = (el, type, id, x, y) => el.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, clientX: x, clientY: y, bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: id === 1,
+    }));
+    fireOn(node, 'pointerdown', 1, nx, ny);
+    fireOn(svgEl, 'pointerdown', 2, ox, oy);
+    fireOn(svgEl, 'pointermove', 1, nx - 60, ny);
+    fireOn(svgEl, 'pointermove', 2, ox + 60, oy);
+    fireOn(svgEl, 'pointerup', 1, nx - 60, ny);
+    fireOn(svgEl, 'pointerup', 2, ox + 60, oy);
+  });
+
+  const scaleAfter = await page.evaluate(() => {
+    const world = document.querySelector('.mindmap-world');
+    return new DOMMatrix(getComputedStyle(world).transform).a;
+  });
+  expect(scaleAfter).toBeGreaterThan(scaleBefore);
+});

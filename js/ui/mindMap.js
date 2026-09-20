@@ -138,7 +138,13 @@ function wireDrag(groupEl, node, root, world, onClick) {
   let moved = false;
 
   groupEl.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
+    // Deliberately NOT stopPropagation()'d: the shared pan/zoom module
+    // (panZoom.js) also needs to see this pointerdown reach `root`, purely
+    // to track it -- its own shouldStartPan() already excludes a node
+    // target from starting a canvas pan, so this doesn't fight the drag
+    // below. Without letting it bubble, a second finger touching down
+    // elsewhere while this one drags a node was never recognized as a
+    // pinch at all, since panZoom.js had no idea this first finger existed.
     dragging = true;
     moved = false;
     node.dragging = true;

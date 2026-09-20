@@ -1778,3 +1778,32 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
     instead of overflowing a fixed-size box — with `touch-action: pan-y`
     so ordinary one-finger scrolling stays native, and the chosen zoom
     level persisted per-surface in `localStorage`.
+
+- **Stage 89** (branch `feature/android-app`) — Reported: pinch-zoom still
+  didn't work in the Document map's Workspace tab, even after Stage 88.
+  Root cause was in the shared `js/ui/panZoom.js` module used by all three
+  map modes: `handlePointerDown` returned immediately, without tracking
+  the pointer at all, whenever `shouldStartPan()` said no (i.e. the touch
+  landed on a real node) — meant to stop a node tap/drag from being
+  hijacked into panning the canvas underneath it. But that also meant a
+  first finger landing on a node was invisible to the pinch-recognition
+  logic entirely: when a second finger then came down elsewhere,
+  `activePointers` held only that one pointer, so it started a one-finger
+  pan instead of recognizing a pinch. Workspace mode's tree is packed with
+  small nodes, so a real two-finger pinch there landed at least one finger
+  on a node almost every time — Tree and Mind map's sparser layouts made
+  the same bug much less likely to bite, which is why it read as
+  "Workspace specifically is broken." Fixed by tracking every pointer
+  unconditionally and only gating whether a *single* finger is allowed to
+  start a pan; a second finger arriving is always treated as pinch intent,
+  regardless of what's under either finger. Mind map needed one more fix
+  on top: its own per-node drag handler (`wireDrag`) called
+  `stopPropagation()` on pointerdown, hiding that finger from panZoom.js
+  entirely rather than just from the pan decision — removed, since
+  `shouldStartPan()` already keeps a single-finger node touch from
+  panning; the node still drags normally, but a second finger now
+  correctly triggers a pinch. Added regression tests to
+  `tests/map-view.spec.js` and `tests/mindmap.spec.js` that start the
+  first synthetic touch exactly on a real node element (not the canvas
+  center, which rarely overlaps a node and let this bug hide from the
+  existing test suite) for all three modes.
