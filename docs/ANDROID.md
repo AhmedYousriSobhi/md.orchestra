@@ -106,6 +106,24 @@ the Android app is finished.
      access is scoped and OS-granted per folder the user explicitly
      picks, deliberately avoiding the broad storage/media runtime
      permission a traditional file-access approach would require.
+- **Third real-device test round: the sidebar went dead again, this time
+  whenever the preview panel was actually open** — pressing ☰ while
+  previewing a file (or right after creating a new file, which opens
+  straight into preview since that's the default) did nothing visible,
+  the same symptom as the original Stage 80 bug but a different trigger.
+  Root cause: `css/layout.css`'s mobile breakpoint gives the sidebar and
+  preview panel fixed z-indexes (15 and 16) regardless of which one the
+  user just opened, so the preview panel — legitimately shown, not the
+  Stage 80 no-document case — sat above the sidebar exactly the same way.
+  The ☰ button and its class-toggle worked correctly every time; the
+  drawer was just rendering invisibly underneath. Fixed with one CSS
+  rule: `aside#sidebar.sidebar-open` now gets `z-index: 17` at this
+  breakpoint, so the sidebar is always the topmost layer whenever it's
+  actually open, independent of whatever the preview panel is doing.
+  Verified with Playwright: with a document loaded and preview open by
+  default, toggling the sidebar now makes it the real
+  `document.elementFromPoint()` hit target, not just a class that's
+  present in the DOM.
 
 ## What's genuinely not done yet
 

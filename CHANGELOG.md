@@ -1646,3 +1646,19 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   appears because none is needed — the whole reason this app uses
   Android's Storage Access Framework is to avoid that broad permission
   entirely.
+
+- **Stage 82** (branch `feature/android-app`) — A third real-device round
+  found the sidebar dead again, this time whenever the preview panel was
+  actually open (including right after creating a new file, which opens
+  straight into preview by default) — the same symptom as Stage 80's bug
+  but a different trigger. `css/layout.css`'s mobile breakpoint gives the
+  sidebar and preview panel fixed z-indexes (15 and 16) regardless of
+  which one the user just opened, so a legitimately-open preview panel
+  sat above the sidebar the same way the Stage 80 no-document case did —
+  the ☰ button and its class-toggle worked correctly every time, the
+  drawer just rendered invisibly underneath. Fixed with one rule:
+  `aside#sidebar.sidebar-open` now gets `z-index: 17` at that breakpoint,
+  so the sidebar is always topmost whenever it's actually open. Verified
+  with Playwright that the sidebar is now the real
+  `document.elementFromPoint()` hit target with a document loaded and
+  preview open by default, not just a class present in the DOM.
