@@ -1662,3 +1662,22 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   with Playwright that the sidebar is now the real
   `document.elementFromPoint()` hit target with a document loaded and
   preview open by default, not just a class present in the DOM.
+
+- **Stage 83** (branch `feature/android-app`) — Replaced the Keyboard
+  Shortcuts panel with a real Touch Gestures guide on Capacitor, backed
+  by actual navigation gestures rather than a relabeled button. Every
+  shortcut in `shortcutsPanel.js`'s table already has its own tappable
+  toolbar button, so there was nothing to gesture-ify there — the real
+  gap was touch-native navigation. Added `js/ui/gestures.js` (shared,
+  touch-only swipe recognition — a real mouse already has a click for
+  everything these exist for) and wired it into `js/main.js`: edge-swipe
+  from the left goes back to the parent section, mirroring iOS's own
+  back-swipe, or opens the sidebar drawer when there's nowhere left to go
+  back to; swiping the open drawer itself to the left closes it,
+  alongside the existing tap-outside-to-close. New `js/ui/gesturesPanel.js`
+  lists these plus the mind map's existing pinch-to-zoom, and
+  `settingsPanel.js` now swaps between it and the keyboard-shortcuts
+  guide based on `isCapacitor`. Verified with Playwright across three
+  real navigation depths (confirming each one goes up exactly one real
+  level rather than skipping to the document root) plus both sidebar
+  gestures.

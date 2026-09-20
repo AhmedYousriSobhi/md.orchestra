@@ -124,6 +124,26 @@ the Android app is finished.
   default, toggling the sidebar now makes it the real
   `document.elementFromPoint()` hit target, not just a class that's
   present in the DOM.
+- **The Keyboard Shortcuts panel is replaced with a Touch Gestures guide
+  on Capacitor** (Stage 83), and real navigation gestures back it up —
+  not just a relabeled button. Every action in `shortcutsPanel.js`'s
+  table already has its own tappable toolbar button, so there was nothing
+  to gesture-ify there; what was actually missing was touch-native
+  *navigation*. Added: edge-swipe from the left goes back to the parent
+  section (mirroring iOS's own back-swipe convention), or opens the
+  sidebar drawer if there's nowhere to go back to; swiping the open
+  drawer itself to the left closes it, alongside the existing
+  tap-outside-to-close; and the mind map's existing pinch-to-zoom is
+  listed too. `js/ui/gestures.js` has the shared swipe-recognition logic
+  (touch-only — a real mouse already has every affordance these exist
+  for as a click), `js/ui/gesturesPanel.js` is the new guide panel, and
+  `settingsPanel.js` swaps between it and the keyboard-shortcuts guide
+  based on `isCapacitor`. Verified with Playwright across three real
+  navigation depths (a nested heading going up one level to its actual
+  parent, not skipping to the document root; a shallower heading doing
+  the same one level up; and the shallowest heading reaching the true
+  document root) plus both sidebar-drawer gestures — all fired in the
+  browser's DOM exactly as designed, not just class names asserted.
 
 ## What's genuinely not done yet
 
@@ -149,12 +169,12 @@ Said plainly, so nothing here is silently oversold:
   enough to *begin* on — but nothing here was purpose-built for a phone
   screen, and a proper pass deserves its own scoped look rather than being
   assumed done because a couple of layout bugs got fixed.
-- **No touch gestures.** Real-device feedback specifically called out that
-  the in-app Keyboard Shortcuts panel makes little sense with no physical
-  keyboard, and suggested gestures instead. That's a real, separate design
-  effort (swipe-to-go-back, long-press menus, etc.) — not something to
-  improvise as a side effect of something else, so it's noted here as
-  scoped-but-not-started rather than attempted piecemeal.
+- **Basic touch gestures are in** (see "Stage 83" below) — edge-swipe
+  back/open-sidebar, swipe-to-close the drawer, tap-outside-to-close, and
+  mind-map pinch-to-zoom. Not yet in: long-press context menus, or any
+  gesture equivalent for actions that don't already have their own
+  toolbar button (add note, add section, etc. — those don't need one,
+  since they're already one tap away).
 - **No release signing, Play Store, or F-Droid packaging.** `build-android.sh`
   produces a debug build only, installable for testing
   (`adb install -r dist-android/app-debug.apk`) but not something to

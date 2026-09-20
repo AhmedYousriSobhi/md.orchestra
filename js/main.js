@@ -27,6 +27,7 @@ import {
   recommendedMode, docModeKey, getStoredMode, setStoredMode,
 } from './ui/docViewMode.js';
 import { animatedSwap, closeOverlay } from './ui/transitions.js';
+import { bindHorizontalSwipe } from './ui/gestures.js';
 import {
   readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
 } from './core/fileIO.js';
@@ -1799,6 +1800,38 @@ document.addEventListener('click', (e) => {
   if (!el.sidebar.classList.contains('sidebar-open')) return;
   if (el.sidebar.contains(e.target) || el.sidebarToggle.contains(e.target)) return;
   el.sidebar.classList.remove('sidebar-open');
+});
+
+// On a phone there's no keyboard for any of the shortcuts in
+// shortcutsPanel.js to bind to, and every action they cover already has
+// its own tappable button — what's actually missing on a touchscreen is
+// navigation gestures, not accelerators. Edge-swipe from the left mirrors
+// iOS's own convention: it goes back to the parent section if there's one
+// to go back to, or opens the sidebar drawer when there isn't (nothing to
+// navigate back out of, so the gesture is free for that instead).
+bindHorizontalSwipe(document.body, {
+  shouldStart: (e) => window.matchMedia('(max-width: 860px)').matches && e.clientX <= 24,
+  onSwipeRight: () => {
+    const path = getSelectedPath();
+    if (path.length > 0) {
+      const { doc } = getState();
+      const parentId = path.length >= 2 ? path[path.length - 2].id : doc?.id;
+      if (parentId) selectSection(parentId);
+    } else if (!el.sidebar.classList.contains('sidebar-open')) {
+      el.sidebar.classList.add('sidebar-open');
+    }
+  },
+});
+
+// Swiping the open drawer itself to the left closes it — the natural
+// "drag it away" complement to the outside-tap-to-close above. Interactive
+// elements (including the Explorer/Outline resize handle, which already
+// has its own vertical pointer-drag) are excluded so a swipe never hijacks
+// their own tap or drag.
+bindHorizontalSwipe(el.sidebar, {
+  shouldStart: (e) => el.sidebar.classList.contains('sidebar-open')
+    && !e.target.closest('button, a, input, textarea, [draggable="true"], .sidebar-resize-handle'),
+  onSwipeLeft: () => el.sidebar.classList.remove('sidebar-open'),
 });
 
 // Section textareas auto-grow to fit their content (see
