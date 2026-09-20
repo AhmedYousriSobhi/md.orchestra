@@ -1595,3 +1595,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   cleartext HTTP is disallowed outright. See `docs/ANDROID.md` for the
   full, still-honest account of what a second real-device round still
   needs to confirm.
+
+- **Stage 80** (branch `feature/android-app`) — Root-caused and fixed the
+  ☰ sidebar toggle bug from Stage 79. It was never a broken click handler:
+  a second diagnostic toast confirmed the tap reached the handler and the
+  `sidebar-open` class toggled correctly every time. A third, more
+  detailed diagnostic (reporting both elements' real
+  `getBoundingClientRect()` and computed `transform`) found the actual
+  cause — the preview panel was never explicitly hidden when no document
+  was loaded, so at phone width, with the "preview open" preference
+  defaulting to true, it sat as a full-viewport, opaque `position:
+  absolute; inset: 0` layer at a higher z-index (16) than the sidebar
+  drawer (15) on first launch. The sidebar's own transform was landing
+  exactly where it should the whole time; it was just rendering
+  underneath that layer. Fixed in `js/main.js`'s `render()`: the preview
+  panel is now forced hidden whenever there's no document, and restored
+  to the user's real stored open/closed preference the moment a document
+  actually loads. Verified with a Playwright simulation of the Capacitor
+  environment: the sidebar's rect now moves fully on-screen with the
+  preview panel correctly collapsed to 0×0, and opening a document still
+  un-hides the preview panel exactly as before. The temporary diagnostic
+  toast added in Stage 79 is removed now that it's served its purpose.
+  Not yet re-confirmed on an actual phone — that's the next real-device
+  round.

@@ -186,6 +186,7 @@ el.explorerToggle.addEventListener('click', () => toggleSidebarSection('explorer
 el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline'));
 
 let lastPathLength = 0;
+let previewSyncedForDoc = false;
 
 // `currentBaseline` holds whichever file's content is currently active as
 // it was when this editing session of it began (set in loadFromText and
@@ -286,6 +287,25 @@ function renderInner() {
   el.addSectionBtn.disabled = !doc;
   el.mapViewBtn.disabled = !doc;
   el.previewToggleBtn.disabled = !doc;
+
+  // With no document loaded there's nothing to preview, so the panel must
+  // stay hidden regardless of the stored open/closed preference — without
+  // this, it sat fully present (opaque background, higher z-index than the
+  // mobile sidebar) even before any file was opened, which on a phone-width
+  // layout made it cover the sidebar drawer completely: the sidebar's own
+  // toggle/transform worked correctly, but it rendered underneath this
+  // panel and so never became visible or tappable.
+  if (!doc) {
+    el.previewPanel.hidden = true;
+    previewSyncedForDoc = false;
+  } else if (!previewSyncedForDoc) {
+    // The moment a document actually appears, restore the panel to the
+    // user's real stored preference (only the "no document" state above
+    // forces it hidden; this undoes that once there's something to show).
+    el.previewPanel.hidden = !getPreviewOpen();
+    previewSyncedForDoc = true;
+  }
+
   // Drives the edge-toggle tab's docked position (see css/layout.css) — it
   // sits at the preview panel's own edge while open, and the viewport's
   // edge while closed.
@@ -1764,16 +1784,6 @@ el.settingsBtn.addEventListener('click', openSettingsPanel);
 el.sidebarToggle.addEventListener('click', () => {
   const isNarrowViewport = window.matchMedia('(max-width: 860px)').matches;
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
-  // TEMPORARY diagnostic — a real-device report said this button appears to
-  // do nothing on Android, with no JS error surfacing either (see the
-  // global error toast above). This bisects the two remaining
-  // possibilities in one step: if this toast itself never appears, the tap
-  // isn't reaching this handler at all; if it does appear (with the
-  // sidebar still not visibly opening), the handler runs fine and the bug
-  // is in the sidebar's own CSS/visibility instead. Remove once resolved.
-  if (isCapacitor) {
-    showToast(`sidebar-toggle fired — narrow=${isNarrowViewport}, sidebar classes: ${el.sidebar.className || '(none)'}`, { duration: 6000 });
-  }
 });
 
 // Section textareas auto-grow to fit their content (see

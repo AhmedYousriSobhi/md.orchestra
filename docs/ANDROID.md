@@ -43,16 +43,36 @@ the Android app is finished.
   uncaught JS error now shows as a real toast instead of a silently dead
   button — directly because a silently dead button is exactly what the
   first test round ran into.
+- **The ☰ sidebar toggle bug from that first test round is fixed.** Root
+  cause, found via in-app diagnostics after static code reading turned up
+  nothing: the preview panel was never explicitly hidden when no document
+  was loaded (only ever hidden by the user's own open/closed preference,
+  or by closing it directly). At phone width, an unhidden preview panel is
+  `position: absolute; inset: 0` with an opaque background and a higher
+  z-index (16) than the mobile sidebar drawer (15) — so on first launch,
+  with the "preview open" preference defaulting to true and no document
+  loaded yet, the preview panel sat as a full-viewport, opaque layer on
+  top of the sidebar's own space. The sidebar's toggle and CSS transform
+  were working correctly the whole time (confirmed via diagnostic
+  toasts showing `open=true` with the correct on-screen rect) — it was
+  just rendering underneath that layer. Fixed in `js/main.js`'s `render()`
+  by forcing the preview panel hidden whenever there's no document, and
+  restoring it to the user's real stored preference the moment a document
+  actually loads. Verified with a Playwright simulation: the sidebar's
+  rect now moves fully on-screen with the preview panel's rect correctly
+  collapsed to 0×0, and separately confirmed opening a document still
+  un-hides the preview panel per the stored preference as before.
 
 ## What's genuinely not done yet
 
 Said plainly, so nothing here is silently oversold:
 
-- **Still only one round of real-device testing**, and it surfaced one
-  bug (see below) not yet fully root-caused. Whether the folder picker,
-  file read/write, and the rest of the app behave correctly when tapped
-  through for real is otherwise still mostly unverified beyond that one
-  round.
+- **Still only one round of real-device testing.** It surfaced one bug,
+  now root-caused and fixed (see "First real-device test" below) but not
+  yet re-confirmed on an actual phone — only via a Playwright simulation
+  so far. Whether the folder picker, file read/write, and the rest of the
+  app behave correctly when tapped through for real is otherwise still
+  mostly unverified beyond that one round.
 - **No single-file "Open .md file" on Android.** The scoped-storage plugin
   only offers a folder-tree picker (`ACTION_OPEN_DOCUMENT_TREE`) — there's
   no SAF single-document equivalent wired up. The generic `<input
@@ -98,18 +118,22 @@ came back:
 2. **Several header buttons appeared unresponsive** — Map and Source are
    *correctly* inert with no document loaded (both are `disabled` until
    one is), but the ☰ sidebar toggle reportedly did nothing either, and
-   that one has no such explanation. It's the one way to reach the
+   that one had no such explanation. It's the one way to reach the
    folder-open button on this build (the sidebar holds the whole file
-   toolbar, and is off-screen by default at phone width), so it matters a
-   lot. Read through every plausible cause in the code — the click
-   handler itself, z-index/stacking around the header, anything that
-   could swallow the tap — and found nothing definitively wrong. Rather
-   than keep guessing blind, added a global uncaught-error toast (see
-   `js/main.js`) so the *next* test either shows a real error message
-   (finally something concrete to fix) or confirms the tap genuinely does
-   nothing with no error at all (pointing at something more subtle, like
-   a touch-event quirk specific to this WebView). Unresolved until the
-   next real-device round says which.
+   toolbar, and is off-screen by default at phone width), so it mattered a
+   lot. Reading the code alone (the click handler, z-index/stacking around
+   the header, anything that could swallow the tap) found nothing
+   definitively wrong, so a global uncaught-error toast went in first
+   (confirmed no JS error was being thrown), then a second, more targeted
+   diagnostic toast on the toggle handler itself confirmed the click *was*
+   reaching the handler and the class *was* toggling — the sidebar was
+   correctly being told to open. A third round of that same diagnostic,
+   this time reporting both elements' actual `getBoundingClientRect()`
+   and computed `transform`, found the real cause: the sidebar's own
+   transform was landing exactly right, but the preview panel — never
+   explicitly hidden when no document is loaded — sat as a full-viewport,
+   opaque, higher-z-index layer on top of it. Fixed; see "What's real
+   right now" above. Not yet re-confirmed on an actual device.
 
 ## Building it
 
