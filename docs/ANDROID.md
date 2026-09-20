@@ -215,6 +215,55 @@ exact command `Dockerfile.android` runs) — the patch reapplied
 automatically, and the resulting Java source read `"wt"`, confirmed by
 reading the file back afterward.
 
+## GitHub repo browsing (read-only, phase one)
+
+A new 🐙 button next to "Open folder" lets you browse a **public** GitHub
+repo's Markdown files without cloning anything — deliberately scoped as
+phase one of a larger idea: *visualize* a repo first, with real commit
+support (pushing edits back) as an explicit, separate follow-up once this
+foundation is solid, not something faked here to look further along than
+it is.
+
+- `js/core/githubIO.js` fetches the repo's whole file tree in one call
+  (`GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1`) and returns
+  it in exactly the shape `workspaceIO.js`'s own browser-fallback path
+  (`workspaceFromFileList`) already produces — no `dirHandles` — which is
+  also exactly what `state/workspace.js`'s `workspaceSupportsWrite()`
+  already reads as "read-only": every write-gated action (add/delete/copy
+  a file, save-to-disk) is correctly disabled for a GitHub-sourced
+  workspace automatically, with no new gating logic needed anywhere else
+  in the app. A file's own `createWritable()` still exists rather than
+  being simply absent, and throws a clear, honest message ("GitHub files
+  are read-only for now...") — so a Save attempt fails through the exact
+  same error-toast path a real write failure already would, not a raw
+  "not a function" error.
+- No authentication: both `api.github.com` and
+  `raw.githubusercontent.com` serve public repos with permissive CORS
+  (`Access-Control-Allow-Origin: *`, confirmed live against a real repo
+  before writing any code around the assumption), so a plain `fetch()`
+  works directly from the app. The real, honest trade-off of that choice:
+  GitHub's un-authenticated rate limit is 60 requests/hour per IP — each
+  repo open is only 1–2 requests, but it's not unlimited.
+- Accepts `owner/repo`, a full `github.com/owner/repo[/tree/branch]` URL,
+  or a `git@github.com:owner/repo.git` remote — whichever gets pasted in.
+- Cross-file links between two Markdown files *within* the same opened
+  repo work unmodified, since every file the repo tree contains is
+  registered into the same workspace file map any local folder's files
+  are — link resolution never needed to know the difference.
+- Verified against a real, live public repo (not just a mocked response):
+  `octocat/Spoon-Knife` loaded, rendered its README, and closed the modal
+  cleanly. Also verified with a mocked repo tree that a nested file
+  (`docs/guide.md`) opens correctly through the Explorer's FocalGraph view
+  (the same click-to-expand graph every workspace's Explorer already
+  uses), and that a save attempt on a GitHub-sourced document fails with
+  the intended read-only message rather than corrupting anything or
+  throwing a raw error.
+- **Not done**: pushing edits back as real commits (needs a GitHub
+  OAuth/token flow and a genuinely different trust model — see the
+  intro above), private repos (would need a token too), and handling a
+  repo large enough that GitHub truncates the tree listing beyond a
+  toast warning that it happened.
+
 ## First real-device test
 
 The first APK ever built here was installed on a real phone. Two things

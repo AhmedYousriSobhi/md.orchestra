@@ -35,6 +35,8 @@ import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
   createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory, reopenWorkspaceAtPath,
 } from './core/workspaceIO.js';
+import { fetchGithubRepoTree } from './core/githubIO.js';
+import { openGithubModal } from './ui/githubModal.js';
 import { isElectron } from './core/electronFsAdapter.js';
 import { isCapacitor } from './core/capacitorFsAdapter.js';
 import { showToast } from './ui/toast.js';
@@ -111,6 +113,7 @@ const el = {
   openFileBtn: document.getElementById('open-file-btn'),
   folderInput: document.getElementById('folder-input'),
   openFolderBtn: document.getElementById('open-folder-btn'),
+  openGithubBtn: document.getElementById('open-github-btn'),
   addFileBtn: document.getElementById('add-file-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
@@ -1220,6 +1223,18 @@ el.folderInput.addEventListener('change', async (e) => {
   if (!files || !files.length) return;
   await handleWorkspaceOpened(workspaceFromFileList(files));
   el.folderInput.value = '';
+});
+
+el.openGithubBtn.addEventListener('click', () => {
+  openGithubModal({
+    onLoad: async (owner, repo, branch) => {
+      const result = await fetchGithubRepoTree({ owner, repo, branch });
+      await handleWorkspaceOpened(result);
+      if (result.truncated) {
+        showToast(`${owner}/${repo} is large enough that GitHub truncated the file listing — some deeply-nested files may be missing.`, { duration: 6000 });
+      }
+    },
+  });
 });
 
 /**

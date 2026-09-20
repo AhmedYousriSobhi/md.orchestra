@@ -1704,3 +1704,22 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   `node_modules` entirely, ran a from-scratch `npm ci` — the exact command
   the Docker build uses — and confirmed the patch reapplied automatically
   and the resulting Java source read `"wt"`.
+
+- **Stage 85** (branch `feature/android-app`) — GitHub repo browsing,
+  phase one: a new 🐙 button opens a public repo's Markdown files
+  read-only, with commit/push support scoped as a deliberate later phase
+  rather than faked here. New `js/core/githubIO.js` fetches a repo's
+  whole file tree in one call and returns it in exactly the shape
+  `workspaceIO.js`'s own browser-fallback path already produces (no
+  `dirHandles`) — which `state/workspace.js`'s `workspaceSupportsWrite()`
+  already reads as "read-only," so every write-gated action across the
+  app is correctly disabled automatically, with zero new gating logic
+  needed anywhere else. No auth needed: both `api.github.com` and
+  `raw.githubusercontent.com` serve public repos with permissive CORS,
+  confirmed live before writing any code around the assumption. New
+  `js/ui/githubModal.js` accepts `owner/repo`, a full GitHub URL, or a
+  `git@` remote. Verified against a real, live public repo (not just a
+  mock) end to end, plus mocked-repo tests confirming nested-file
+  navigation through the Explorer's existing FocalGraph view and that a
+  save attempt fails with an honest read-only message instead of a raw
+  error or silent data loss.
