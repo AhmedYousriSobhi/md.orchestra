@@ -1618,3 +1618,31 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   toast added in Stage 79 is removed now that it's served its purpose.
   Not yet re-confirmed on an actual phone — that's the next real-device
   round.
+
+- **Stage 81** (branch `feature/android-app`) — The second real-device
+  round confirmed the Stage 80 sidebar fix (it now opens and stays visible
+  correctly) and found four more things. The sidebar drawer never closed
+  itself on tapping into the document behind it — fixed with an
+  outside-tap-closes-the-drawer listener, the standard mobile nav-drawer
+  pattern. The mind map's default zoom, and its Fit button, were both
+  visibly wrong (a tiny node cluster low in an otherwise blank canvas) —
+  root cause was the SVG viewBox and the fit math being computed once from
+  the container's size at first mount, and that first real-WebView
+  measurement coming out stale/wrong with nothing ever re-measuring after;
+  fixed in `js/ui/mindMap.js` by re-measuring fresh on every fit and
+  adding a `ResizeObserver` that self-heals the instant the container
+  reports its real size, but only until the user has actually touched the
+  map (so it never yanks away a deliberate pan/zoom later). The mind map
+  also had no touch pinch-to-zoom at all — only a mouse wheel, which
+  doesn't exist on a phone — so real two-finger pinch support was added,
+  anchored on the pinch midpoint the same way wheel-zoom anchors on the
+  cursor, with a clean handoff to one-finger panning when a pinch ends
+  with a finger still down. Two other things reported in the same round
+  turned out not to be bugs: the system folder picker defaulting to
+  Downloads/Google Drive is Android's own picker UI (confirmed via its
+  plugin's Java source — the picker is invoked with a plain, unrestricted
+  intent, so every provider is genuinely available, just possibly behind
+  that picker's own menu icon), and no storage/photos permission prompt
+  appears because none is needed — the whole reason this app uses
+  Android's Storage Access Framework is to avoid that broad permission
+  entirely.

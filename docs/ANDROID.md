@@ -62,6 +62,50 @@ the Android app is finished.
   rect now moves fully on-screen with the preview panel's rect correctly
   collapsed to 0×0, and separately confirmed opening a document still
   un-hides the preview panel per the stored preference as before.
+  **Confirmed fixed on the real device** by the second real-device test
+  round.
+- **Second real-device test round found and fixed four more things:**
+  1. The sidebar drawer never closed itself on a phone — tapping into the
+     document behind it (to actually read or edit something) left it
+     sitting open until the ☰ button was pressed again. Fixed: any tap
+     outside the drawer (and outside the ☰ button itself) now closes it,
+     matching how a standard mobile nav drawer behaves.
+  2. The mind map's default zoom was wrong on the real device — a small
+     graph rendered as a tiny cluster low in a mostly-blank canvas, and
+     the Fit button didn't correct it either. Root cause: the SVG's
+     `viewBox` and the "fit" math were both computed once, from the
+     container's size at the moment it first mounted — on that WebView,
+     an early read of `container.clientWidth`/`clientHeight` came out
+     wrong (0, or some other stale pre-layout value), and nothing ever
+     re-measured after that, so every later Fit press just re-centered
+     within the same wrong, frozen dimensions. Fixed in
+     `js/ui/mindMap.js`: the container is now re-measured fresh on every
+     fit (mount and every Fit press), and a `ResizeObserver` catches the
+     case even if that very first measurement was still wrong, silently
+     re-fitting the instant the container reports its real size — but
+     only until the user has actually touched the map themselves, so it
+     never yanks a deliberate pan/zoom back to auto-fit later.
+  3. No pinch-to-zoom on the mind map — it only ever supported a mouse
+     wheel for zooming, which doesn't exist on a touchscreen. Added real
+     two-finger pinch support (tracking both active pointers, anchored on
+     their midpoint the same way wheel-zoom anchors on the cursor), with
+     a clean handoff back to one-finger panning when a pinch ends with one
+     finger still down.
+  4. Two things reported alongside the above turned out not to be bugs,
+     worth recording so they aren't re-investigated as one later: the
+     system folder picker only showing Downloads/Google Drive by default
+     is Android's own picker UI, not this app's — the picker is invoked
+     with a plain, unrestricted `ACTION_OPEN_DOCUMENT_TREE` intent (no
+     provider hint at all, confirmed by reading the plugin's own Java
+     source), so every provider on the device is genuinely available,
+     just possibly behind that picker screen's own hamburger/menu icon
+     for "Internal storage" or "This device" rather than shown by
+     default. And no storage/photos permission prompt appears because
+     none is needed: the whole point of using Android's Storage Access
+     Framework here (see "What's real right now" above) is that folder
+     access is scoped and OS-granted per folder the user explicitly
+     picks, deliberately avoiding the broad storage/media runtime
+     permission a traditional file-access approach would require.
 
 ## What's genuinely not done yet
 

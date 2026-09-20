@@ -1786,6 +1786,21 @@ el.sidebarToggle.addEventListener('click', () => {
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
 });
 
+// On a phone, the sidebar is a drawer that floats over the document rather
+// than pushing it aside (see css/layout.css's mobile breakpoint) — the rest
+// of the page stays fully interactive underneath it, so without this,
+// tapping into the document to actually use it left the drawer sitting
+// open until the toggle button was pressed again. Any tap outside the
+// drawer (and outside the toggle itself, which already handles its own
+// open/close) now closes it, the same way a standard mobile nav drawer
+// dismisses on an outside tap.
+document.addEventListener('click', (e) => {
+  if (!window.matchMedia('(max-width: 860px)').matches) return;
+  if (!el.sidebar.classList.contains('sidebar-open')) return;
+  if (el.sidebar.contains(e.target) || el.sidebarToggle.contains(e.target)) return;
+  el.sidebar.classList.remove('sidebar-open');
+});
+
 // Section textareas auto-grow to fit their content (see
 // editableMarkdownBody.js), but that sizing is only ever recomputed when
 // their own text changes — it goes stale the moment something *else*

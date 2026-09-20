@@ -173,8 +173,8 @@ function wireDrag(groupEl, node, root, world, onClick) {
 
 /** Render an Obsidian-style force-directed "mind map" of the whole document into `container`. Returns a stop() to cancel its animation loop. */
 export function renderMindMap(container, doc, selectedId, onPick) {
-  const viewW = container.clientWidth || 900;
-  const viewH = Math.max(container.clientHeight || 600, 480);
+  let viewW = container.clientWidth || 900;
+  let viewH = Math.max(container.clientHeight || 600, 480);
   const { nodes, edges, neighbors } = buildGraph(doc);
 
   // The physics runs in its own "world" space sized to the node count, not
@@ -256,7 +256,25 @@ export function renderMindMap(container, doc, selectedId, onPick) {
       minX, minY, maxX, maxY,
     };
   }
+  // Re-measures the container fresh every time, rather than trusting the
+  // viewW/viewH captured at mount — on at least one real Android WebView,
+  // the container's clientWidth/clientHeight read back 0 (or a stale
+  // pre-layout value) on the very first render, which silently locked the
+  // SVG's viewBox to the desktop-oriented 900x600 fallback forever: the
+  // initial view came out zoomed way out relative to the actual phone
+  // screen, and the Fit button looked broken because it kept re-fitting to
+  // that same wrong, frozen viewport instead of the real one.
+  function measureViewport() {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w > 0 && h > 0 && (w !== viewW || h !== viewH)) {
+      viewW = w;
+      viewH = Math.max(h, 200);
+      root.setAttribute('viewBox', `0 0 ${viewW} ${viewH}`);
+    }
+  }
   function fitToContent() {
+    measureViewport();
     const b = contentBounds();
     const bw = Math.max(b.maxX - b.minX, 1);
     const bh = Math.max(b.maxY - b.minY, 1);
@@ -281,22 +299,85 @@ export function renderMindMap(container, doc, selectedId, onPick) {
     onClick: () => fitToContent(),
   }, '⤢ Fit');
 
-  // --- Cursor tracking, pan-by-dragging-the-background, and wheel zoom ---
+  // Catches the case above even when the very first measurement above
+  // still came out wrong (e.g. the container hadn't been laid out even one
+  // frame later): once it actually resolves to a real, different size,
+  // silently re-fit to it automatically — but only until the user has
+  // touched the map themselves, so this never yanks a deliberate pan/zoom
+  // back to auto-fit later (an in-progress pinch also holds this off).
+  let userInteracted = false;
+  const resizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => { if (!userInteracted) fitToContent(); })
+    : null;
+  resizeObserver?.observe(container);
+
+  // --- Cursor tracking, pan-by-dragging-the-background, wheel zoom, and
+  // touch pinch-to-zoom (two simultaneous pointers) ---
   let cursorWorld = null;
   let panState = null;
+  let pinchState = null;
+  const activePointers = new Map(); // pointerId -> {x, y} in client space
+
+  function pointerDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function pointerMid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+
+  function startPan(clientX, clientY, pointerId) {
+    const p = toSvgPoint(root, root, clientX, clientY);
+    if (!p) return;
+    panState = {
+      startX: p.x, startY: p.y, tx0: tx, ty0: ty, pointerId,
+    };
+    root.classList.add('mindmap-panning');
+  }
+  function startPinch() {
+    const [a, b] = [...activePointers.values()];
+    const mid = pointerMid(a, b);
+    const rootMid = toSvgPoint(root, root, mid.x, mid.y);
+    pinchState = {
+      startDist: pointerDist(a, b),
+      startZoom: zoom,
+      worldAnchor: rootMid ? { x: (rootMid.x - tx) / zoom, y: (rootMid.y - ty) / zoom } : null,
+    };
+  }
 
   root.addEventListener('pointerdown', (e) => {
     if (e.target.closest && e.target.closest('.mindmap-node')) return;
-    const p = toSvgPoint(root, root, e.clientX, e.clientY);
-    if (!p) return;
-    panState = {
-      startX: p.x, startY: p.y, tx0: tx, ty0: ty, pointerId: e.pointerId,
-    };
-    root.classList.add('mindmap-panning');
-    root.setPointerCapture(e.pointerId);
+    userInteracted = true;
+    // A second finger touching down mid-gesture can occasionally race the
+    // UA's own pointer-capture bookkeeping; failing to capture only means
+    // move events might stop firing if that finger drifts off this
+    // element, not that the gesture itself is invalid, so tracking it in
+    // activePointers below still proceeds regardless.
+    try { root.setPointerCapture(e.pointerId); } catch { /* see above */ }
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 2) {
+      panState = null;
+      root.classList.remove('mindmap-panning');
+      startPinch();
+    } else if (activePointers.size === 1) {
+      startPan(e.clientX, e.clientY, e.pointerId);
+    }
   });
   root.addEventListener('pointermove', (e) => {
     cursorWorld = toSvgPoint(root, world, e.clientX, e.clientY);
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 2 && pinchState) {
+      const [a, b] = [...activePointers.values()];
+      const currentDist = pointerDist(a, b);
+      if (currentDist > 0 && pinchState.startDist > 0) {
+        zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchState.startZoom * (currentDist / pinchState.startDist)));
+      }
+      const mid = pointerMid(a, b);
+      const rootMid = toSvgPoint(root, root, mid.x, mid.y);
+      if (rootMid && pinchState.worldAnchor) {
+        tx = rootMid.x - zoom * pinchState.worldAnchor.x;
+        ty = rootMid.y - zoom * pinchState.worldAnchor.y;
+      }
+      applyWorldTransform();
+      return;
+    }
     if (panState && panState.pointerId === e.pointerId) {
       const p = toSvgPoint(root, root, e.clientX, e.clientY);
       if (p) {
@@ -306,17 +387,27 @@ export function renderMindMap(container, doc, selectedId, onPick) {
       }
     }
   });
-  function endPan(e) {
-    if (panState && (!e || panState.pointerId === e.pointerId)) {
+  function endPointer(e) {
+    if (!e) return;
+    activePointers.delete(e.pointerId);
+    if (panState && panState.pointerId === e.pointerId) {
       panState = null;
       root.classList.remove('mindmap-panning');
     }
+    if (pinchState) {
+      pinchState = null;
+      // One finger still down after a pinch ends — resume panning from
+      // its current position instead of dropping straight to nothing.
+      const remaining = [...activePointers.entries()][0];
+      if (remaining) startPan(remaining[1].x, remaining[1].y, remaining[0]);
+    }
   }
-  root.addEventListener('pointerup', endPan);
-  root.addEventListener('pointercancel', endPan);
-  root.addEventListener('pointerleave', () => { cursorWorld = null; endPan(); });
+  root.addEventListener('pointerup', endPointer);
+  root.addEventListener('pointercancel', endPointer);
+  root.addEventListener('pointerleave', (e) => { cursorWorld = null; endPointer(e); });
   root.addEventListener('wheel', (e) => {
     e.preventDefault();
+    userInteracted = true;
     const rootPt = toSvgPoint(root, root, e.clientX, e.clientY);
     if (!rootPt) return;
     const worldBefore = { x: (rootPt.x - tx) / zoom, y: (rootPt.y - ty) / zoom };
@@ -395,6 +486,7 @@ export function renderMindMap(container, doc, selectedId, onPick) {
 
   return function stop() {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
+    resizeObserver?.disconnect();
     if (rafId !== null) cancelAnimationFrame(rafId);
   };
 }
