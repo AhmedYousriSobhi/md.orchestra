@@ -188,6 +188,33 @@ Said plainly, so nothing here is silently oversold:
   device to test the result on. Left alone until it can actually be
   verified, not flipped on and hoped for.
 
+## Save-to-disk: a real truncation bug found by audit, not by report
+
+Asked to confirm there wasn't a save-to-local-storage issue, an audit of
+the actual write path (`js/core/capacitorFsAdapter.js`'s `createWritable()`
+down into the plugin's own Java) turned up a genuine one, not previously
+hit in testing: `CapacitorScopedStorage.java`'s `writeFile` opened the
+target file with Android's `openOutputStream(uri, "w")`. Android's own API
+contract does **not** guarantee that `"w"` truncates an existing file on
+every SAF provider — some (older Android versions, and some third-party
+providers, including Google Drive's own SAF implementation) have shipped
+versions that don't reliably truncate on `"w"`, which would leave stale
+trailing bytes from the file's previous, longer contents behind whenever a
+save made the file *shorter* than before (e.g. deleting a large section).
+`"wt"` is the one mode Android documents as guaranteed to truncate on
+every provider, so that's the fix.
+
+Since this lives in a vendored third-party plugin under `node_modules/`
+(not this app's own code), the fix is committed as a
+[`patch-package`](https://github.com/ds300/patch-package) patch
+(`patches/@daniele-rolli+capacitor-scoped-storage+0.1.0.patch`) plus a
+`postinstall` script in `package.json`, rather than hand-edited and lost
+on the next install. Verified for real, not just written and assumed:
+removed `node_modules` entirely and ran a completely fresh `npm ci` (the
+exact command `Dockerfile.android` runs) — the patch reapplied
+automatically, and the resulting Java source read `"wt"`, confirmed by
+reading the file back afterward.
+
 ## First real-device test
 
 The first APK ever built here was installed on a real phone. Two things

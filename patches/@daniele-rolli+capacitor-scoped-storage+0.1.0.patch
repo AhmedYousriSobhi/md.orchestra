@@ -1,0 +1,22 @@
+diff --git a/node_modules/@daniele-rolli/capacitor-scoped-storage/android/src/main/java/com/danielerolli/capacitorscopedstorage/CapacitorScopedStorage.java b/node_modules/@daniele-rolli/capacitor-scoped-storage/android/src/main/java/com/danielerolli/capacitorscopedstorage/CapacitorScopedStorage.java
+index 19ca01a..249e20d 100644
+--- a/node_modules/@daniele-rolli/capacitor-scoped-storage/android/src/main/java/com/danielerolli/capacitorscopedstorage/CapacitorScopedStorage.java
++++ b/node_modules/@daniele-rolli/capacitor-scoped-storage/android/src/main/java/com/danielerolli/capacitorscopedstorage/CapacitorScopedStorage.java
+@@ -35,7 +35,16 @@ public class CapacitorScopedStorage {
+                     ? Base64.decode(data, Base64.DEFAULT)
+                     : data.getBytes(StandardCharsets.UTF_8);
+ 
+-            try (OutputStream os = context.getContentResolver().openOutputStream(f.getUri(), "w")) {
++            // "w" mode's truncation behavior is explicitly *not* guaranteed
++            // across every SAF DocumentsProvider by Android's own API
++            // contract -- providers vary, and some (older Android
++            // versions, and some third-party providers such as Google
++            // Drive's own SAF implementation) have shipped versions that
++            // don't reliably truncate on "w", leaving stale trailing bytes
++            // behind whenever the new content is shorter than what the
++            // file held before. "wt" is the one mode Android documents as
++            // guaranteed to truncate on every provider.
++            try (OutputStream os = context.getContentResolver().openOutputStream(f.getUri(), "wt")) {
+                 if (os == null) throw new Exception("Failed to open output stream");
+                 os.write(bytes);
+             }

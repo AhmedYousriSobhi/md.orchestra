@@ -1681,3 +1681,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   real navigation depths (confirming each one goes up exactly one real
   level rather than skipping to the document root) plus both sidebar
   gestures.
+
+- **Stage 84** (branch `feature/android-app`) — Animated the preview
+  panel's entrance instead of an instant display:none/block cut, via a
+  `@keyframes` animation that plays the moment `[hidden]` comes off (no JS
+  bookkeeping needed): a subtle scale+fade on desktop, and a bottom-sheet
+  style slide-up at phone width, where the panel already covers the whole
+  screen like a modal.
+
+  Asked to confirm there wasn't a save-to-local-storage issue, an audit of
+  the real write path found one: the vendored `@daniele-rolli/capacitor-
+  scoped-storage` plugin opened files for writing with Android's
+  `openOutputStream(uri, "w")`, whose truncation behavior Android's own
+  API contract does **not** guarantee on every SAF provider — some
+  providers (including Google Drive's own SAF implementation) have
+  shipped versions that don't reliably truncate on `"w"`, which could
+  leave stale trailing bytes behind whenever a save made a file shorter
+  than its previous contents. Fixed with `"wt"`, the mode Android
+  documents as guaranteed to truncate everywhere, applied via a committed
+  `patch-package` patch (not a hand-edit that `npm install` would wipe)
+  plus a new `postinstall` script. Verified for real: removed
+  `node_modules` entirely, ran a from-scratch `npm ci` — the exact command
+  the Docker build uses — and confirmed the patch reapplied automatically
+  and the resulting Java source read `"wt"`.
