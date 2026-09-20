@@ -48,6 +48,17 @@ const CAPACITOR_STUB = `
         setBackgroundColor: () => Promise.resolve(),
         setStyle: () => Promise.resolve(),
       },
+      // Set window.__pendingSharedFile = { name, text } before navigating
+      // to simulate MainActivity having received a file via ACTION_VIEW/
+      // ACTION_SEND -- consumed (set back to null) the same one-shot way
+      // the real native PendingSharedFile.take() is.
+      ShareReceiver: {
+        takePendingSharedFile: () => {
+          const pending = window.__pendingSharedFile || null;
+          window.__pendingSharedFile = null;
+          return Promise.resolve(pending || { name: null, text: null });
+        },
+      },
     },
   };
 `;

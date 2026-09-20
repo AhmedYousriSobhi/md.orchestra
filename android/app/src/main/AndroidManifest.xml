@@ -19,6 +19,39 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Opening a .md file directly (a file manager's "Open with",
+                 tapping one in Downloads, an email attachment). text/plain
+                 is included because ".md" has no single, universally-agreed
+                 MIME type across Android versions and file manager apps --
+                 plenty report it as text/plain rather than text/markdown,
+                 and without that fallback this app simply never appears as
+                 an option for a real .md file on some devices. The
+                 tradeoff: this app will also offer to open non-Markdown
+                 plain text files, which MainActivity's own handling is
+                 fine with (it's still just text). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="text/x-markdown" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+                <data android:scheme="file" android:mimeType="text/markdown" />
+                <data android:scheme="file" android:mimeType="text/x-markdown" />
+                <data android:scheme="file" android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Sharing a .md file in from another app's own "Share" sheet
+                 (the bug this was added for: MD.Orchestra didn't show up
+                 there at all). Same MIME-type reasoning as above. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <provider

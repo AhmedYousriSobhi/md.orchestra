@@ -1881,3 +1881,43 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   slightly, since `animatedSwap` delays the section view's own re-render
   by 140ms when replacing an already-open document). Added
   `tests/new-file-editor.spec.js` covering both creation paths.
+
+- **Stage 94** — Reported: clicking "+ Add note" made the whole section
+  visibly blank out and redraw itself, instead of the note field just
+  appearing. Root cause: `render()` always swapped the section view
+  through `animatedSwap` — the exit/enter transition meant for
+  *navigating* to a different section (or back) — on every single state
+  change, including one that only updates the *content* of the section
+  already on screen. Fixed by tracking which document/section/view-mode
+  combination was last rendered; when a re-render targets the exact same
+  one, it now goes through a new `directRender` (transitions.js) —
+  an instant in-place refresh with no exit/enter animation — and only
+  falls back to `animatedSwap` when what's being shown is actually
+  changing. This also quietly improves every other same-section content
+  edit (a renamed title, an AI insight added), not just notes. Added
+  `tests/add-note-flicker.spec.js`, asserting the navigation-transition
+  CSS classes are never applied for an in-place note add, but still are
+  for a real section-to-section navigation; proved it fails without the
+  fix.
+
+- **Stage 95** (branch `feature/android-app`) — Reported: MD.Orchestra
+  never showed up as an option in Android's "Open with"/"Share" sheet
+  for a `.md` file — the app had no `<intent-filter>` for
+  `ACTION_VIEW`/`ACTION_SEND` at all, so the OS had no reason to ever
+  offer it. Added intent-filters for both, matching `text/markdown`,
+  `text/x-markdown`, and `text/plain` (the last one deliberately broad:
+  `.md` has no single MIME type Android and every file manager agree on,
+  and plenty report it as plain text — without that fallback the app
+  simply never appears for a real `.md` file on some devices; the
+  tradeoff is it also offers to open non-Markdown plain text). New
+  `PendingSharedFile` (a one-shot holder) and `ShareReceiverPlugin`
+  (registered directly on `MainActivity`, not the vendored ScopedStorage
+  plugin, since this is tied to the Activity's own lifecycle rather than
+  filesystem access) let `MainActivity.onCreate`/`onNewIntent` — the
+  latter needed because of `launchMode="singleTask"` — read the incoming
+  file's name and content and hand it to the JS side once it's actually
+  loaded, since there's no reliable way to call into the WebView the
+  moment the native Activity receives the intent. A file opened/shared
+  in this way now loads automatically on startup, taking priority over
+  silently reopening the last folder. Added
+  `tests/android-share-intent.spec.js` against a Capacitor plugin stub.

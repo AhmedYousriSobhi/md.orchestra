@@ -190,3 +190,25 @@ export async function capacitorSaveFileAs(suggestedName) {
   if (!result?.uri) return null;
   return makeCapacitorUriFileHandle(result.uri, result.name || suggestedName);
 }
+
+/**
+ * A .md file opened via Android's own "Open with" (ACTION_VIEW) or shared
+ * in from another app's "Share" sheet (ACTION_SEND) — see
+ * ShareReceiverPlugin (registered directly on MainActivity, not part of
+ * the vendored ScopedStorage plugin, since it's tied to the Activity's own
+ * onCreate/onNewIntent lifecycle rather than filesystem access). Called
+ * once on startup; consumes whatever's pending so a later, unrelated
+ * relaunch never replays a stale share. Returns `null` on browser/desktop,
+ * or if nothing was actually shared in.
+ */
+export async function capacitorTakePendingSharedFile() {
+  if (typeof window === 'undefined' || !window.Capacitor?.Plugins?.ShareReceiver) return null;
+  let result;
+  try {
+    result = await window.Capacitor.Plugins.ShareReceiver.takePendingSharedFile();
+  } catch {
+    return null;
+  }
+  if (!result?.name || result.text == null) return null;
+  return { name: result.name, text: result.text };
+}
