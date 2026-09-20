@@ -18,3 +18,21 @@ test('Android: startup with nothing pending behaves normally (no document loaded
 
   await expect(page.locator('#dirty-text')).toHaveText('No document loaded');
 });
+
+test('Android: sharing a second file into an already-running app loads it too', async ({ page }) => {
+  // launchMode="singleTask" means a share arriving while the app is
+  // already open reuses this same page (onNewIntent), not a fresh
+  // reload -- the startup-only check above would never see it without
+  // MainActivity's onNewIntent firing mdorchestraPendingShare.
+  await page.addInitScript(CAPACITOR_STUB);
+  await page.goto('/index.html');
+  await expect(page.locator('#dirty-text')).toHaveText('No document loaded');
+
+  await page.evaluate(() => {
+    window.__pendingSharedFile = { name: 'second-share.md', text: '# Second Share\n\nArrived while already open.\n' };
+    window.dispatchEvent(new CustomEvent('mdorchestraPendingShare'));
+  });
+
+  await expect(page.locator('#dirty-text')).toHaveText('second-share.md — up to date');
+  await expect(page.locator('#section-view textarea').first()).toHaveValue(/Second Share/);
+});

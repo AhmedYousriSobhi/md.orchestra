@@ -31,7 +31,22 @@ public class MainActivity extends BridgeActivity {
     public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        handleIncomingIntent(intent);
+        if (handleIncomingIntent(intent)) {
+            // js/main.js's own startup check (which calls
+            // ShareReceiverPlugin) only ever runs once, right when the
+            // page first loads -- it has no reason to look again on its
+            // own. On a cold start that's fine (PendingSharedFile is
+            // already stashed before that check runs), but here the
+            // WebView and its JS are already running from before this
+            // new intent arrived, so nothing would ever ask for it
+            // without an explicit nudge. triggerWindowJSEvent is
+            // Capacitor's own native-to-JS notification mechanism (the
+            // same one it uses internally for things like the back
+            // button), not a custom hack.
+            if (getBridge() != null) {
+                getBridge().triggerWindowJSEvent("mdorchestraPendingShare");
+            }
+        }
     }
 
     /**
@@ -41,10 +56,11 @@ public class MainActivity extends BridgeActivity {
      * right away and stash it in PendingSharedFile for the JS side to
      * collect once it's actually loaded (see ShareReceiverPlugin) — there
      * is no reliable way to hand it straight to the WebView from here,
-     * since js/main.js may not have run yet on a cold start.
+     * since js/main.js may not have run yet on a cold start. Returns
+     * whether anything was actually found and stashed.
      */
-    private void handleIncomingIntent(Intent intent) {
-        if (intent == null) return;
+    private boolean handleIncomingIntent(Intent intent) {
+        if (intent == null) return false;
         String action = intent.getAction();
         Uri uri = null;
         if (Intent.ACTION_VIEW.equals(action)) {
@@ -52,12 +68,13 @@ public class MainActivity extends BridgeActivity {
         } else if (Intent.ACTION_SEND.equals(action)) {
             uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
         }
-        if (uri == null) return;
+        if (uri == null) return false;
 
         String text = readTextFrom(uri);
-        if (text == null) return;
+        if (text == null) return false;
         String name = queryDisplayName(uri);
         PendingSharedFile.set(name != null ? name : "shared.md", text);
+        return true;
     }
 
     private String queryDisplayName(Uri uri) {

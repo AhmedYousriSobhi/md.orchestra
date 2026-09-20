@@ -1995,6 +1995,18 @@ async function openPendingSharedFileIfAny() {
   if (!openedSharedFile) reopenLastElectronFolder();
 })();
 
+// The startup check above only ever runs once, when this module first
+// loads — no reason on its own to look again. But launchMode="singleTask"
+// (see AndroidManifest.xml) means a file opened/shared in while the app is
+// *already* running reuses this same page instead of reloading it, so
+// MainActivity.onNewIntent fires this event (via Capacitor's own
+// triggerWindowJSEvent, not a custom mechanism) to say "look again" —
+// without it, sharing a second file into an already-open app would just
+// silently do nothing.
+if (isCapacitor) {
+  window.addEventListener('mdorchestraPendingShare', () => { openPendingSharedFileIfAny(); });
+}
+
 /**
  * The hardware/gesture back button on Android has no equivalent anywhere
  * else this app runs — without handling it at all, Capacitor's own default

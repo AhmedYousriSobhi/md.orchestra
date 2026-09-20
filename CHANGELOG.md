@@ -1921,3 +1921,19 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   in this way now loads automatically on startup, taking priority over
   silently reopening the last folder. Added
   `tests/android-share-intent.spec.js` against a Capacitor plugin stub.
+
+  Caught on real-device verification (an emulator screenshot alone
+  wouldn't have shown this): sharing a file into the app while it was
+  *already* running silently did nothing. `js/main.js`'s own check for a
+  pending share only ever runs once, when the page first loads —
+  `launchMode="singleTask"` means a second share reuses that same
+  already-running page (`onNewIntent`) rather than reloading it, so
+  nothing ever asked again. Fixed by having `onNewIntent` call
+  Capacitor's own `Bridge.triggerWindowJSEvent` (the same native-to-JS
+  mechanism it uses internally, e.g. for the back button) once a file is
+  stashed, and having `js/main.js` listen for it and re-check. Verified
+  end to end against a real running emulator (not just the Playwright
+  stub): pushed a `.md` file, shared it in through the actual Android
+  Files app's own Share sheet — confirming MD.Orchestra now appears
+  there at all, which was the original bug — and confirmed a second
+  share while the app was still open also loaded correctly.
