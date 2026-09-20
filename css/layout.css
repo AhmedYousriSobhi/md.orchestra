@@ -355,6 +355,16 @@ main#main-panel {
    value, so it can be overridden per-session/persisted without touching
    this rule; the min()/40vw fallback is what shows before any drag ever
    sets one. */
+/* Toggling preview used to be an instant, jarring display:none <-> block
+   flip with no visual transition at all. A @keyframes animation (rather
+   than a `transition`, which can't animate to/from display:none) plays
+   automatically the moment the [hidden] attribute comes off and the panel
+   actually starts rendering -- no JS class bookkeeping needed alongside
+   the existing hidden-state logic in main.js, which stays untouched. */
+@keyframes preview-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateX(8px); }
+  to { opacity: 1; transform: scale(1) translateX(0); }
+}
 aside#preview-panel {
   width: var(--preview-width, min(460px, 40vw));
   flex-shrink: 0;
@@ -362,6 +372,7 @@ aside#preview-panel {
   border-left: 1px solid var(--border);
   overflow-y: auto;
   padding: 1.25rem 1.5rem 3rem;
+  animation: preview-pop-in 0.26s cubic-bezier(.2,.8,.3,1);
 }
 aside#preview-panel[hidden] { display: none; }
 
@@ -499,8 +510,18 @@ aside#preview-panel[hidden] { display: none; }
      Whenever the sidebar is actually open, it needs to be the topmost
      thing regardless of preview's own state. */
   aside#sidebar.sidebar-open { transform: translateX(0); z-index: 17; }
+  /* At this width the preview panel already covers the whole screen like a
+     modal — sliding it up from the bottom on open reads as a real sheet
+     "popping up" rather than the desktop entrance's more subtle scale, the
+     same reasoning that already led the map/settings/etc. overlays to
+     animate their own entrances rather than just snapping into place. */
+  @keyframes preview-pop-in-mobile {
+    from { opacity: 0; transform: translateY(28px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   aside#preview-panel {
     position: absolute; inset: 0; z-index: 16; width: auto;
+    animation: preview-pop-in-mobile 0.28s cubic-bezier(.2,.8,.3,1);
   }
   #breadcrumb-bar, #section-view-wrap { padding-left: 1rem; padding-right: 1rem; }
   /* .edge-toggle's own desktop rule (see above) slides it left by the
