@@ -1746,3 +1746,35 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   stale-bytes bug on the unpatched build, and truncated correctly, byte
   for byte, on the patched one. See `docs/ANDROID.md` for the full story
   and how to set up the same emulator safely.
+
+- **Stage 88** (branch `feature/android-app`) — Real-phone feedback after
+  the Stage 87 APK, addressed in four parts:
+  - GitHub repo lookups (`js/core/githubIO.js`) no longer require exact
+    casing. GitHub's own API resolves `owner/repo` case-insensitively and
+    returns the canonical casing in its response, but
+    `raw.githubusercontent.com` is a separate, exact-match CDN path — a
+    URL built from whatever case the user typed could 404 there even
+    after the API call above it succeeded. Fetching the repo's metadata
+    first and using GitHub's own canonical owner/name for every call
+    after that (tree, every raw file URL) sidesteps the mismatch.
+  - Pinch-to-zoom now works on the Document map's Tree and Workspace
+    modes, not just Mind map. The shared pan/zoom/pinch logic that Mind
+    map already had was extracted out of `js/ui/mindMap.js` into a new
+    `js/ui/panZoom.js` module and applied to `js/ui/mapView.js`'s Tree
+    mode and `js/ui/workspaceGraph.js`'s Workspace mode, including
+    keeping pan/zoom state alive across a Workspace graph's own
+    expand/collapse re-renders (the SVG root is now created once and
+    kept; only its inner content is rebuilt).
+  - The Document map panel's header no longer clips the third mode
+    button (or anything else) off narrow phone screens — the mode-toggle
+    row now wraps instead of overflowing — and gained its own dedicated,
+    always-reachable ✕ close button instead of relying on the header's
+    available width.
+  - Two-finger pinch-to-zoom on the actual reading surfaces (the preview
+    panel and the main document view), not just the SVG map views. New
+    `js/ui/pinchZoomText.js` uses the CSS `zoom` property rather than
+    `transform: scale()` — `zoom` reflows layout the way a browser's own
+    page zoom does, so bigger text takes more vertical space naturally
+    instead of overflowing a fixed-size box — with `touch-action: pan-y`
+    so ordinary one-finger scrolling stays native, and the chosen zoom
+    level persisted per-surface in `localStorage`.
