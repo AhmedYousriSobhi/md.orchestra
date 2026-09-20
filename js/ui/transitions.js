@@ -30,6 +30,20 @@ export function animatedSwap(container, renderFn, direction = 'forward') {
   setTimeout(finish, 140);
 }
 
+/**
+ * The instant, no-animation counterpart to animatedSwap — for a state
+ * change that updates the *content* of whatever section is already on
+ * screen (a new note, an edited body, a renamed title) rather than
+ * navigating to a different one. animatedSwap's exit/enter transition
+ * makes sense for "drilling into a section" or "going back"; replayed on
+ * every single content edit too, it reads as the whole card blanking out
+ * and redrawing itself for no visible reason.
+ */
+export function directRender(container, renderFn) {
+  container.innerHTML = '';
+  renderFn(container);
+}
+
 export function openOverlay(el) {
   el.hidden = false;
   requestAnimationFrame(() => el.classList.add('overlay-open'));

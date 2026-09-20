@@ -26,7 +26,7 @@ import { renderFullDocView } from './ui/fullDocView.js';
 import {
   recommendedMode, docModeKey, getStoredMode, setStoredMode,
 } from './ui/docViewMode.js';
-import { animatedSwap, closeOverlay } from './ui/transitions.js';
+import { animatedSwap, directRender, closeOverlay } from './ui/transitions.js';
 import { bindHorizontalSwipe } from './ui/gestures.js';
 import {
   readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
@@ -38,7 +38,7 @@ import {
 import { fetchGithubRepoTree } from './core/githubIO.js';
 import { openGithubModal } from './ui/githubModal.js';
 import { isElectron } from './core/electronFsAdapter.js';
-import { isCapacitor, capacitorSaveFileAs } from './core/capacitorFsAdapter.js';
+import { isCapacitor, capacitorSaveFileAs, capacitorTakePendingSharedFile } from './core/capacitorFsAdapter.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -199,6 +199,12 @@ el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline')
 
 let lastPathLength = 0;
 let previewSyncedForDoc = false;
+// Identifies "which section, in which view mode, of which document" is
+// currently on screen — when a re-render's target matches this exactly,
+// nothing is being navigated to, only its content changed (a new note, an
+// edited body, a renamed title), so it gets an instant in-place refresh
+// instead of animatedSwap's exit/enter transition (see directRender).
+let lastRenderedSectionKey = null;
 
 // `currentBaseline` holds whichever file's content is currently active as
 // it was when this editing session of it began (set in loadFromText and
@@ -332,6 +338,7 @@ function renderInner() {
     el.breadcrumb.innerHTML = '';
     el.previewPanel.innerHTML = '';
     lastPathLength = 0;
+    lastRenderedSectionKey = null;
     return;
   }
 
@@ -396,10 +403,16 @@ function renderInner() {
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
+
+  const sectionKey = `${fileName}|${workspaceRootName}|${workspaceRelPath}|${node.id}|${viewMode}`;
+  const isSameSectionAsLastRender = sectionKey === lastRenderedSectionKey;
+  lastRenderedSectionKey = sectionKey;
+  const swap = isSameSectionAsLastRender ? directRender : animatedSwap;
+
   if (viewMode === 'full') {
-    animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName), direction);
+    swap(el.sectionView, (container) => renderFullDocView(container, doc, fileName), direction);
   } else {
-    animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
+    swap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
   }
 }
 
@@ -1963,7 +1976,24 @@ async function reopenLastElectronFolder() {
     showToast(`Could not reopen "${remembered.rootName}": ${err.message}`, { type: 'error' });
   }
 }
-reopenLastElectronFolder();
+
+/**
+ * A .md file the user just opened/shared in from *outside* the app (see
+ * capacitorTakePendingSharedFile) is a fresh, explicit "open this" action
+ * — it should win over silently reopening whatever folder happened to be
+ * open last time, not get immediately buried under it.
+ */
+async function openPendingSharedFileIfAny() {
+  const shared = await capacitorTakePendingSharedFile();
+  if (!shared) return false;
+  loadFromText(shared.text, shared.name);
+  return true;
+}
+
+(async () => {
+  const openedSharedFile = await openPendingSharedFileIfAny();
+  if (!openedSharedFile) reopenLastElectronFolder();
+})();
 
 /**
  * The hardware/gesture back button on Android has no equivalent anywhere
