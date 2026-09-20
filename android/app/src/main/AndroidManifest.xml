@@ -23,7 +23,7 @@
             <!-- Opening a .md file directly (a file manager's "Open with",
                  tapping one in Downloads, an email attachment). text/plain
                  is included because ".md" has no single, universally-agreed
-                 MIME type across Android versions and file manager apps --
+                 MIME type across Android versions and file manager apps:
                  plenty report it as text/plain rather than text/markdown,
                  and without that fallback this app simply never appears as
                  an option for a real .md file on some devices. The
