@@ -1828,3 +1828,16 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   otherwise passing `null` as intended. Added a regression test opening a
   workspace, then a standalone file, confirming the Workspace tab
   disappears rather than showing the old folder's tree.
+
+- **Stage 91** — The README only ever illustrated the desktop app;
+  Android had no screenshots or GIFs anywhere, despite being a fully
+  supported shell by this point. Added an Android badge and a new "Also
+  on Android" section with two GIFs captured against the real running
+  APK on an emulator (not mocked): opening a folder through Android's own
+  native SAF picker end to end (including the real "Allow MD.Orchestra to
+  access files" permission dialog) through to browsing and editing a
+  section, and cycling the Document map's Tree/Mind map/Workspace modes
+  with a folder expand. Assembled as stepwise-frame GIFs via Pillow
+  (`docs/assets/demo-android-open.gif`, `demo-android-map.gif`) — the
+  same frame-by-frame approach the existing desktop GIFs already use,
+  not a continuous screen recording.

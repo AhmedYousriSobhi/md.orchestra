@@ -6,6 +6,7 @@
 
 [![License: MIT](https://img.shields.io/github/license/AhmedYousriSobhi/md.orchestra?color=blue)](LICENSE)
 ![Electron](https://img.shields.io/badge/desktop-Electron-47848F?logo=electron&logoColor=white)
+![Android](https://img.shields.io/badge/mobile-Android-3DDC84?logo=android&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 [![Last commit](https://img.shields.io/github/last-commit/AhmedYousriSobhi/md.orchestra)](CHANGELOG.md)
 
@@ -41,6 +42,28 @@ No Node, no npm — just [Docker](https://www.docker.com/):
 
 Double-click works too. A real window, your real files, nothing phoning
 home.
+
+## Also on Android
+
+Same app, real device filesystem access via Android's native folder
+picker — no browser tab, no import step.
+
+**Open a folder through Android's own picker, browse it, edit a section.**
+![Tap Open folder, pick a folder through Android's native picker, grant it access, then browse and edit a section right there](docs/assets/demo-android-open.gif)
+
+**The same Document map — Tree, Mind map, and a pinch-to-zoom Workspace graph.**
+![Switch between the Document map's Tree, Mind map, and Workspace modes, expanding a folder in the Workspace graph](docs/assets/demo-android-map.gif)
+
+No Play Store listing yet — build the debug APK yourself (needs only
+[Docker](https://www.docker.com/)):
+
+```bash
+./build-android.sh
+adb install -r dist-android/app-debug.apk
+```
+
+See **[docs/ANDROID.md](docs/ANDROID.md)** for the full build/run story,
+including how to try it on an emulator without a physical device.
 
 ## The gist
 
