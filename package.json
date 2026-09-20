@@ -12,15 +12,18 @@
     "build": "electron-builder --linux AppImage",
     "build:web-assets": "rm -rf web-dist && mkdir -p web-dist && cp -r index.html js css icons web-dist/",
     "cap:sync": "npm run build:web-assets && cap sync android",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.6.9",
+    "@playwright/test": "^1.63.0",
     "electron": "^33.0.0",
     "electron-builder": "^26.15.3",
-    "patch-package": "^8.0.1",
-    "playwright": "^1.63.0"
+    "patch-package": "^8.0.1"
   },
   "build": {
     "appId": "com.mdorchestra.app",

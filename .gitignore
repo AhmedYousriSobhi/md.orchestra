@@ -17,3 +17,8 @@ android/build/
 android/app/build/
 android/app/src/main/assets/public/
 android/capacitor-cordova-android-plugins/build/
+# Playwright's own generated output (HTML report, screenshots/traces from
+# failed runs) -- see run-tests.sh/TESTING.md for how to produce these
+# locally; nothing here is meant to be committed.
+playwright-report/
+test-results/
