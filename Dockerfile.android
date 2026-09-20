@@ -26,7 +26,13 @@ ENV PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/pla
 RUN yes | sdkmanager --licenses > /dev/null 2>&1 || true
 RUN sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+# patches/ has to be present before `npm ci` runs -- patch-package's own
+# postinstall hook applies them as part of that install, and silently does
+# nothing if the patches directory isn't there yet (exactly what happened
+# here before this fix: copying it only in the later `COPY . .` meant every
+# build shipped the unpatched, un-truncating write path with no error at all).
 COPY package.json package-lock.json ./
+COPY patches/ ./patches/
 RUN npm ci
 
 COPY . .

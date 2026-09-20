@@ -1723,3 +1723,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   navigation through the Explorer's existing FocalGraph view and that a
   save attempt fails with an honest read-only message instead of a raw
   error or silent data loss.
+
+- **Stage 87** (branch `feature/android-app`) — The Stage 84
+  save-truncation fix was never actually shipping, and a real Android
+  emulator caught it. `Dockerfile.android` copied `package.json`/
+  `package-lock.json` and ran `npm ci` *before* `patches/` arrived in a
+  later `COPY . .` — `patch-package`'s postinstall hook found no patches
+  directory yet, silently applied nothing, and every built APK kept
+  shipping the original, unpatched `"w"` write mode. The `strings`-based
+  check used to "confirm" the fix at the time was itself unreliable
+  (it found a coincidental `"wt"` substring elsewhere in the .dex,
+  unrelated to the actual code — a false positive over a real bug).
+  Fixed both: `Dockerfile.android` now copies `patches/` before `npm ci`
+  runs, and the fix is verified properly this time with `dexdump`
+  confirming `writeFile`'s own bytecode loads `"wt"` right before the
+  `openOutputStream` call, not just that the substring exists somewhere
+  in the file. Confirmed for real on a local, hardware-accelerated
+  Android emulator (KVM CPU acceleration, deliberately no GPU/display
+  involvement after an earlier attempt at graphics acceleration crashed
+  the host machine badly enough to reboot it): a long file cut down to
+  nearly nothing through the app's own UI and saved reproduced the exact
+  stale-bytes bug on the unpatched build, and truncated correctly, byte
+  for byte, on the patched one. See `docs/ANDROID.md` for the full story
+  and how to set up the same emulator safely.

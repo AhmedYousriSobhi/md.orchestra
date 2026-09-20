@@ -209,11 +209,39 @@ Since this lives in a vendored third-party plugin under `node_modules/`
 [`patch-package`](https://github.com/ds300/patch-package) patch
 (`patches/@daniele-rolli+capacitor-scoped-storage+0.1.0.patch`) plus a
 `postinstall` script in `package.json`, rather than hand-edited and lost
-on the next install. Verified for real, not just written and assumed:
-removed `node_modules` entirely and ran a completely fresh `npm ci` (the
-exact command `Dockerfile.android` runs) — the patch reapplied
-automatically, and the resulting Java source read `"wt"`, confirmed by
-reading the file back afterward.
+on the next install.
+
+**A first "verification" of this fix was wrong, and a real Android
+emulator caught it.** Removing `node_modules` and running a plain `npm ci`
+correctly reapplied the patch and the resulting Java source read `"wt"` —
+but `Dockerfile.android`'s actual build order was `COPY
+package.json package-lock.json ./` then `RUN npm ci`, with `patches/`
+only arriving in a later `COPY . .`. `patch-package`'s `postinstall` hook
+ran during that `npm ci` and found no `patches/` directory yet — it
+silently applied nothing, with no error, and every APK built via
+`build-android.sh` up to that point shipped the original, unpatched `"w"`
+mode despite the patch being genuinely correct in the repo the whole time.
+Compounding it, the check used to "confirm" the fix compiled in
+(`strings` over the built `.dex`, looking for the literal `"wt"`) was
+itself unreliable: `strings` scans raw bytes for printable runs with no
+idea of DEX's real string-table format, and it found a coincidental `"wt"`
+substring elsewhere in the file that had nothing to do with this code —
+a false positive that made an unpatched build look fixed.
+
+Both are fixed now: `Dockerfile.android` copies `patches/` alongside
+`package.json`/`package-lock.json`, before `npm ci` runs, so the
+postinstall hook always has something to apply. And the fix is now
+verified with an actual disassembler (`dexdump`, from the SDK's
+build-tools) confirming `writeFile`'s own bytecode loads `const-string
+v6, "wt"` immediately before the `openOutputStream` call — not just that
+the substring exists somewhere in the file. Confirmed a second way, for
+real: with an Android emulator running locally (KVM-accelerated, headless
+— see below), a genuinely long file was opened, cut down to nearly
+nothing through the app's own UI, and saved — with the *unpatched* build
+this reproduced the exact bug (a file that stayed at its original size,
+with stale bytes from the old, longer content appended after the new,
+correct content), and with the *patched* build the same steps produced a
+file truncated to exactly its new size, byte for byte.
 
 ## GitHub repo browsing (read-only, phase one)
 
@@ -292,6 +320,68 @@ came back:
    explicitly hidden when no document is loaded — sat as a full-viewport,
    opaque, higher-z-index layer on top of it. Fixed; see "What's real
    right now" above. Not yet re-confirmed on an actual device.
+
+## Testing on a real Android emulator, without a physical phone
+
+A local, hardware-accelerated Android emulator (KVM-backed, no NVIDIA/GPU
+involvement at all) can run the actual built APK end to end — real SAF
+folder/file access, a real hardware back button, the genuine native
+plugin code — closing the gap the browser-based Playwright suite can't
+reach by construction. This is how the save-truncation fix above was
+actually confirmed on-device, not just reasoned about from source.
+
+**Safety note, learned the hard way:** the emulator's *graphics* stack
+(anything touching a real GPU or display) previously crashed the host
+machine's own GPU driver badly enough to force a reboot. Always launch it
+fully headless, with `DISPLAY`/`WAYLAND_DISPLAY` unset and
+`-gpu swiftshader_indirect` (software rendering only) — never with a
+visible window or hardware-accelerated graphics. Interact with it purely
+through `adb` (`input tap`/`swipe`, `exec-out screencap`), never by
+opening the emulator's own UI.
+
+One-time setup (outside this repo, e.g. under `~/android-sdk-tools/`,
+since none of this needs to be committed):
+
+```bash
+# A JDK 17+ the SDK's cmdline-tools need (skip if one's already on PATH)
+curl -fsSL "$(curl -fsSL 'https://api.adoptium.net/v3/assets/latest/17/hotspot?image_type=jdk&os=linux&architecture=x64' | python3 -c "import json,sys;print(json.load(sys.stdin)[0]['binary']['package']['link'])")" -o jdk17.tar.gz
+tar xzf jdk17.tar.gz   # -> jdk-17.*/
+
+# The SDK command-line tools (same build Dockerfile.android uses)
+curl -fsSL -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip
+mkdir -p sdk/cmdline-tools && unzip -q cmdline-tools.zip -d sdk/cmdline-tools
+mv sdk/cmdline-tools/cmdline-tools sdk/cmdline-tools/latest
+
+export JAVA_HOME="$PWD/jdk-17*"; export ANDROID_HOME="$PWD/sdk"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "emulator" "platforms;android-35" "system-images;android-35;google_apis;x86_64"
+echo no | avdmanager create avd -n mdorchestra -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+```
+
+(`avdmanager create avd -d pixel_6` prints a cosmetic `Could not load
+devices from .../devices.xml` error even on success — confirmed harmless
+by checking `avdmanager list avd`, which still shows the AVD created
+correctly with the right device profile.)
+
+Every session after that:
+
+```bash
+unset DISPLAY WAYLAND_DISPLAY
+emulator -avd mdorchestra -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -accel on &
+adb wait-for-device
+adb shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+adb install -r dist-android/app-debug.apk
+adb shell monkey -p com.mdorchestra.app -c android.intent.category.LAUNCHER 1
+adb exec-out screencap -p > screen.png   # then view screen.png, tap via adb shell input tap/swipe, repeat
+```
+
+Real screen coordinates need care: `adb shell wm size` gives the actual
+physical resolution `input tap`/`swipe` expect, which is **not**
+necessarily the same as whatever size a screenshot viewer happens to
+display the PNG at — measure exact button/element positions from the PNG's
+own real pixel dimensions (e.g. with Pillow) rather than eyeballing a
+possibly-scaled preview, or taps land on the wrong element.
 
 ## Building it
 
