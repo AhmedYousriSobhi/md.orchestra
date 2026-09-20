@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { openDemoFile, FIXTURES_DIR } = require('./helpers');
+const { openDemoFile, FIXTURES_DIR, fixturePath } = require('./helpers');
 
 async function openMap(page) {
   await page.click('#map-view-btn');
@@ -96,6 +96,28 @@ test('Workspace mode fits, pans/zooms, and survives an expand/collapse click', a
     // re-render triggered by expanding a folder.
     await expect(page.locator('.map-canvas-container svg')).toBeVisible();
   }
+});
+
+test('opening a standalone file after a workspace hides the Workspace tab instead of showing the old workspace', async ({ page }) => {
+  await page.goto('/index.html');
+  await page.setInputFiles('#folder-input', FIXTURES_DIR);
+  await page.waitForTimeout(400);
+  await openMap(page);
+  await expect(page.locator('.map-mode-btn', { hasText: 'Workspace' })).toBeVisible();
+  await page.click('.map-panel-close');
+
+  // A standalone file has no workspace of its own -- the active document
+  // no longer belongs to the workspace that's still sitting open in the
+  // Explorer. The map button used to fall back to "whichever workspace
+  // happens to be open" here, so the Workspace tab kept showing that
+  // *other*, now-unrelated folder's file tree instead of reflecting that
+  // the active document isn't part of any workspace.
+  await page.setInputFiles('#file-input', fixturePath('docs', 'guide.md'));
+  await page.waitForTimeout(300);
+  await openMap(page);
+
+  await expect(page.locator('.map-mode-btn', { hasText: 'Workspace' })).toHaveCount(0);
+  await expect(page.locator('.map-mode-btn', { hasText: 'Tree' })).toHaveClass(/map-mode-active/);
 });
 
 test('Tree mode still pinch-zooms when the first finger lands on a node', async ({ page }) => {

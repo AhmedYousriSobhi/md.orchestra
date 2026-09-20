@@ -1592,9 +1592,17 @@ el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sec
 el.addFileBtn.addEventListener('click', handleAddFileClick);
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', () => {
-  const workspaces = getWorkspaces();
   const { workspaceRootName } = getState();
-  const workspace = workspaces.find((w) => w.rootName === workspaceRootName) || workspaces[0] || null;
+  // Only the workspace the *active* document actually belongs to -- never
+  // an arbitrary other open workspace. Falling back to workspaces[0] here
+  // used to mean opening a standalone file (or one from a workspace
+  // that's since been closed) while a *different* workspace was still
+  // open elsewhere would silently show that other workspace's file tree
+  // in the Workspace tab, which has nothing to do with what's on screen.
+  // openMapView already falls back to Tree mode and hides the Workspace
+  // tab entirely when workspace is null, which is the correct behavior
+  // here, not a substitute workspace.
+  const workspace = workspaceRootName ? getWorkspaces().find((w) => w.rootName === workspaceRootName) || null : null;
   openMapView({ workspace, onOpenWorkspaceFile: openWorkspaceFile });
 });
 el.previewToggleBtn.addEventListener('click', () => {

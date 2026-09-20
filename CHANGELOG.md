@@ -1807,3 +1807,24 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   first synthetic touch exactly on a real node element (not the canvas
   center, which rarely overlaps a node and let this bug hide from the
   existing test suite) for all three modes.
+
+- **Stage 90** (branch `feature/android-app`, affects Android, desktop,
+  and browser alike) — Reported: after opening a folder, then separately
+  opening a standalone file unrelated to it, the Document map's Workspace
+  tab still showed the *previous* folder's file tree instead of correctly
+  reflecting that the active document isn't part of any workspace — Mind
+  map and Tree mode showed the right thing throughout, since they read
+  the active document directly. Root cause: `js/main.js`'s Map button
+  handler resolved which workspace to pass as
+  `workspaces.find((w) => w.rootName === workspaceRootName) || workspaces[0] || null`
+  — opening a standalone file sets `workspaceRootName` to `null`, so the
+  `.find()` came up empty and silently fell back to whatever workspace
+  happened to be first in the list, regardless of whether it had anything
+  to do with the file on screen. `js/ui/mapView.js` already handled a
+  `null` workspace correctly (hides the Workspace tab, falls back to Tree
+  mode) — the bug was solely in the caller substituting an unrelated
+  workspace instead of passing that `null` through. Fixed by only
+  resolving a workspace when `workspaceRootName` actually names one;
+  otherwise passing `null` as intended. Added a regression test opening a
+  workspace, then a standalone file, confirming the Workspace tab
+  disappears rather than showing the old folder's tree.
