@@ -21,6 +21,15 @@
 // "Open .md file" here yet. Opening a whole folder is this app's primary
 // workflow anyway (see the README), so that's what this adapter covers;
 // single-file picking on Android is a follow-up, not silently assumed done.
+//
+// Saving *does* have a real single-file story though: saveFileAs()/
+// writeFileAtUri() are additions patched into the vendored plugin (see
+// patches/@daniele-rolli+capacitor-scoped-storage+*.patch) wrapping
+// ACTION_CREATE_DOCUMENT — Android's own "Save As" picker. Without this,
+// saving a document with no live folder handle (a brand-new standalone
+// file, or one opened without one) fell back to the browser-style
+// anchor-download trick, which on Android silently drops the file into
+// Downloads with no way to choose where it actually goes.
 
 export const isCapacitor = typeof window !== 'undefined'
   && Boolean(window.Capacitor?.isNativePlatform?.())
@@ -136,4 +145,48 @@ export async function capacitorPickFolder() {
 /** Rebuilds a root directory handle for a folder granted in a *previous* launch, from its remembered {id, name} — no picker, no native call: Android's own persisted URI-permission grant (see capacitorPickFolder's comment) means the OS itself still honors it, the same trust a real file-manager app extends to a folder you've already said yes to before. */
 export function reopenCapacitorFolder(id, name) {
   return makeCapacitorDirHandle({ id, name }, '', name);
+}
+
+/**
+ * A file-handle-shaped object (same createWritable().write()/.close()
+ * contract as makeCapacitorFileHandle) backed by a single already-granted
+ * content:// URI rather than a {folder, relPath} pair — what capacitorSaveFileAs
+ * returns, since a document created via ACTION_CREATE_DOCUMENT has no
+ * "parent folder handle" of its own to route ordinary writeFile() calls
+ * through.
+ */
+function makeCapacitorUriFileHandle(uri, name) {
+  return {
+    kind: 'file',
+    name,
+    path: uri,
+    async createWritable() {
+      let buf = '';
+      return {
+        write: async (chunk) => { buf += chunk; },
+        close: async () => {
+          await plugin().writeFileAtUri({ uri, data: buf, encoding: 'utf8' });
+        },
+      };
+    },
+  };
+}
+
+/**
+ * The Android equivalent of a desktop "Save As..." dialog: the native
+ * ACTION_CREATE_DOCUMENT picker, for a document with no live write handle
+ * yet (a brand-new standalone file, or one opened without one). Returns a
+ * handle usable exactly like any other — a *later* save through it writes
+ * straight back to the now-granted URI without asking again — or `null`
+ * if the user backed out of the picker.
+ */
+export async function capacitorSaveFileAs(suggestedName) {
+  let result;
+  try {
+    result = await plugin().saveFileAs({ suggestedName, mimeType: 'text/markdown' });
+  } catch {
+    return null;
+  }
+  if (!result?.uri) return null;
+  return makeCapacitorUriFileHandle(result.uri, result.name || suggestedName);
 }

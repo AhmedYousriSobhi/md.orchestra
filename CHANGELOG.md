@@ -1841,3 +1841,27 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   (`docs/assets/demo-android-open.gif`, `demo-android-map.gif`) — the
   same frame-by-frame approach the existing desktop GIFs already use,
   not a continuous screen recording.
+
+- **Stage 92** (branch `feature/android-app`) — Reported from a real
+  phone: saving a document with no live write handle (a brand-new
+  standalone file, or one opened without one) silently fell back to the
+  browser-style anchor-download trick, which on Android just drops the
+  file into the Downloads folder with a toast telling the user to go
+  manually replace the original — there was no way to choose where the
+  file actually goes. Android's own Storage Access Framework has a real
+  answer for this (`ACTION_CREATE_DOCUMENT`, the native "Save As" picker)
+  that the vendored `@daniele-rolli/capacitor-scoped-storage` plugin
+  didn't expose. Added two methods to it via a patch-package patch:
+  `saveFileAs` (launches the picker, grants the resulting URI) and
+  `writeFileAtUri` (the actual write, "wt" mode for the same
+  guaranteed-truncation reason as Stage 87's fix) — the first save asks
+  where; the handle it returns is kept in app state so every save after
+  that writes straight there without asking again. `js/main.js`'s three
+  separate "no handle, fall back to download" call sites (the main save
+  shortcut, and the Changes panel's whole-file and per-section saves)
+  now share one `saveWithNoHandle()` helper, which also makes sure
+  backing out of the native picker leaves the document genuinely
+  unsaved rather than being treated as saved. Added
+  `tests/android-save.spec.js` against a Capacitor plugin stub, covering
+  both the happy path (asks once, reuses the handle on the next save)
+  and cancellation.

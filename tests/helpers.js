@@ -25,6 +25,20 @@ const CAPACITOR_STUB = `
       ScopedStorage: {
         pickFolder: () => Promise.resolve({ folder: { id: 'stub', name: 'stub' } }),
         readdir: () => Promise.resolve({ entries: [] }),
+        // Records every call so tests can assert on them, and can be made
+        // to reject (simulating the user backing out of the native picker)
+        // via window.__capacitorSaveFileAsCancelled.
+        saveFileAs: (opts) => {
+          window.__capacitorSaveFileAsCalls = window.__capacitorSaveFileAsCalls || [];
+          window.__capacitorSaveFileAsCalls.push(opts);
+          if (window.__capacitorSaveFileAsCancelled) return Promise.reject(new Error('User cancelled'));
+          return Promise.resolve({ uri: 'content://stub/' + opts.suggestedName, name: opts.suggestedName });
+        },
+        writeFileAtUri: (opts) => {
+          window.__capacitorWriteFileAtUriCalls = window.__capacitorWriteFileAtUriCalls || [];
+          window.__capacitorWriteFileAtUriCalls.push(opts);
+          return Promise.resolve();
+        },
       },
       App: {
         addListener: () => ({ remove: () => {} }),

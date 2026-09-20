@@ -38,7 +38,7 @@ import {
 import { fetchGithubRepoTree } from './core/githubIO.js';
 import { openGithubModal } from './ui/githubModal.js';
 import { isElectron } from './core/electronFsAdapter.js';
-import { isCapacitor } from './core/capacitorFsAdapter.js';
+import { isCapacitor, capacitorSaveFileAs } from './core/capacitorFsAdapter.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -1246,9 +1246,42 @@ el.openGithubBtn.addEventListener('click', () => {
 });
 
 /**
+ * Saving a document/section with no live write handle: on Android, the
+ * native "Save As" picker (capacitorSaveFileAs) so the user chooses
+ * exactly where it goes — the real equivalent of a desktop Save As
+ * dialog, which this app's own Storage Access Framework access makes
+ * possible. Everywhere else (desktop browser, or Android's own picker
+ * cancelled), falls back to the browser-style anchor download, the only
+ * option a plain browser tab ever has.
+ *
+ * Returns `{ handle }` when a real write handle now exists (the caller
+ * should keep it for later saves), `{}` when it fell back to a download
+ * (nothing to keep, but the save still happened), or `{ cancelled: true }`
+ * when the user backed out of Android's picker — nothing was written, so
+ * callers must NOT mark the document clean or clear its recovery snapshot.
+ */
+async function saveWithNoHandle(fileName, text) {
+  if (isCapacitor) {
+    const handle = await capacitorSaveFileAs(fileName || 'document.md');
+    if (!handle) return { cancelled: true };
+    await writeToHandle(handle, text);
+    showToast(`Saved to ${handle.name}`);
+    return { handle };
+  }
+  downloadText(fileName || 'document.md', text);
+  showToast(
+    supportsFileSystemAccess
+      ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
+      : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
+    { duration: 5000 },
+  );
+  return {};
+}
+
+/**
  * The one obvious way to persist changes: write straight back to the file
  * if it was opened via "Open .md file" (a real File System Access handle),
- * otherwise download the up-to-date Markdown. Either way counts as
+ * otherwise fall through to saveWithNoHandle. Either way counts as
  * "saved" — the in-memory doc is no longer ahead of what the user has.
  */
 async function handleSave() {
@@ -1275,17 +1308,12 @@ async function handleSave() {
     return;
   }
 
-  downloadText(fileName || 'document.md', text);
-  setState({ dirty: false });
+  const result = await saveWithNoHandle(fileName, text);
+  if (result.cancelled) return;
+  setState({ dirty: false, ...(result.handle ? { fileHandle: result.handle } : {}) });
   clearRecoverySnapshot(identity);
   currentBaseline = text;
   if (!workspaceRelPath) standaloneCleanText.set(fileName, text);
-  showToast(
-    supportsFileSystemAccess
-      ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
-      : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
-    { duration: 5000 },
-  );
   notifyOtherPendingChanges(identity);
 }
 
@@ -1352,8 +1380,8 @@ async function handleChangesSave(snapshot, isActive) {
       await writeToHandle(entry.fileHandle, snapshot.markdown);
       showToast(`Saved to ${snapshot.fileName}`);
     } else {
-      downloadText(snapshot.fileName, snapshot.markdown);
-      showToast(`Downloaded ${snapshot.fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+      const result = await saveWithNoHandle(snapshot.fileName, snapshot.markdown);
+      if (result.cancelled) return;
     }
     clearRecoverySnapshot(snapshot);
   } catch (err) {
@@ -1374,10 +1402,9 @@ async function writeMarkdownFor(isActive, snapshot, text) {
   if (handle) {
     await writeToHandle(handle, text);
     showToast(`Saved to ${fileName}`);
-  } else {
-    downloadText(fileName, text);
-    showToast(`Downloaded ${fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+    return {};
   }
+  return saveWithNoHandle(fileName, text);
 }
 
 /**
@@ -1401,18 +1428,21 @@ async function handleChangesSaveSection(snapshot, isActive, sectionId) {
   const merged = applySectionToBase(baseDoc, editedDoc, sectionId);
   if (!merged) return;
   const mergedText = serializeMarkdown(merged);
+  let result;
   try {
-    await writeMarkdownFor(isActive, snapshot, mergedText);
+    result = await writeMarkdownFor(isActive, snapshot, mergedText);
   } catch (err) {
     showToast(`Save failed: ${err.message}`, { type: 'error' });
     return;
   }
+  if (result.cancelled) return;
   // Everything else still pending is whatever the live/edited doc still
   // disagrees with the file we just wrote — i.e. every OTHER section that
   // was changed, since this one now matches on disk.
   const remaining = findChangedNodes(editedDoc, merged);
   if (isActive) {
     currentBaseline = mergedText;
+    if (result.handle) setState({ fileHandle: result.handle });
     if (!remaining.length) {
       setState({ dirty: false });
       clearRecoverySnapshot(snapshot);
