@@ -1865,3 +1865,19 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   `tests/android-save.spec.js` against a Capacitor plugin stub, covering
   both the happy path (asks once, reuses the handle on the next save)
   and cancellation.
+
+- **Stage 93** — Reported: creating a new file landed on the Preview
+  panel (rendered, not editable) instead of the actual text editor — on
+  a phone-width layout, Preview opens full-screen by default and covers
+  the editable Sections/Full-text view entirely, leaving no obvious way
+  to reach it right after typing a filename and hitting Create. A
+  brand-new file has nothing worth previewing yet anyway. Added
+  `focusNewFileEditor()`, called after both of `handleCreateFile`'s
+  paths (a standalone document and a file created inside an open
+  workspace): hides the Preview panel for this document only (doesn't
+  touch the user's real stored open/closed preference, so opening any
+  other file still behaves exactly as before) and focuses the new
+  file's own editable textarea once it's actually in the DOM (deferred
+  slightly, since `animatedSwap` delays the section view's own re-render
+  by 140ms when replacing an already-open document). Added
+  `tests/new-file-editor.spec.js` covering both creation paths.

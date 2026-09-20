@@ -751,6 +751,29 @@ function stemOf(fileName) {
 }
 
 /**
+ * A freshly created file has nothing worth previewing yet — jump straight
+ * to its editable text instead of leaving the Preview panel (open by
+ * default every session) covering the editor, which on a phone-width
+ * layout takes the full screen and leaves no obvious way back to actually
+ * start typing. Session-only: sets el.previewPanel.hidden directly rather
+ * than calling setPreviewOpen(false), so it doesn't touch the user's real
+ * stored preference — opening any other file still opens Preview exactly
+ * as before. animatedSwap (transitions.js) defers the section view's own
+ * DOM swap by 140ms when replacing an already-rendered document (no delay
+ * for the very first one), so the textarea to focus may not exist yet
+ * right after loadFromText() returns — the short delay here covers both.
+ */
+function focusNewFileEditor() {
+  el.previewPanel.hidden = true;
+  el.previewPanel.innerHTML = '';
+  el.appBody.classList.remove('preview-open');
+  el.previewResizeHandle.hidden = true;
+  setTimeout(() => {
+    el.sectionView.querySelector('textarea')?.focus();
+  }, 160);
+}
+
+/**
  * Creates a brand-new file — from the sidebar's "File+" button (any
  * write-capable open workspace, or a blank standalone document if none is
  * open) or the Explorer's own "Add file" context-menu action (always a
@@ -765,6 +788,7 @@ async function handleCreateFile(fileName, target) {
   if (!target || target === '__standalone__') {
     closeNewFileModal();
     loadFromText(initialText, fileName);
+    focusNewFileEditor();
     return;
   }
   const { rootName, dirRelPath } = target;
@@ -778,6 +802,7 @@ async function handleCreateFile(fileName, target) {
     });
     closeNewFileModal();
     loadFromText(initialText, fileName, fileHandle, { workspaceRelPath: relPath, workspaceRootName: rootName });
+    focusNewFileEditor();
   } catch (err) {
     showToast(`Could not create "${fileName}": ${err.message}`, { type: 'error' });
   }
