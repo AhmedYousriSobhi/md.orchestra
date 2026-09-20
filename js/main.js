@@ -54,6 +54,7 @@ import {
   renderPreviewPanel, getPreviewScope, setPreviewScope, getPreviewOpen, setPreviewOpen,
 } from './ui/previewPanel.js';
 import { openCodeViewer } from './ui/codeViewer.js';
+import { attachTextPinchZoom } from './ui/pinchZoomText.js';
 import { debounce } from './utils/debounce.js';
 import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot as clearRecoverySnapshotRaw, snapshotIdentity,
@@ -133,6 +134,13 @@ const el = {
 // ui/previewPanel.js's getPreviewOpen/setPreviewOpen and the edge-toggle
 // wiring below, which persists it once the user actually flips it.
 el.previewPanel.hidden = !getPreviewOpen();
+
+// Two-finger pinch-to-zoom on the reading surfaces -- attached once to the
+// containers themselves (which persist across re-renders; only their
+// innerHTML is swapped out on every selection/edit) rather than re-attached
+// per render.
+attachTextPinchZoom(el.previewPanel, { storageKey: 'preview' });
+attachTextPinchZoom(el.sectionViewWrap, { storageKey: 'section-view' });
 
 /**
  * The last-opened folder for either "real app" backend — Electron's
