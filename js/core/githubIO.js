@@ -92,8 +92,19 @@ export function makeGithubFileHandle(owner, repo, branch, relPath, name) {
  * GitHub-sourced workspace with no new gating logic needed anywhere else.
  */
 export async function fetchGithubRepoTree({ owner, repo, branch }) {
-  const resolvedBranch = branch || (await githubApiFetch(`/repos/${owner}/${repo}`)).default_branch;
-  const treeRes = await githubApiFetch(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(resolvedBranch)}?recursive=1`);
+  // GitHub itself treats owner/repo as case-insensitive (github.com/Octocat
+  // and github.com/octocat land on the same repo), but raw.githubusercontent.com
+  // is a separate, exact-match CDN path -- a URL built from whatever case
+  // the user actually typed can 404 there even though the API call above
+  // it just succeeded. Fetching the repo's own metadata first and using the
+  // *canonical* owner/name GitHub returns for every call after this one
+  // (tree, and every raw file URL) sidesteps that mismatch entirely, rather
+  // than trying to guess which specific call was the case-sensitive one.
+  const repoMeta = await githubApiFetch(`/repos/${owner}/${repo}`);
+  const canonicalOwner = repoMeta.owner.login;
+  const canonicalRepo = repoMeta.name;
+  const resolvedBranch = branch || repoMeta.default_branch;
+  const treeRes = await githubApiFetch(`/repos/${canonicalOwner}/${canonicalRepo}/git/trees/${encodeURIComponent(resolvedBranch)}?recursive=1`);
 
   const files = treeRes.tree
     .filter((entry) => entry.type === 'blob' && MD_RE.test(entry.path))
@@ -103,13 +114,13 @@ export async function fetchGithubRepoTree({ owner, repo, branch }) {
       return {
         relPath: entry.path,
         name,
-        fileHandle: makeGithubFileHandle(owner, repo, resolvedBranch, entry.path, name),
+        fileHandle: makeGithubFileHandle(canonicalOwner, canonicalRepo, resolvedBranch, entry.path, name),
         webkitFile: null,
       };
     });
 
   return {
-    rootName: `${owner}/${repo}`,
+    rootName: `${canonicalOwner}/${canonicalRepo}`,
     files,
     branch: resolvedBranch,
     truncated: Boolean(treeRes.truncated),

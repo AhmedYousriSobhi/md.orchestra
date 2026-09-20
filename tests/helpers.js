@@ -80,7 +80,12 @@ async function swipe(page, selector, x0, y0, x1, y1, pointerId = 77) {
 async function mockGithubRepo(page, { owner, repo, branch = 'main', files }) {
   const tree = Object.keys(files).map((relPath) => ({ path: relPath, type: 'blob', sha: relPath }));
   await page.route(`https://api.github.com/repos/${owner}/${repo}`, (route) => route.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({ default_branch: branch }),
+    status: 200,
+    contentType: 'application/json',
+    // Matches the real shape (verified live against api.github.com) that
+    // fetchGithubRepoTree() reads owner/name back from to canonicalize
+    // whatever case the user actually typed.
+    body: JSON.stringify({ default_branch: branch, name: repo, owner: { login: owner } }),
   }));
   await page.route(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, (route) => route.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'stub', truncated: false, tree }),
