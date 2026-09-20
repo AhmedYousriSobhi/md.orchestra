@@ -13,7 +13,7 @@ test('the mind map fits its content within the actual container, centered', asyn
   await openMindMap(page);
 
   const info = await page.evaluate(() => {
-    const container = document.querySelector('.mindmap-container');
+    const container = document.querySelector('.map-canvas-container');
     const svgEl = container.querySelector('svg');
     const nodes = [...svgEl.querySelectorAll('.mindmap-node')];
     const boxes = nodes.map((n) => n.getBoundingClientRect());
@@ -39,8 +39,8 @@ test('the Fit button re-centers using the container\'s real, current size', asyn
   await openMindMap(page);
 
   await page.click('.mindmap-fit-btn');
-  const viewBox = await page.locator('.mindmap-container svg').getAttribute('viewBox');
-  const containerBox = await page.locator('.mindmap-container').boundingBox();
+  const viewBox = await page.locator('.map-canvas-container svg').getAttribute('viewBox');
+  const containerBox = await page.locator('.map-canvas-container').boundingBox();
   const [, , vbWidth, vbHeight] = viewBox.split(' ').map(Number);
   // measureViewport() only updates viewW/viewH when the container's real
   // size differs from what's currently recorded -- if it's still on a
@@ -60,7 +60,7 @@ test('two-finger pinch zooms the mind map', async ({ page }) => {
   });
 
   await page.evaluate(() => {
-    const svgEl = document.querySelector('.mindmap-container svg');
+    const svgEl = document.querySelector('.map-canvas-container svg');
     const rect = svgEl.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;

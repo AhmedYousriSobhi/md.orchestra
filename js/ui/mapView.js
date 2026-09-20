@@ -4,6 +4,9 @@ import { openOverlay, closeOverlay } from './transitions.js';
 import { getState, selectSection } from '../state/store.js';
 import { renderMindMap } from './mindMap.js';
 import { renderWorkspaceGraph } from './workspaceGraph.js';
+import { attachPanZoom } from './panZoom.js';
+
+const TREE_FIT_PADDING = 24;
 
 let overlayEl = null;
 let mapMode = 'tree';
@@ -42,16 +45,30 @@ function layoutTree(doc) {
   return { nodes, edges, rows: row, maxX };
 }
 
-/** The indented-tree layout for a document's own heading structure (Tree mode) — parent/child position and a connecting line say everything it needs. Workspace mode uses focalGraph.js instead (see openMapView), the same click-to-expand graph the Explorer sidebar already browses this exact workspace with. */
-function buildSvg(doc, selectedId, onPick) {
+/**
+ * The indented-tree layout for a document's own heading structure (Tree
+ * mode) — parent/child position and a connecting line say everything it
+ * needs. Workspace mode uses focalGraph.js instead (see openMapView), the
+ * same click-to-expand graph the Explorer sidebar already browses this
+ * exact workspace with.
+ *
+ * Renders into `container` and wires up the same pan/wheel-zoom/pinch-zoom
+ * behavior mind-map already has (see panZoom.js) — the tree used to just
+ * be a content-sized SVG inside a scrolling div, so a big document had no
+ * way to zoom out and see its own shape at once. Returns a `stop()` to
+ * disconnect the pan/zoom listeners when the mode is switched away from
+ * or the panel closes, matching renderMindMap/renderWorkspaceGraph.
+ */
+function renderTreeMap(container, doc, selectedId, onPick) {
   const { nodes, edges, rows, maxX } = layoutTree(doc);
-  const width = maxX + LABEL_MAX * 6.4 + 24;
-  const height = Math.max(rows * ROW_H, ROW_H) + 16;
+  const contentWidth = maxX + LABEL_MAX * 6.4 + 24;
+  const contentHeight = Math.max(rows * ROW_H, ROW_H) + 16;
 
   const root = svg('svg', {
-    width, height, viewBox: `0 0 ${width} ${height}`,
-    style: 'display:block; font-family: -apple-system, Helvetica, Arial, sans-serif;',
+    style: 'display:block; width:100%; height:100%; font-family: -apple-system, Helvetica, Arial, sans-serif; touch-action: none;',
   });
+  const world = svg('g', { class: 'map-world' });
+  root.appendChild(world);
 
   const edgeLayer = svg('g', { class: 'map-edges' });
   edges.forEach(({ from, to }) => {
@@ -60,7 +77,7 @@ function buildSvg(doc, selectedId, onPick) {
       class: 'map-edge',
     }));
   });
-  root.appendChild(edgeLayer);
+  world.appendChild(edgeLayer);
 
   const nodeLayer = svg('g', { class: 'map-nodes' });
   nodes.forEach(({ node, x, y, topIndex }) => {
@@ -82,9 +99,28 @@ function buildSvg(doc, selectedId, onPick) {
     group.appendChild(svg('title', {}, node.title || ''));
     nodeLayer.appendChild(group);
   });
-  root.appendChild(nodeLayer);
+  world.appendChild(nodeLayer);
 
-  return root;
+  const panZoom = attachPanZoom(root, world, container, {
+    getContentBounds: () => ({
+      minX: 0, minY: 0, maxX: contentWidth, maxY: contentHeight,
+    }),
+    shouldStartPan: (e) => !(e.target.closest && e.target.closest('.map-node')),
+    fitPadding: TREE_FIT_PADDING,
+  });
+
+  const fitBtn = h('button', {
+    class: 'mindmap-fit-btn',
+    type: 'button',
+    title: 'Fit the whole tree in view',
+    onClick: () => panZoom.fitToContent(),
+  }, '⤢ Fit');
+
+  container.innerHTML = '';
+  container.appendChild(root);
+  container.appendChild(fitBtn);
+
+  return panZoom.stop;
 }
 
 export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
@@ -96,21 +132,23 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
 
   const scroll = h('div', { class: 'map-scroll' });
 
-  // The mind map runs a continuous requestAnimationFrame loop (so it can
-  // keep reacting to the cursor) — it must be explicitly stopped whenever
-  // we leave it, or it keeps ticking forever in the background.
-  let stopMindMap = null;
-  function teardownMindMap() {
-    if (stopMindMap) { stopMindMap(); stopMindMap = null; }
+  // Every mode now wires up its own pan/zoom listeners (mind map's own
+  // continuous requestAnimationFrame loop on top of that) — all of it must
+  // be explicitly torn down whenever we leave that mode, or a ResizeObserver
+  // and, for mind map, the rAF loop keep running forever in the background.
+  let stopCurrentMode = null;
+  function teardownCurrentMode() {
+    if (stopCurrentMode) { stopCurrentMode(); stopCurrentMode = null; }
   }
 
   // transitions.js's global Escape handler closes any open overlay directly
-  // (it doesn't know about this component's animation loop), so this panel
-  // needs its own Escape listener purely to stop the loop when that happens
-  // — removed again on every close path, so repeated opens don't pile up.
+  // (it doesn't know about this component's own pan/zoom listeners), so
+  // this panel needs its own Escape listener purely to tear those down when
+  // that happens — removed again on every close path, so repeated opens
+  // don't pile up.
   function onEscape(e) { if (e.key === 'Escape') handleClose(); }
   function handleClose() {
-    teardownMindMap();
+    teardownCurrentMode();
     document.removeEventListener('keydown', onEscape);
     closeOverlay(overlayEl);
   }
@@ -138,20 +176,23 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
   const subtitleEl = h('div', { class: 'insight-subtitle' });
 
   function renderMode() {
-    teardownMindMap();
+    teardownCurrentMode();
     treeBtn.classList.toggle('map-mode-active', mapMode === 'tree');
     mindBtn.classList.toggle('map-mode-active', mapMode === 'mind');
     if (workspaceBtn) workspaceBtn.classList.toggle('map-mode-active', mapMode === 'workspace');
     scroll.innerHTML = '';
     if (mapMode === 'tree') {
       subtitleEl.textContent = `${fileName || ''} — click any heading to jump there`;
-      scroll.appendChild(buildSvg(doc, selectedId, onPick));
+      const treeContainer = h('div', { class: 'map-canvas-container' });
+      scroll.appendChild(treeContainer);
+      // needs real layout dimensions, which only exist once it's in the DOM
+      requestAnimationFrame(() => { stopCurrentMode = renderTreeMap(treeContainer, doc, selectedId, onPick); });
     } else if (mapMode === 'mind') {
       subtitleEl.textContent = `${fileName || ''} — click a heading to jump there, or drag a node to rearrange it`;
-      const mindContainer = h('div', { class: 'mindmap-container' });
+      const mindContainer = h('div', { class: 'map-canvas-container' });
       scroll.appendChild(mindContainer);
       // needs real layout dimensions, which only exist once it's in the DOM
-      requestAnimationFrame(() => { stopMindMap = renderMindMap(mindContainer, doc, selectedId, onPick); });
+      requestAnimationFrame(() => { stopCurrentMode = renderMindMap(mindContainer, doc, selectedId, onPick); });
     } else {
       subtitleEl.textContent = `${workspace.rootName} — click a folder to expand it, a file to open it`;
       // A real node-link tree (workspaceGraph.js) — branches fan out by
@@ -160,11 +201,13 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
       // folder still works the same way, just laid out to actually look
       // like the shape of the tree instead of a plain scrolling list of
       // rows.
-      const graphWrap = h('div', { class: 'map-workspace-graph' });
+      const graphWrap = h('div', { class: 'map-canvas-container' });
       scroll.appendChild(graphWrap);
-      renderWorkspaceGraph(graphWrap, workspace, (relPath) => {
-        handleClose();
-        onOpenWorkspaceFile(workspace.rootName, relPath);
+      requestAnimationFrame(() => {
+        stopCurrentMode = renderWorkspaceGraph(graphWrap, workspace, (relPath) => {
+          handleClose();
+          onOpenWorkspaceFile(workspace.rootName, relPath);
+        });
       });
     }
   }
@@ -172,18 +215,31 @@ export function openMapView({ workspace = null, onOpenWorkspaceFile } = {}) {
   mindBtn.addEventListener('click', () => { mapMode = 'mind'; renderMode(); });
   if (workspaceBtn) workspaceBtn.addEventListener('click', () => { mapMode = 'workspace'; renderMode(); });
 
+  // A dedicated header layout, not the shared .side-panel-head pattern
+  // other panels use: this one genuinely has three things to fit (title,
+  // mode toggle, close button), not two, and cramming all three into one
+  // non-wrapping row is exactly what was cropping the mode toggle and the
+  // close button off the right edge on a narrow phone screen. Title+close
+  // share one row (so close stays reachable at a predictable spot no
+  // matter what), and the mode toggle gets its own full-width row below,
+  // free to wrap onto a second line — keeping every mode's full label
+  // (deliberately not collapsing to icon-only) without cropping anything.
   const panel = h('div', { class: 'map-panel', role: 'dialog', 'aria-modal': 'true' }, [
-    h('div', { class: 'side-panel-head' }, [
-      h('div', {}, [
-        h('h2', {}, '🗺️ Document map'),
-        subtitleEl,
+    h('div', { class: 'map-panel-head' }, [
+      h('div', { class: 'map-panel-head-top' }, [
+        h('div', {}, [
+          h('h2', {}, '🗺️ Document map'),
+          subtitleEl,
+        ]),
+        h('button', {
+          class: 'icon-btn map-panel-close',
+          type: 'button',
+          onClick: handleClose,
+          'aria-label': 'Close document map',
+          title: 'Close',
+        }, '✕'),
       ]),
       h('div', { class: 'map-mode-toggle' }, [treeBtn, mindBtn, workspaceBtn]),
-      h('button', {
-        class: 'code-btn code-btn-close',
-        type: 'button',
-        onClick: handleClose,
-      }, 'Close ✕'),
     ]),
     scroll,
   ]);
