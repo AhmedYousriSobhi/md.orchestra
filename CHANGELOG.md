@@ -2025,3 +2025,20 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   original despite being five fresh recordings. Kept the existing
   tagline/voice as-is per plan — already fits best-practice guidance on a
   confident, point-of-view tagline.
+
+- **Stage 99** (branch `feature/android-app`) — Requested: a distinct
+  logo for the repo, in the spirit of a reference image (a wand inside
+  code brackets, dark/glowing style), with an invitation to propose
+  something better if there was one. Sketched three hand-built SVG
+  concepts (a direct recolor of the reference; a conductor's baton in
+  brackets, leaning into the actual product name "Orchestra"; and a
+  folder unfolding into a graph, literal to the Document Map feature) and
+  previewed all three before writing any repo files. Chose: the
+  conductor's baton — `docs/assets/logo.svg`, now in the README header.
+  Also requested: drop the "Last commit" badge and suggest a
+  replacement — previewed four live shields.io options and swapped in
+  "backend: none, local-first," since it reinforces the README's own
+  opening pitch rather than being purely decorative. The app's actual
+  functional icon (browser favicon, Electron window icon) is untouched —
+  this is a new, separate README-only asset, not a rebrand of the app
+  itself.

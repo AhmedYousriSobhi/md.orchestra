@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/logo.svg" width="120" height="120" alt="MD.Orchestra logo — a conductor's baton inside code brackets" />
+
 # MD.Orchestra
 
 **Your `.md` folder, but you can actually see it.**
@@ -8,7 +10,7 @@
 ![Electron](https://img.shields.io/badge/desktop-Electron-47848F?logo=electron&logoColor=white)
 ![Android](https://img.shields.io/badge/mobile-Android-3DDC84?logo=android&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
-[![Last commit](https://img.shields.io/github/last-commit/AhmedYousriSobhi/md.orchestra)](CHANGELOG.md)
+![Backend](https://img.shields.io/badge/backend-none%2C_local--first-6c5ce7)
 
 </div>
 
