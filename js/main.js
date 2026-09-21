@@ -11,6 +11,8 @@ import {
 import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
 import { renderTagsEditor } from './ui/tagsEditor.js';
+import { openSearchPanel } from './ui/searchPanel.js';
+import { cacheFileText, clearWorkspaceCache } from './core/searchIndex.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
   workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace, removeFileFromWorkspace,
@@ -126,6 +128,7 @@ const el = {
   previewResizeHandle: document.getElementById('preview-resize-handle'),
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
+  searchBtn: document.getElementById('search-btn'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
@@ -753,6 +756,7 @@ async function handleCloseWorkspace(rootName) {
     });
   }
   removeWorkspace(rootName);
+  clearWorkspaceCache(rootName);
   forgetWorkspaceViewState(rootName);
   forgetWorkspaceGraphState(rootName);
   forgetWorkspaceCollapsed(rootName);
@@ -1340,6 +1344,9 @@ async function handleSave() {
   if (!doc) return;
   const text = serializeMarkdown(doc);
   const identity = { fileName, workspaceRelPath, workspaceRootName };
+  // Keeps search's own lazy cache (core/searchIndex.js) from serving stale
+  // content for this file on a search run right after this save.
+  if (workspaceRelPath && workspaceRootName) cacheFileText(workspaceRootName, workspaceRelPath, text);
 
   if (fileHandle) {
     try {
@@ -1662,8 +1669,14 @@ function handleOpenChanges() {
   openChangesPanel(enriched, activeId, changesPanelHandlers);
 }
 
+/** Opened via the toolbar's 🔍 button or Ctrl/⌘+K (see the keydown listener below) — searches every currently open folder (see core/searchIndex.js), not standalone files, which have no folder to search alongside. */
+function handleOpenSearch() {
+  openSearchPanel({ workspaces: getWorkspaces(), onOpenFile: openWorkspaceFile });
+}
+
 el.dirtyIndicator.addEventListener('click', handleSave);
 el.changesBtn.addEventListener('click', handleOpenChanges);
+el.searchBtn.addEventListener('click', handleOpenSearch);
 
 el.viewModeFullBtn.addEventListener('click', () => handleViewModeChange('full'));
 el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sections'));
@@ -1735,6 +1748,14 @@ document.addEventListener('keydown', (e) => {
  */
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
+  // Works everywhere, including while typing in some other field — same
+  // "always available, hijacks the browser's own binding" treatment as
+  // every command-palette-style shortcut (VSCode, Slack, etc.) gives Ctrl/⌘+K.
+  if (key === 'k' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    handleOpenSearch();
+    return;
+  }
   if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.preventDefault();
     if (getState().doc) handleSave();

@@ -1937,3 +1937,28 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   Files app's own Share sheet — confirming MD.Orchestra now appears
   there at all, which was the original bug — and confirmed a second
   share while the app was still open also loaded correctly.
+
+- **Stage 96** (branch `feature/android-app`) — Two new features, requested
+  together since tags exist specifically to make search faster: per-file
+  tags, and search across an open workspace. Design decisions (recorded on
+  GitHub issues #4/#5): tags are free-form and stored as YAML frontmatter
+  (`markdown/frontmatter.js`, a minimal tags-only reader/writer — every
+  other frontmatter key a document already has, e.g. `title:`, is
+  preserved verbatim) rather than this app's own HTML-comment marker
+  convention (`markdown/markers.js`), specifically so a tagged file stays
+  portable to Obsidian/Jekyll/Hugo. A new chip-row editor
+  (`ui/tagsEditor.js`) sits above the breadcrumb, with autocomplete drawn
+  from every tag seen so far this session (`state/tagIndex.js`) — a
+  hand-built dropdown, not a native `<datalist>`, since Android WebView
+  doesn't reliably render those. Search (`core/searchIndex.js`,
+  `ui/searchPanel.js`, toolbar 🔍 button or Ctrl/⌘+K) covers every
+  currently open folder's filenames, headings, tags, and body text,
+  ranked in that order; each file's content is read and cached only the
+  first time it's actually searched (matching this app's existing lazy
+  per-file loading — see `state/workspace.js`), not eagerly when the
+  folder is opened, and the cache is kept fresh on save and dropped when
+  its folder is closed. Both features work identically on desktop and
+  Android, since neither touches anything platform-specific. Added
+  `tests/frontmatter.spec.js`, `tests/tagsEditor.spec.js`, and
+  `tests/search.spec.js` (including a test proving the lazy-read/caching
+  behavior itself, not just the search results).
