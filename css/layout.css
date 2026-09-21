@@ -308,6 +308,49 @@ main#main-panel {
 .crumb-current { color: var(--text); font-weight: 600; }
 .crumb-sep { color: var(--text-faint); font-size: 0.75rem; }
 
+/* A document's own frontmatter tags (markdown/frontmatter.js) — one row,
+   shared across the whole file, sitting right under the breadcrumb since
+   tags describe the document as a whole, not any one section. */
+#doc-tags-bar {
+  padding: 0.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+#doc-tags-bar:empty { display: none; }
+.tags-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.tags-editor-label { font-size: 0.85rem; opacity: 0.75; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.65rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-default) 14%, var(--surface));
+  color: var(--accent-default); font-size: 0.78rem; font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--accent-default) 30%, transparent);
+}
+.tag-chip-remove {
+  background: none; border: none; cursor: pointer; padding: 0.1rem 0.25rem;
+  color: inherit; opacity: 0.65; font-size: 0.9rem; line-height: 1; border-radius: 999px;
+}
+.tag-chip-remove:hover { opacity: 1; background: color-mix(in srgb, var(--accent-default) 20%, transparent); }
+.tag-input-wrap { position: relative; }
+.tag-input {
+  border: none; background: none; color: var(--text); font-size: 0.82rem;
+  padding: 0.25rem 0.2rem; min-width: 6rem; font-family: inherit;
+}
+.tag-input:focus { outline: none; }
+.tag-suggestions {
+  position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 0.25rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  display: flex; flex-direction: column; min-width: 9rem; overflow: hidden;
+}
+.tag-suggestion {
+  text-align: left; background: none; border: none; padding: 0.45rem 0.7rem;
+  font-size: 0.82rem; color: var(--text); cursor: pointer;
+}
+.tag-suggestion:hover { background: var(--bg-soft); }
+
 /* A short document (or one with nothing to structurally split — see
    ui/docViewMode.js) defaults to reading as one continuous page instead of
    being fragmented into a handful of near-empty per-section cards; this

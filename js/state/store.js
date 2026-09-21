@@ -1,4 +1,5 @@
 import { findNode, findParent, getPath } from '../markdown/parser.js';
+import { registerTags } from './tagIndex.js';
 
 const listeners = new Set();
 
@@ -60,6 +61,7 @@ export function loadDocument({
   doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null, workspaceRootName = null,
 }) {
   undoStacks.clear();
+  registerTags(doc.tags);
   const firstChild = doc.children[0];
   setState({
     doc,
@@ -99,6 +101,7 @@ export function getSelectedPath() {
  */
 export function replaceWholeDocument(newDoc) {
   if (!state.doc) return;
+  registerTags(newDoc.tags);
   setState({ doc: newDoc, selectedId: newDoc.id, dirty: true });
 }
 
@@ -130,6 +133,22 @@ export function updateNode(id, patch) {
     Object.assign(node, patch);
   }
   setState({ doc: state.doc, dirty: state.dirty || changed });
+}
+
+/**
+ * Replace the whole document's own tags (its frontmatter `tags:` entry —
+ * see markdown/frontmatter.js), not any one section's. `tags` is
+ * expected already-normalized (trimmed, deduped, empties dropped — see
+ * ui/tagsEditor.js) since this is a plain replace, not a merge.
+ */
+export function setDocTags(tags) {
+  if (!state.doc) return;
+  const changed = JSON.stringify(tags) !== JSON.stringify(state.doc.tags || []);
+  if (changed) {
+    state.doc.tags = tags;
+    registerTags(tags);
+    setState({ doc: state.doc, dirty: true });
+  }
 }
 
 export function canUndoNode(id) {

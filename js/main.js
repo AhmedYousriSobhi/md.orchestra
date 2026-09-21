@@ -6,9 +6,11 @@ import { findChangedNodes } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
+  setDocTags,
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
+import { renderTagsEditor } from './ui/tagsEditor.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
   workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace, removeFileFromWorkspace,
@@ -104,6 +106,7 @@ const el = {
   headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
+  docTagsBar: document.getElementById('doc-tags-bar'),
   viewModeBar: document.getElementById('view-mode-bar'),
   viewModeFullBtn: document.getElementById('view-mode-full-btn'),
   viewModeSectionsBtn: document.getElementById('view-mode-sections-btn'),
@@ -336,6 +339,7 @@ function renderInner() {
     el.viewModeBar.hidden = true;
     renderSidebar(el.headingTree, null, [], selectSection, handleSidebarMove);
     el.breadcrumb.innerHTML = '';
+    el.docTagsBar.innerHTML = '';
     el.previewPanel.innerHTML = '';
     lastPathLength = 0;
     lastRenderedSectionKey = null;
@@ -373,6 +377,13 @@ function renderInner() {
       fileName,
     });
   }
+
+  // Doc-level, not per-section, so it's rendered here unconditionally
+  // rather than inside the section-view guard below — a tag add/remove is
+  // always a deliberate, discrete commit (Enter/comma/blur/suggestion
+  // click), never a mid-typing debounce, so there's no "don't rebuild
+  // while typing" concern the way a note's body textarea has.
+  renderTagsEditor(el.docTagsBar, doc.tags || [], (newTags) => setDocTags(newTags));
 
   // A note/title edit fires a store update on every autosave tick. If the user is
   // still typing in a field inside the card grid, rebuilding that DOM out from under
