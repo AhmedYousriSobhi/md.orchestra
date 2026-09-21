@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="120" height="120" alt="MD.Orchestra logo — a conductor's baton inside code brackets" />
-
 # MD.Orchestra
 
 **Your `.md` folder, but you can actually see it.**

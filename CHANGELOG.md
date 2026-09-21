@@ -2042,3 +2042,12 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   functional icon (browser favicon, Electron window icon) is untouched —
   this is a new, separate README-only asset, not a rebrand of the app
   itself.
+
+- **Stage 100** (branch `feature/android-app`) — The Stage 99 logo
+  (conductor's baton) didn't land well on review; reverted it —
+  `docs/assets/logo.svg` removed, README header back to text-only. The
+  local-first/no-backend badge swap from the same stage stays, since
+  that wasn't the part flagged. Logo direction is still open; see the
+  session notes for a recommended next approach (a typographic wordmark
+  instead of an icon, sidestepping the whole "generic AI-tool wand/baton
+  icon" genre this attempt fell into).
