@@ -2,7 +2,7 @@ import { h } from './utils/dom.js';
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
-import { findChangedNodes } from './markdown/diff.js';
+import { findChangedNodes, tagsDiffer } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
@@ -308,9 +308,13 @@ function renderInner() {
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
   el.sourceBtn.disabled = !doc;
+  el.sourceBtn.hidden = !doc;
   el.addSectionBtn.disabled = !doc;
+  el.addSectionBtn.hidden = !doc;
   el.mapViewBtn.disabled = !doc;
+  el.mapViewBtn.hidden = !doc;
   el.previewToggleBtn.disabled = !doc;
+  el.previewToggleBtn.hidden = !doc;
 
   // With no document loaded there's nothing to preview, so the panel must
   // stay hidden regardless of the stored open/closed preference — without
@@ -524,7 +528,13 @@ function activeGapChangedCount() {
   const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
   if (listRecoverySnapshots().some((s) => s.id === id)) return 0;
   try {
-    return findChangedNodes(doc, parseMarkdown(currentBaseline)).length || 1;
+    const baselineDoc = parseMarkdown(currentBaseline);
+    const sectionCount = findChangedNodes(doc, baselineDoc).length;
+    const tagCount = tagsDiffer(doc, baselineDoc) ? 1 : 0;
+    // The `|| 1` stays as a last-resort fallback for a dirty edit neither
+    // check accounts for (e.g. a title-only rename) — "something changed"
+    // (dirty is only ever true because it did) still beats reporting 0.
+    return sectionCount + tagCount || 1;
   } catch {
     return 1;
   }
@@ -577,16 +587,19 @@ function pendingWorkspacePaths(workspace) {
 function diffSnapshot(snap) {
   if (!snap.baselineMarkdown) return null;
   try {
-    return findChangedNodes(parseMarkdown(snap.markdown), parseMarkdown(snap.baselineMarkdown));
+    const doc = parseMarkdown(snap.markdown);
+    const baselineDoc = parseMarkdown(snap.baselineMarkdown);
+    return { sections: findChangedNodes(doc, baselineDoc), tagsChanged: tagsDiffer(doc, baselineDoc) };
   } catch {
     return null;
   }
 }
 
-/** How many individual sections (not files) a snapshot represents — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero). */
+/** How many individual sections (not files) a snapshot represents, plus one more if its tags changed (tags live on the root document, not any one section — see markdown/diff.js's tagsDiffer) — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero on both fronts). */
 function countChangedSections(snap) {
   const diff = diffSnapshot(snap);
-  return diff === null ? 1 : diff.length;
+  if (diff === null) return 1;
+  return diff.sections.length + (diff.tagsChanged ? 1 : 0);
 }
 
 /** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
@@ -1396,13 +1409,19 @@ function notifyOtherPendingChanges(justSavedIdentity) {
 function enrichSnapshot(snap) {
   try {
     const doc = parseMarkdown(snap.markdown);
+    const baselineDoc = snap.baselineMarkdown ? parseMarkdown(snap.baselineMarkdown) : null;
     // `null` (not `[]`) when there's no baseline to diff against — the
     // Changes panel needs to tell "couldn't determine what changed" apart
     // from "diffed it, genuinely nothing did" (see diffSnapshot() above).
-    const changedSections = snap.baselineMarkdown ? findChangedNodes(doc, parseMarkdown(snap.baselineMarkdown)) : null;
-    return { ...snap, doc, changedSections };
+    const changedSections = baselineDoc ? findChangedNodes(doc, baselineDoc) : null;
+    const tagsChanged = baselineDoc ? tagsDiffer(doc, baselineDoc) : false;
+    return {
+      ...snap, doc, changedSections, tagsChanged,
+    };
   } catch {
-    return { ...snap, doc: null, changedSections: null };
+    return {
+      ...snap, doc: null, changedSections: null, tagsChanged: false,
+    };
   }
 }
 
@@ -1418,7 +1437,10 @@ function enrichActiveSnapshot(snap) {
   const { doc: liveDoc } = getState();
   if (!liveDoc || !currentBaseline) return enrichSnapshot(snap);
   try {
-    return { ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, parseMarkdown(currentBaseline)) };
+    const baselineDoc = parseMarkdown(currentBaseline);
+    return {
+      ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, baselineDoc), tagsChanged: tagsDiffer(liveDoc, baselineDoc),
+    };
   } catch {
     return enrichSnapshot(snap);
   }

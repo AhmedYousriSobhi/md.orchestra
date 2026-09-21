@@ -15,7 +15,7 @@ const MATCH_LABEL = { filename: 'filename', heading: 'heading', tag: 'tag', body
  */
 export function openSearchPanel({ workspaces, onOpenFile }) {
   if (overlayEl) overlayEl.remove();
-  overlayEl = h('div', { class: 'overlay insight-overlay', hidden: true });
+  overlayEl = h('div', { class: 'overlay search-overlay', hidden: true });
   overlayEl.addEventListener('click', (e) => { if (e.target === overlayEl) closeOverlay(overlayEl); });
 
   const input = h('input', {

@@ -12,6 +12,17 @@
 /* Center-modal overlays (code viewer, insight popup) */
 .code-viewer-overlay, .insight-overlay { align-items: center; justify-content: center; padding: 2rem; }
 
+/* Search (ui/searchPanel.js): top-center, VSCode-command-palette-style —
+   sits near the top of the window rather than jumping to dead center, so
+   it reads as "acting on what's already on screen" while typing. Falls
+   back to the same centered treatment as every other modal below the
+   app's own mobile breakpoint, where the on-screen keyboard already eats
+   a large share of a short viewport's remaining height. */
+.search-overlay { align-items: flex-start; justify-content: center; padding: 2rem; padding-top: 12vh; }
+@media (max-width: 860px) {
+  .search-overlay { align-items: center; padding-top: 2rem; }
+}
+
 .code-viewer-panel, .insight-panel {
   background: var(--surface);
   border-radius: var(--radius-lg);
@@ -147,6 +158,7 @@
 .recovery-file { font-weight: 700; font-size: 0.9rem; color: var(--text); word-break: break-all; }
 .recovery-time { font-size: 0.72rem; color: var(--text-faint); flex-shrink: 0; }
 .recovery-excerpt { font-size: 0.82rem; color: var(--text-soft); margin: 0.4rem 0 0.7rem; }
+.recovery-tags-changed { font-size: 0.78rem; color: var(--accent-default); font-weight: 600; margin: 0.4rem 0 0; }
 
 /* One stacked sub-row per individually-changed section within a file, each
    with its own Save/Discard — separate from the file-level "Save all" /

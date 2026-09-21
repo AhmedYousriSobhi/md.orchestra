@@ -368,6 +368,19 @@ main#main-panel {
 .view-mode-tab:hover { color: var(--text); }
 .view-mode-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent-default) 16%, var(--bg-soft)); color: var(--accent-default); }
 
+.view-mode-bar-spacer { flex: 1; }
+/* Deliberately not the sidebar's icon+"➕badge" pattern (add-file-btn etc.)
+   — this button acts on the document currently on screen, not on the
+   folder in the sidebar, and a labeled pill reads unambiguously as "add a
+   section here" rather than pattern-matching "add a file". */
+.btn-add-section {
+  background: color-mix(in srgb, var(--accent-default) 12%, var(--bg-soft));
+  border: 1px solid color-mix(in srgb, var(--accent-default) 30%, var(--border));
+  color: var(--accent-default);
+  border-radius: 999px; padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600;
+}
+.btn-add-section:hover { background: color-mix(in srgb, var(--accent-default) 20%, var(--bg-soft)); }
+
 #section-view-wrap {
   flex: 1;
   overflow-y: auto;
@@ -446,6 +459,10 @@ aside#preview-panel[hidden] { display: none; }
 }
 .edge-toggle:hover:not(:disabled) { color: var(--text); background: var(--bg-soft); }
 .edge-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Its own `display: flex` above otherwise beats the [hidden] attribute's
+   default display:none at equal specificity — needed now that main.js
+   actually hides this button (not just disables it) with no document open. */
+.edge-toggle[hidden] { display: none; }
 #app-body.preview-open .edge-toggle { right: var(--preview-width, min(460px, 40vw)); }
 
 /* The actual draggable divider between the content pane and the preview —

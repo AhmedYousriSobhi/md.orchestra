@@ -1962,3 +1962,43 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   `tests/frontmatter.spec.js`, `tests/tagsEditor.spec.js`, and
   `tests/search.spec.js` (including a test proving the lazy-read/caching
   behavior itself, not just the search results).
+
+- **Stage 97** (branch `feature/android-app`) — Reported: adding a tag,
+  then saving from inside the Changes panel, left the file's row sitting
+  there looking unsaved even though it genuinely was — and the toolbar's
+  own Changes badge never showed a count for a tags-only edit either.
+  Root-caused (via #6) as an old bug in `ui/changesPanel.js`, unrelated
+  to tags: the file-level Save button only refreshed the panel's own
+  displayed list when the row *wasn't* the currently-active document
+  (`if (!isActive) { pending = ...; renderList(); }`) — for the common
+  case of saving the file you're actually looking at, the underlying
+  save/clear succeeded but the panel never found out. Confirmed present
+  since the very first commit that added the Changes panel, and,
+  checking for `isCapacitor`/`isElectron` branching in that file and in
+  `markdown/diff.js` (there is none), confirmed identical on Android.
+  Fixed by dropping the `isActive` guard, matching the Discard button's
+  existing unconditional behavior. Separately, `markdown/diff.js`'s
+  `findChangedNodes` never looked at `doc.tags` at all (tags live on the
+  root document, not any section), so a tags-only edit always diffed to
+  "0 changed sections" — added `tagsDiffer()` alongside it and folded it
+  into every "how many changes" count (the toolbar badge, the panel's
+  subtitle, and a new "🏷️ Tags changed" line on the affected row) so a
+  tags-only change is counted and shown instead of looking like nothing
+  happened. Added `tests/changesPanel.spec.js`.
+
+  Also shipped three requested UI improvements, all shared code with no
+  platform branching (desktop and Android alike): the search panel (#7)
+  now opens top-center, VSCode-command-palette-style, instead of
+  vertically centered (falls back to centered below the mobile
+  breakpoint, where the on-screen keyboard already eats most of a short
+  viewport); Map/Source/Preview/Add-section (#8) are now actually
+  `hidden` with no document open, not just grayed out via `disabled`
+  (`.edge-toggle`'s own `display: flex` needed an explicit
+  `.edge-toggle[hidden] { display: none; }` override, since author CSS
+  at equal specificity otherwise beats the attribute's UA default); and
+  "Add section" (#9) moved out of the sidebar's icon-button row (where
+  it looked identical to "Add file", easy to mis-click) into a labeled
+  "+ Add section" pill next to the document's own Full text/Sections
+  tabs, reading as "acts on this document" rather than "acts on the
+  folder". Added `tests/contextualButtons.spec.js` and
+  `tests/searchPlacement.spec.js`.

@@ -59,7 +59,7 @@ export function openChangesPanel(snapshots, activeId, handlers) {
     // to baseline) must count as 0, not fall back to "at least 1" — that
     // fallback is only for changedSections being null/undefined (couldn't
     // diff at all, a legacy snapshot with no baseline).
-    const totalChanges = pending.reduce((sum, s) => sum + (s.changedSections?.length ?? 1), 0);
+    const totalChanges = pending.reduce((sum, s) => sum + (s.changedSections?.length ?? 1) + (s.tagsChanged ? 1 : 0), 0);
     subtitle.textContent = pending.length
       ? `${totalChanges} change${totalChanges === 1 ? '' : 's'} across ${pending.length} file${pending.length === 1 ? '' : 's'}`
       : 'Everything is saved';
@@ -91,7 +91,8 @@ export function openChangesPanel(snapshots, activeId, handlers) {
           type: 'button',
           onClick: stop(async () => {
             await handlers.onSaveFile(snap, isActive);
-            if (!isActive) { pending = pending.filter((s) => s.id !== snap.id); renderList(); }
+            pending = pending.filter((s) => s.id !== snap.id);
+            renderList();
           }),
         }, hasSections ? '💾 Save all' : '💾 Save'),
       ];
@@ -143,6 +144,12 @@ export function openChangesPanel(snapshots, activeId, handlers) {
         ])))
         : h('p', { class: 'recovery-excerpt' }, excerptOf(snap.markdown));
 
+      // Tags live on the root document, not any one section, so a tags-only
+      // edit never shows up in `sections` above (see markdown/diff.js's
+      // tagsDiffer) — called out here explicitly rather than leaving the
+      // row looking unsaved for a reason nothing else on it explains.
+      const tagsChangedRow = snap.tagsChanged ? h('p', { class: 'recovery-tags-changed' }, '🏷️ Tags changed') : null;
+
       const row = h('div', {
         class: `recovery-row${isActive ? ' recovery-row-active' : ''}`,
       }, [
@@ -161,6 +168,7 @@ export function openChangesPanel(snapshots, activeId, handlers) {
           ]),
           h('span', { class: 'recovery-time' }, timeAgo(snap.savedAt)),
         ]),
+        tagsChangedRow,
         changesContent,
         h('div', { class: 'recovery-row-actions' }, fileActions),
       ]);
