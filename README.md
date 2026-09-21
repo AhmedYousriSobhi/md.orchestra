@@ -23,13 +23,13 @@ in our app."
 ## See it in action
 
 **Navigate and edit — click any heading, it's editable right there.**
-![Open a folder, browse it, edit a section, watch the preview update live](docs/assets/demo-edit.gif)
+<img src="docs/assets/demo-edit.gif" width="760" alt="Open a folder, browse it, edit a section, watch the preview update live" />
 
 **The whole folder, as a graph you can click through.**
-![Open the workspace map, expand a folder, jump straight into a file](docs/assets/demo-map.gif)
+<img src="docs/assets/demo-map.gif" width="760" alt="Open the workspace map, expand a folder, jump straight into a file" />
 
 **Every unsaved edit tracked, until you decide what to do with it.**
-![See the dirty indicator, open Changes, save it back to disk](docs/assets/demo-save.gif)
+<img src="docs/assets/demo-save.gif" width="760" alt="See the dirty indicator, open Changes, save it back to disk" />
 
 ## Get it running
 
@@ -48,11 +48,22 @@ home.
 Same app, real device filesystem access via Android's native folder
 picker — no browser tab, no import step.
 
+<table>
+<tr>
+<td align="center" width="50%">
+
 **Open a folder through Android's own picker, browse it, edit a section.**
-![Tap Open folder, pick a folder through Android's native picker, grant it access, then browse and edit a section right there](docs/assets/demo-android-open.gif)
+<img src="docs/assets/demo-android-open.gif" width="260" alt="Tap Open folder, pick a folder through Android's native picker, grant it access, then browse and edit a section right there" />
+
+</td>
+<td align="center" width="50%">
 
 **The same Document map — Tree, Mind map, and a pinch-to-zoom Workspace graph.**
-![Switch between the Document map's Tree, Mind map, and Workspace modes, expanding a folder in the Workspace graph](docs/assets/demo-android-map.gif)
+<img src="docs/assets/demo-android-map.gif" width="260" alt="Switch between the Document map's Tree, Mind map, and Workspace modes, expanding a folder in the Workspace graph" />
+
+</td>
+</tr>
+</table>
 
 No Play Store listing yet — build the debug APK yourself (needs only
 [Docker](https://www.docker.com/)):

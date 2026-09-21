@@ -2002,3 +2002,26 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   tabs, reading as "acts on this document" rather than "acts on the
   folder". Added `tests/contextualButtons.spec.js` and
   `tests/searchPlacement.spec.js`.
+
+- **Stage 98** (branch `feature/android-app`) — Reported: the README's
+  demo GIFs "don't look professional." Diagnosed (#10) as an aspect-ratio
+  mismatch: three landscape desktop GIFs (880×550) followed by two
+  portrait Android GIFs (360×736) embedded as bare, unconstrained markdown
+  images, so the Android pair rendered as a 736px-tall slab right after
+  the wide desktop ones. Also flagged: the GIFs themselves were stale,
+  recorded well before this session's tags/search/UI work, showing an old
+  toolbar with none of it. Research-grounded fix (see the issue for
+  sources): desktop GIFs now render at a consistent width-capped 760px via
+  `<img>` instead of raw markdown image syntax; the two Android GIFs sit
+  side by side in a small HTML table, each capped to 260px, reading as a
+  matched phone-screenshot pair instead of an oversized single column.
+  All five GIFs were re-recorded end to end against the current app
+  (Playwright driving a real headless Chromium against a fresh demo
+  dataset, not the Playwright test fixtures) so they now show the actual
+  current UI — including, in the save-flow GIF, the exact Changes-panel
+  fix from Stage 97 in action (the row correctly disappearing and the
+  badge clearing after an active-file save). Re-encoded at a smaller
+  frame count/color palette to keep total GIF weight close to the
+  original despite being five fresh recordings. Kept the existing
+  tagline/voice as-is per plan — already fits best-practice guidance on a
+  confident, point-of-view tagline.
