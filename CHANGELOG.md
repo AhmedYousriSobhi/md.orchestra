@@ -2051,3 +2051,22 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   session notes for a recommended next approach (a typographic wordmark
   instead of an icon, sidestepping the whole "generic AI-tool wand/baton
   icon" genre this attempt fell into).
+
+- **Stage 101** (branch `fix/nonblocking-switch-toast`, resolves #11) —
+  Bug report: switching from a dirty file to a different file within an
+  open workspace (via the Explorer tree, or the Changes panel's own
+  "Open" button) discarded no data — `loadFromText()`/
+  `handleChangesOpenSnapshot()` already force-flush the outgoing file into
+  a recoverable snapshot first — but did so with zero feedback, which
+  looked and felt exactly like a silent discard next to closing a
+  standalone file, which *does* show a blocking confirm. Given two
+  legitimately different fixes (add a blocking confirm to match, or keep
+  the fast non-interrupting switch but make it visibly non-destructive),
+  asked which was wanted; chose the latter. `snapshotNow()` now takes an
+  `{ notify }` option — `true` at every explicit file-switch call site,
+  left off for the periodic debounced crash-recovery snapshot (which
+  fires on every keystroke, not just a switch, so it stays silent) —
+  and toasts `Kept your edits to "X" — see 📝 Changes to save or discard
+  them` whenever it actually stashes something. New
+  `tests/fileSwitchToast.spec.js` covers both the Explorer-tree switch
+  and the Changes panel's own "Open" button.

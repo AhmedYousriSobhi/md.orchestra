@@ -475,8 +475,26 @@ render();
 // standaloneHandles, and openStandaloneFileNames are all declared earlier
 // in this file, before the first render() call — see there).
 
-/** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
-function snapshotNow() {
+/**
+ * The actual snapshot-writing logic, callable directly (bypassing the
+ * debounce below) when something needs the current dirty state captured
+ * *right now* — see handleChangesOpenSnapshot, which relies on this to make
+ * switching files from the Changes panel non-destructive without needing a
+ * confirm prompt.
+ *
+ * `opts.notify`, when true, toasts that the edit was kept rather than lost —
+ * used by every explicit "switch away from this file" call site so that
+ * (see issue #11) not showing a blocking confirm dialog there doesn't also
+ * *look* like a silent discard. Left off for the periodic debounced
+ * call below (snapshotIfDirty runs on every keystroke-triggered store
+ * update, not just a file switch) — a toast on every autosave tick would be
+ * noise, not reassurance. `opts` is what makes this safe: subscribe()'s own
+ * notify() calls listeners as `fn(state)`, so the debounced wrapper ends up
+ * invoking `snapshotNow(state)` — `state` has no `notify` field, so that
+ * stays silently falsy rather than needing a separate call shape.
+ */
+function snapshotNow(opts) {
+  const notify = Boolean(opts && opts.notify);
   const {
     doc, fileName, dirty, workspaceRelPath, workspaceRootName,
   } = getState();
@@ -506,6 +524,9 @@ function snapshotNow() {
   // would otherwise re-render the Changes button's badge to reflect it
   // until some unrelated state change happened to trigger render() again.
   updateChangesBadge();
+  if (notify) {
+    showToast(`Kept your edits to "${fileName}" — see 📝 Changes to save or discard them`);
+  }
 }
 const snapshotIfDirty = debounce(snapshotNow, 1500);
 subscribe(snapshotIfDirty);
@@ -638,9 +659,12 @@ function resolveHandleFor(snapshot) {
  * drag-drop, a workspace file, following a cross-file link — funnels
  * through here. Switching files never loses anything: whatever's currently
  * active gets force-flushed into its own recovery snapshot first if it's
- * dirty (snapshotNow() — the same non-destructive pattern the Changes
- * panel's own "Open" action already used, just applied everywhere now
- * rather than only there), and if the file being switched *to* already has
+ * dirty (snapshotNow({ notify: true }) — the same non-destructive pattern
+ * the Changes panel's own "Open" action already used, just applied
+ * everywhere now rather than only there). No blocking confirm dialog here
+ * — unlike closing a standalone file — since nothing's actually at risk;
+ * the `notify: true` toast is what keeps that from *looking* like a silent
+ * discard (see issue #11). If the file being switched *to* already has
  * pending unsaved edits waiting, those are what gets shown instead of a
  * fresh — and by now stale — read of what's on disk (see
  * loadSnapshotAsActive). `workspaceRelPath`/`workspaceRootName` record
@@ -675,7 +699,7 @@ async function loadFromText(text, fileName, fileHandle = null, { workspaceRelPat
       return;
     }
   }
-  snapshotNow();
+  snapshotNow({ notify: true });
 
   const pending = listRecoverySnapshots().find((s) => s.id === snapshotIdentity(targetIdentity));
   if (pending) {
@@ -1590,17 +1614,17 @@ async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
 
 /**
  * "Open" a pending snapshot from the Changes panel: switch to it as the
- * active document. Unlike every *other* document-load path (a sample,
- * "Open .md file", a link), this one skips the unsaved-changes confirm —
- * deliberately: everything about the current document that's actually at
- * risk is captured by force-flushing its own recovery snapshot right here
- * (snapshotNow(), bypassing its usual debounce), so it stays exactly as
- * recoverable — via this very panel — as it already was. Nothing is
- * actually being discarded by switching, just leaving one already-tracked
- * file for another, so warning about it would be both untrue and noise.
+ * active document. Like every other document-load path (loadFromText),
+ * this skips the blocking unsaved-changes confirm — deliberately:
+ * everything about the current document that's actually at risk is
+ * captured by force-flushing its own recovery snapshot right here
+ * (snapshotNow({ notify: true }), bypassing its usual debounce), so it
+ * stays exactly as recoverable — via this very panel — as it already was,
+ * and the toast is what tells the user that rather than leaving them to
+ * assume the worst.
  */
 function handleChangesOpenSnapshot(snapshot) {
-  snapshotNow();
+  snapshotNow({ notify: true });
   loadSnapshotAsActive(snapshot, { fileHandle: resolveHandleFor(snapshot) });
 }
 
@@ -1621,7 +1645,7 @@ function handleChangesOpenSection(snapshot, sectionId) {
     selectSection(sectionId);
     return;
   }
-  snapshotNow();
+  snapshotNow({ notify: true });
   loadSnapshotAsActive(snapshot, { sectionId, fileHandle: resolveHandleFor(snapshot) });
 }
 
