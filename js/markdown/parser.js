@@ -1,4 +1,5 @@
 import { nextId } from '../utils/id.js';
+import { extractFrontmatter } from './frontmatter.js';
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_RE = /^(```+|~~~+)(.*)$/;
@@ -25,8 +26,12 @@ function cleanTitle(rawTitle) {
  * holds any content that appears before the first heading.
  */
 export function parseMarkdown(mdText) {
-  const lines = String(mdText ?? '').replace(/\r\n/g, '\n').split('\n');
+  const normalized = String(mdText ?? '').replace(/\r\n/g, '\n');
+  const { tags, otherLines, rest } = extractFrontmatter(normalized);
+  const lines = rest.split('\n');
   const root = makeNode(0, 'Document');
+  root.tags = tags;
+  root.frontmatterOtherLines = otherLines;
   const stack = [root];
   let fenceMarker = null;
 

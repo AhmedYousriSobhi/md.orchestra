@@ -4,7 +4,9 @@ import { getAiSettings, saveAiSettings, clearAiSettings, CLAUDE_MODELS } from '.
 import { getTheme, setTheme } from '../utils/theme.js';
 import { showToast } from './toast.js';
 import { openShortcutsPanel } from './shortcutsPanel.js';
+import { openGesturesPanel } from './gesturesPanel.js';
 import { isElectron } from '../core/electronFsAdapter.js';
+import { isCapacitor } from '../core/capacitorFsAdapter.js';
 
 let panelEl = null;
 
@@ -139,11 +141,20 @@ function build() {
       h('hr', { class: 'settings-divider' }),
       updateSection?.section,
       h('label', { class: 'settings-label' }, 'Help'),
-      h('button', {
-        class: 'btn btn-ghost',
-        type: 'button',
-        onClick: () => { handleClose(); openShortcutsPanel(); },
-      }, '⌨ Keyboard shortcuts'),
+      // A phone has no keyboard for shortcutsPanel.js's table to mean
+      // anything on — swap it for the touch-gesture guide instead of
+      // showing accelerators for a keyboard that doesn't exist.
+      isCapacitor
+        ? h('button', {
+          class: 'btn btn-ghost',
+          type: 'button',
+          onClick: () => { handleClose(); openGesturesPanel(); },
+        }, '👆 Touch gestures')
+        : h('button', {
+          class: 'btn btn-ghost',
+          type: 'button',
+          onClick: () => { handleClose(); openShortcutsPanel(); },
+        }, '⌨ Keyboard shortcuts'),
       h('hr', { class: 'settings-divider' }),
       h('p', { class: 'settings-help' }, 'Provider support today is limited to Claude (Anthropic). Your key is stored only in this browser’s localStorage and is sent directly to api.anthropic.com — never anywhere else.'),
       h('label', { class: 'settings-label', for: 'ai-model-select' }, 'Model'),

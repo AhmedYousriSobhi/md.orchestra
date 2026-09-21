@@ -1,5 +1,6 @@
 import { h, svg } from '../utils/dom.js';
 import { paletteFor } from '../utils/colors.js';
+import { attachPanZoom, toSvgPoint } from './panZoom.js';
 
 // A small force-directed layout (repulsion between every pair of nodes,
 // springs along edges, a weak pull toward center) — an Obsidian-graph-style
@@ -131,25 +132,19 @@ function step(nodes, edges) {
   });
 }
 
-/** Convert a client-space point into `spaceEl`'s own local coordinate system — accounting for the SVG's viewBox scale, and (when spaceEl is the inner world group rather than the root) its current pan/zoom transform too. */
-function toSvgPoint(svgRoot, spaceEl, clientX, clientY) {
-  if (!svgRoot.createSVGPoint) return null;
-  const pt = svgRoot.createSVGPoint();
-  pt.x = clientX;
-  pt.y = clientY;
-  const ctm = spaceEl.getScreenCTM();
-  if (!ctm) return null;
-  const p = pt.matrixTransform(ctm.inverse());
-  return { x: p.x, y: p.y };
-}
-
 /** Let the user drag a node to reposition it (in world space); a plain click (no movement) fires onClick instead. */
 function wireDrag(groupEl, node, root, world, onClick) {
   let dragging = false;
   let moved = false;
 
   groupEl.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
+    // Deliberately NOT stopPropagation()'d: the shared pan/zoom module
+    // (panZoom.js) also needs to see this pointerdown reach `root`, purely
+    // to track it -- its own shouldStartPan() already excludes a node
+    // target from starting a canvas pan, so this doesn't fight the drag
+    // below. Without letting it bubble, a second finger touching down
+    // elsewhere while this one drags a node was never recognized as a
+    // pinch at all, since panZoom.js had no idea this first finger existed.
     dragging = true;
     moved = false;
     node.dragging = true;
@@ -173,8 +168,8 @@ function wireDrag(groupEl, node, root, world, onClick) {
 
 /** Render an Obsidian-style force-directed "mind map" of the whole document into `container`. Returns a stop() to cancel its animation loop. */
 export function renderMindMap(container, doc, selectedId, onPick) {
-  const viewW = container.clientWidth || 900;
-  const viewH = Math.max(container.clientHeight || 600, 480);
+  let viewW = container.clientWidth || 900;
+  let viewH = Math.max(container.clientHeight || 600, 480);
   const { nodes, edges, neighbors } = buildGraph(doc);
 
   // The physics runs in its own "world" space sized to the node count, not
@@ -233,13 +228,10 @@ export function renderMindMap(container, doc, selectedId, onPick) {
   });
   world.appendChild(nodeLayer);
 
-  // --- View (pan/zoom), auto-fit to whatever the physics actually needs ---
-  let zoom = 1;
-  let tx = 0;
-  let ty = 0;
-  function applyWorldTransform() {
-    world.setAttribute('transform', `translate(${tx},${ty}) scale(${zoom})`);
-  }
+  // --- View (pan/zoom), auto-fit to whatever the physics actually needs,
+  // plus cursor tracking for the fisheye effect below --- all delegated to
+  // the shared pan/wheel-zoom/pinch-zoom helper Tree and Workspace mode
+  // now use too (see panZoom.js).
   function contentBounds() {
     let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
     nodes.forEach((n) => {
@@ -256,76 +248,25 @@ export function renderMindMap(container, doc, selectedId, onPick) {
       minX, minY, maxX, maxY,
     };
   }
-  function fitToContent() {
-    const b = contentBounds();
-    const bw = Math.max(b.maxX - b.minX, 1);
-    const bh = Math.max(b.maxY - b.minY, 1);
-    zoom = Math.min(
-      (viewW - FIT_PADDING * 2) / bw,
-      (viewH - FIT_PADDING * 2) / bh,
-      FIT_MAX_INITIAL_ZOOM,
-    );
-    zoom = Math.max(zoom, MIN_ZOOM);
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
-    tx = viewW / 2 - zoom * cx;
-    ty = viewH / 2 - zoom * cy;
-    applyWorldTransform();
-  }
-  fitToContent();
+
+  let cursorWorld = null;
+  const panZoom = attachPanZoom(root, world, container, {
+    getContentBounds: contentBounds,
+    shouldStartPan: (e) => !(e.target.closest && e.target.closest('.mindmap-node')),
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    fitPadding: FIT_PADDING,
+    fitMaxInitialZoom: FIT_MAX_INITIAL_ZOOM,
+    onPointerMove: (p) => { cursorWorld = p; },
+  });
+  root.addEventListener('pointerleave', () => { cursorWorld = null; });
 
   const fitBtn = h('button', {
     class: 'mindmap-fit-btn',
     type: 'button',
     title: 'Fit the whole map in view',
-    onClick: () => fitToContent(),
+    onClick: () => panZoom.fitToContent(),
   }, '⤢ Fit');
-
-  // --- Cursor tracking, pan-by-dragging-the-background, and wheel zoom ---
-  let cursorWorld = null;
-  let panState = null;
-
-  root.addEventListener('pointerdown', (e) => {
-    if (e.target.closest && e.target.closest('.mindmap-node')) return;
-    const p = toSvgPoint(root, root, e.clientX, e.clientY);
-    if (!p) return;
-    panState = {
-      startX: p.x, startY: p.y, tx0: tx, ty0: ty, pointerId: e.pointerId,
-    };
-    root.classList.add('mindmap-panning');
-    root.setPointerCapture(e.pointerId);
-  });
-  root.addEventListener('pointermove', (e) => {
-    cursorWorld = toSvgPoint(root, world, e.clientX, e.clientY);
-    if (panState && panState.pointerId === e.pointerId) {
-      const p = toSvgPoint(root, root, e.clientX, e.clientY);
-      if (p) {
-        tx = panState.tx0 + (p.x - panState.startX);
-        ty = panState.ty0 + (p.y - panState.startY);
-        applyWorldTransform();
-      }
-    }
-  });
-  function endPan(e) {
-    if (panState && (!e || panState.pointerId === e.pointerId)) {
-      panState = null;
-      root.classList.remove('mindmap-panning');
-    }
-  }
-  root.addEventListener('pointerup', endPan);
-  root.addEventListener('pointercancel', endPan);
-  root.addEventListener('pointerleave', () => { cursorWorld = null; endPan(); });
-  root.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const rootPt = toSvgPoint(root, root, e.clientX, e.clientY);
-    if (!rootPt) return;
-    const worldBefore = { x: (rootPt.x - tx) / zoom, y: (rootPt.y - ty) / zoom };
-    const factor = Math.exp(-e.deltaY * 0.0015);
-    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
-    tx = rootPt.x - zoom * worldBefore.x;
-    ty = rootPt.y - zoom * worldBefore.y;
-    applyWorldTransform();
-  }, { passive: false });
 
   function updateHover() {
     let nextId = null;
@@ -342,7 +283,24 @@ export function renderMindMap(container, doc, selectedId, onPick) {
     }
   }
 
+  // A continuous rAF loop is fine on a plugged-in desktop tab; on a phone
+  // it's a direct battery drain for as long as this view happens to be
+  // left open — including while the app itself is backgrounded, since
+  // requestAnimationFrame's own browser-level throttling while hidden
+  // isn't guaranteed consistent across WebView implementations the way it
+  // is in a real desktop browser. Explicitly stopping on visibilitychange
+  // (and picking back up when visible again) means this costs nothing at
+  // all while it can't be seen, on any platform, not just Android.
   let rafId = null;
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    } else if (rafId === null) {
+      tick();
+    }
+  }
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   function tick() {
     step(nodes, edges);
     nodes.forEach((n) => {
@@ -377,6 +335,8 @@ export function renderMindMap(container, doc, selectedId, onPick) {
   container.appendChild(fitBtn);
 
   return function stop() {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    panZoom.stop();
     if (rafId !== null) cancelAnimationFrame(rafId);
   };
 }

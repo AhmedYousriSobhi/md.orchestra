@@ -28,3 +28,14 @@ export function findChangedNodes(newNode, oldNode, out = []) {
   newNode.children.forEach((child, i) => findChangedNodes(child, oldChildren[i], out));
   return out;
 }
+
+/**
+ * Whether the document's own frontmatter tags (markdown/frontmatter.js)
+ * differ from the baseline's — a separate check from findChangedNodes()
+ * above, since tags live on the root document, not any one section, and a
+ * tags-only edit would otherwise look like zero changes to every "N
+ * sections changed" count derived purely from findChangedNodes().
+ */
+export function tagsDiffer(newNode, oldNode) {
+  return JSON.stringify(newNode?.tags || []) !== JSON.stringify(oldNode?.tags || []);
+}

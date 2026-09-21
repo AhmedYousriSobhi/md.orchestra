@@ -62,9 +62,10 @@
       <div class="sidebar-toolbar">
         <button id="open-file-btn" class="btn btn-icon" type="button" title="Open .md file" aria-label="Open .md file">📂</button>
         <button id="open-folder-btn" class="btn btn-icon" type="button" title="Open folder" aria-label="Open folder">🗂️</button>
+        <button id="open-github-btn" class="btn btn-icon" type="button" title="Open a GitHub repo" aria-label="Open a GitHub repo">🐙</button>
         <button id="add-file-btn" class="btn btn-icon" type="button" title="Add file" aria-label="Add file">📄<span class="btn-icon-plus">+</span></button>
-        <button id="add-section-btn" class="btn btn-icon" type="button" disabled title="Add section" aria-label="Add section">📑<span class="btn-icon-plus">+</span></button>
         <button id="changes-btn" class="btn btn-icon" type="button" title="Changes" aria-label="Changes">📝<span id="changes-badge" class="changes-badge" hidden>0</span></button>
+        <button id="search-btn" class="btn btn-icon" type="button" title="Search (Ctrl/⌘+K)" aria-label="Search">🔍</button>
       </div>
       <section class="sidebar-section" id="explorer-section">
         <button type="button" class="sidebar-section-head" id="explorer-toggle">
@@ -89,9 +90,12 @@
 
     <main id="main-panel">
       <div id="breadcrumb-bar"></div>
+      <div id="doc-tags-bar"></div>
       <div id="view-mode-bar" class="view-mode-bar" hidden role="tablist">
         <button type="button" id="view-mode-full-btn" class="view-mode-tab" role="tab" title="Read and edit the whole file as one continuous page of raw Markdown">📝 Full text</button>
         <button type="button" id="view-mode-sections-btn" class="view-mode-tab" role="tab" title="Browse the document broken into per-heading cards you can drill into">🗃️ Sections</button>
+        <div class="view-mode-bar-spacer"></div>
+        <button id="add-section-btn" class="btn btn-add-section" type="button" hidden title="Add a new section to this document" aria-label="Add section">+ Add section</button>
       </div>
       <div id="section-view-wrap">
         <div id="empty-state">

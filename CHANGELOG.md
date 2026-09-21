@@ -1545,3 +1545,509 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   the project's GitHub Releases, correctly reports "no published versions"
   since none exist yet without crashing anything, and the whole section is
   absent in browser dev mode, where there's no packaged build to update.
+
+- **Stage 78** (branch `feature/android-app`) — The beginning of an
+  Android build, via [Capacitor](https://capacitorjs.com/) wrapping the
+  same HTML/CSS/JS this app already is rather than a rewrite. New
+  `js/core/capacitorFsAdapter.js` implements the same handle shape
+  `electronFsAdapter.js` and the browser File System Access API already
+  do, backed by `@daniele-rolli/capacitor-scoped-storage` (a free,
+  open-source Storage Access Framework wrapper) — so `workspaceIO.js`'s
+  existing directory-walking/create/delete logic works completely
+  unchanged against it, the same "add a third adapter, not a rewrite"
+  pattern this codebase already uses for Electron vs. browser.
+  `./build-android.sh` (Docker only, mirroring `build-desktop.sh`) builds
+  a real debug APK — verified, not assumed: it failed twice on genuine
+  Gradle/Kotlin toolchain issues (a JDK-21-only Capacitor module against a
+  JDK 17 build image; a duplicate-Kotlin-stdlib classpath conflict from
+  the Cordova compatibility layer), both root-caused and fixed, and the
+  resulting APK confirmed to be a real signed package containing this
+  project's actual `index.html`/`main.js`, not just "the script ran."
+  Along the way, a real phone-width bug: the Preview panel's peek-tab used
+  a desktop-only offset formula that placed it floating mid-screen once
+  Preview goes full-screen below the existing 860px breakpoint — fixed.
+  See `docs/ANDROID.md` for what's genuinely verified here vs. still
+  missing (there's no real-device testing yet, no single-file open, no
+  mobile-specific UI pass, no app icon of its own, no release signing) —
+  a beginning, deliberately not oversold as more than that.
+
+- **Stage 79** (branch `feature/android-app`) — The first real device ran
+  this build, and it found real things: a genuinely stale APK (built 21
+  seconds before a CSS fix that would've covered it), and header buttons
+  that seemed unresponsive. Map/Source turned out to be correctly
+  `disabled` with no document loaded — but the ☰ sidebar toggle's
+  unresponsiveness is still unexplained after reading through every
+  plausible cause in the code, so instead of guessing further, a global
+  `window.onerror`/`unhandledrejection` handler now surfaces any uncaught
+  error as a real, readable toast — everywhere, not just Android, since a
+  packaged app's user has no devtools to go find the error in themselves.
+  That test round also drove a real security/battery/polish pass: the
+  hardware back button now closes whatever's open (any overlay, then the
+  mobile sidebar) before minimizing rather than doing nothing or killing
+  the app; the mind-map's continuous animation loop now pauses on the
+  standard Page Visibility API instead of draining battery whenever the
+  app is backgrounded or the tab is hidden, on any platform; the status
+  bar and app icon/splash now match this project's actual brand instead
+  of Capacitor's generic defaults, including a proper dark-mode splash;
+  `android:allowBackup` is off (Settings' own copy promises the Anthropic
+  API key never leaves this browser's localStorage — Android's default
+  cloud auto-backup would have silently swept it up regardless) and
+  cleartext HTTP is disallowed outright. See `docs/ANDROID.md` for the
+  full, still-honest account of what a second real-device round still
+  needs to confirm.
+
+- **Stage 80** (branch `feature/android-app`) — Root-caused and fixed the
+  ☰ sidebar toggle bug from Stage 79. It was never a broken click handler:
+  a second diagnostic toast confirmed the tap reached the handler and the
+  `sidebar-open` class toggled correctly every time. A third, more
+  detailed diagnostic (reporting both elements' real
+  `getBoundingClientRect()` and computed `transform`) found the actual
+  cause — the preview panel was never explicitly hidden when no document
+  was loaded, so at phone width, with the "preview open" preference
+  defaulting to true, it sat as a full-viewport, opaque `position:
+  absolute; inset: 0` layer at a higher z-index (16) than the sidebar
+  drawer (15) on first launch. The sidebar's own transform was landing
+  exactly where it should the whole time; it was just rendering
+  underneath that layer. Fixed in `js/main.js`'s `render()`: the preview
+  panel is now forced hidden whenever there's no document, and restored
+  to the user's real stored open/closed preference the moment a document
+  actually loads. Verified with a Playwright simulation of the Capacitor
+  environment: the sidebar's rect now moves fully on-screen with the
+  preview panel correctly collapsed to 0×0, and opening a document still
+  un-hides the preview panel exactly as before. The temporary diagnostic
+  toast added in Stage 79 is removed now that it's served its purpose.
+  Not yet re-confirmed on an actual phone — that's the next real-device
+  round.
+
+- **Stage 81** (branch `feature/android-app`) — The second real-device
+  round confirmed the Stage 80 sidebar fix (it now opens and stays visible
+  correctly) and found four more things. The sidebar drawer never closed
+  itself on tapping into the document behind it — fixed with an
+  outside-tap-closes-the-drawer listener, the standard mobile nav-drawer
+  pattern. The mind map's default zoom, and its Fit button, were both
+  visibly wrong (a tiny node cluster low in an otherwise blank canvas) —
+  root cause was the SVG viewBox and the fit math being computed once from
+  the container's size at first mount, and that first real-WebView
+  measurement coming out stale/wrong with nothing ever re-measuring after;
+  fixed in `js/ui/mindMap.js` by re-measuring fresh on every fit and
+  adding a `ResizeObserver` that self-heals the instant the container
+  reports its real size, but only until the user has actually touched the
+  map (so it never yanks away a deliberate pan/zoom later). The mind map
+  also had no touch pinch-to-zoom at all — only a mouse wheel, which
+  doesn't exist on a phone — so real two-finger pinch support was added,
+  anchored on the pinch midpoint the same way wheel-zoom anchors on the
+  cursor, with a clean handoff to one-finger panning when a pinch ends
+  with a finger still down. Two other things reported in the same round
+  turned out not to be bugs: the system folder picker defaulting to
+  Downloads/Google Drive is Android's own picker UI (confirmed via its
+  plugin's Java source — the picker is invoked with a plain, unrestricted
+  intent, so every provider is genuinely available, just possibly behind
+  that picker's own menu icon), and no storage/photos permission prompt
+  appears because none is needed — the whole reason this app uses
+  Android's Storage Access Framework is to avoid that broad permission
+  entirely.
+
+- **Stage 82** (branch `feature/android-app`) — A third real-device round
+  found the sidebar dead again, this time whenever the preview panel was
+  actually open (including right after creating a new file, which opens
+  straight into preview by default) — the same symptom as Stage 80's bug
+  but a different trigger. `css/layout.css`'s mobile breakpoint gives the
+  sidebar and preview panel fixed z-indexes (15 and 16) regardless of
+  which one the user just opened, so a legitimately-open preview panel
+  sat above the sidebar the same way the Stage 80 no-document case did —
+  the ☰ button and its class-toggle worked correctly every time, the
+  drawer just rendered invisibly underneath. Fixed with one rule:
+  `aside#sidebar.sidebar-open` now gets `z-index: 17` at that breakpoint,
+  so the sidebar is always topmost whenever it's actually open. Verified
+  with Playwright that the sidebar is now the real
+  `document.elementFromPoint()` hit target with a document loaded and
+  preview open by default, not just a class present in the DOM.
+
+- **Stage 83** (branch `feature/android-app`) — Replaced the Keyboard
+  Shortcuts panel with a real Touch Gestures guide on Capacitor, backed
+  by actual navigation gestures rather than a relabeled button. Every
+  shortcut in `shortcutsPanel.js`'s table already has its own tappable
+  toolbar button, so there was nothing to gesture-ify there — the real
+  gap was touch-native navigation. Added `js/ui/gestures.js` (shared,
+  touch-only swipe recognition — a real mouse already has a click for
+  everything these exist for) and wired it into `js/main.js`: edge-swipe
+  from the left goes back to the parent section, mirroring iOS's own
+  back-swipe, or opens the sidebar drawer when there's nowhere left to go
+  back to; swiping the open drawer itself to the left closes it,
+  alongside the existing tap-outside-to-close. New `js/ui/gesturesPanel.js`
+  lists these plus the mind map's existing pinch-to-zoom, and
+  `settingsPanel.js` now swaps between it and the keyboard-shortcuts
+  guide based on `isCapacitor`. Verified with Playwright across three
+  real navigation depths (confirming each one goes up exactly one real
+  level rather than skipping to the document root) plus both sidebar
+  gestures.
+
+- **Stage 84** (branch `feature/android-app`) — Animated the preview
+  panel's entrance instead of an instant display:none/block cut, via a
+  `@keyframes` animation that plays the moment `[hidden]` comes off (no JS
+  bookkeeping needed): a subtle scale+fade on desktop, and a bottom-sheet
+  style slide-up at phone width, where the panel already covers the whole
+  screen like a modal.
+
+  Asked to confirm there wasn't a save-to-local-storage issue, an audit of
+  the real write path found one: the vendored `@daniele-rolli/capacitor-
+  scoped-storage` plugin opened files for writing with Android's
+  `openOutputStream(uri, "w")`, whose truncation behavior Android's own
+  API contract does **not** guarantee on every SAF provider — some
+  providers (including Google Drive's own SAF implementation) have
+  shipped versions that don't reliably truncate on `"w"`, which could
+  leave stale trailing bytes behind whenever a save made a file shorter
+  than its previous contents. Fixed with `"wt"`, the mode Android
+  documents as guaranteed to truncate everywhere, applied via a committed
+  `patch-package` patch (not a hand-edit that `npm install` would wipe)
+  plus a new `postinstall` script. Verified for real: removed
+  `node_modules` entirely, ran a from-scratch `npm ci` — the exact command
+  the Docker build uses — and confirmed the patch reapplied automatically
+  and the resulting Java source read `"wt"`.
+
+- **Stage 85** (branch `feature/android-app`) — GitHub repo browsing,
+  phase one: a new 🐙 button opens a public repo's Markdown files
+  read-only, with commit/push support scoped as a deliberate later phase
+  rather than faked here. New `js/core/githubIO.js` fetches a repo's
+  whole file tree in one call and returns it in exactly the shape
+  `workspaceIO.js`'s own browser-fallback path already produces (no
+  `dirHandles`) — which `state/workspace.js`'s `workspaceSupportsWrite()`
+  already reads as "read-only," so every write-gated action across the
+  app is correctly disabled automatically, with zero new gating logic
+  needed anywhere else. No auth needed: both `api.github.com` and
+  `raw.githubusercontent.com` serve public repos with permissive CORS,
+  confirmed live before writing any code around the assumption. New
+  `js/ui/githubModal.js` accepts `owner/repo`, a full GitHub URL, or a
+  `git@` remote. Verified against a real, live public repo (not just a
+  mock) end to end, plus mocked-repo tests confirming nested-file
+  navigation through the Explorer's existing FocalGraph view and that a
+  save attempt fails with an honest read-only message instead of a raw
+  error or silent data loss.
+
+- **Stage 87** (branch `feature/android-app`) — The Stage 84
+  save-truncation fix was never actually shipping, and a real Android
+  emulator caught it. `Dockerfile.android` copied `package.json`/
+  `package-lock.json` and ran `npm ci` *before* `patches/` arrived in a
+  later `COPY . .` — `patch-package`'s postinstall hook found no patches
+  directory yet, silently applied nothing, and every built APK kept
+  shipping the original, unpatched `"w"` write mode. The `strings`-based
+  check used to "confirm" the fix at the time was itself unreliable
+  (it found a coincidental `"wt"` substring elsewhere in the .dex,
+  unrelated to the actual code — a false positive over a real bug).
+  Fixed both: `Dockerfile.android` now copies `patches/` before `npm ci`
+  runs, and the fix is verified properly this time with `dexdump`
+  confirming `writeFile`'s own bytecode loads `"wt"` right before the
+  `openOutputStream` call, not just that the substring exists somewhere
+  in the file. Confirmed for real on a local, hardware-accelerated
+  Android emulator (KVM CPU acceleration, deliberately no GPU/display
+  involvement after an earlier attempt at graphics acceleration crashed
+  the host machine badly enough to reboot it): a long file cut down to
+  nearly nothing through the app's own UI and saved reproduced the exact
+  stale-bytes bug on the unpatched build, and truncated correctly, byte
+  for byte, on the patched one. See `docs/ANDROID.md` for the full story
+  and how to set up the same emulator safely.
+
+- **Stage 88** (branch `feature/android-app`) — Real-phone feedback after
+  the Stage 87 APK, addressed in four parts:
+  - GitHub repo lookups (`js/core/githubIO.js`) no longer require exact
+    casing. GitHub's own API resolves `owner/repo` case-insensitively and
+    returns the canonical casing in its response, but
+    `raw.githubusercontent.com` is a separate, exact-match CDN path — a
+    URL built from whatever case the user typed could 404 there even
+    after the API call above it succeeded. Fetching the repo's metadata
+    first and using GitHub's own canonical owner/name for every call
+    after that (tree, every raw file URL) sidesteps the mismatch.
+  - Pinch-to-zoom now works on the Document map's Tree and Workspace
+    modes, not just Mind map. The shared pan/zoom/pinch logic that Mind
+    map already had was extracted out of `js/ui/mindMap.js` into a new
+    `js/ui/panZoom.js` module and applied to `js/ui/mapView.js`'s Tree
+    mode and `js/ui/workspaceGraph.js`'s Workspace mode, including
+    keeping pan/zoom state alive across a Workspace graph's own
+    expand/collapse re-renders (the SVG root is now created once and
+    kept; only its inner content is rebuilt).
+  - The Document map panel's header no longer clips the third mode
+    button (or anything else) off narrow phone screens — the mode-toggle
+    row now wraps instead of overflowing — and gained its own dedicated,
+    always-reachable ✕ close button instead of relying on the header's
+    available width.
+  - Two-finger pinch-to-zoom on the actual reading surfaces (the preview
+    panel and the main document view), not just the SVG map views. New
+    `js/ui/pinchZoomText.js` uses the CSS `zoom` property rather than
+    `transform: scale()` — `zoom` reflows layout the way a browser's own
+    page zoom does, so bigger text takes more vertical space naturally
+    instead of overflowing a fixed-size box — with `touch-action: pan-y`
+    so ordinary one-finger scrolling stays native, and the chosen zoom
+    level persisted per-surface in `localStorage`.
+
+- **Stage 89** (branch `feature/android-app`) — Reported: pinch-zoom still
+  didn't work in the Document map's Workspace tab, even after Stage 88.
+  Root cause was in the shared `js/ui/panZoom.js` module used by all three
+  map modes: `handlePointerDown` returned immediately, without tracking
+  the pointer at all, whenever `shouldStartPan()` said no (i.e. the touch
+  landed on a real node) — meant to stop a node tap/drag from being
+  hijacked into panning the canvas underneath it. But that also meant a
+  first finger landing on a node was invisible to the pinch-recognition
+  logic entirely: when a second finger then came down elsewhere,
+  `activePointers` held only that one pointer, so it started a one-finger
+  pan instead of recognizing a pinch. Workspace mode's tree is packed with
+  small nodes, so a real two-finger pinch there landed at least one finger
+  on a node almost every time — Tree and Mind map's sparser layouts made
+  the same bug much less likely to bite, which is why it read as
+  "Workspace specifically is broken." Fixed by tracking every pointer
+  unconditionally and only gating whether a *single* finger is allowed to
+  start a pan; a second finger arriving is always treated as pinch intent,
+  regardless of what's under either finger. Mind map needed one more fix
+  on top: its own per-node drag handler (`wireDrag`) called
+  `stopPropagation()` on pointerdown, hiding that finger from panZoom.js
+  entirely rather than just from the pan decision — removed, since
+  `shouldStartPan()` already keeps a single-finger node touch from
+  panning; the node still drags normally, but a second finger now
+  correctly triggers a pinch. Added regression tests to
+  `tests/map-view.spec.js` and `tests/mindmap.spec.js` that start the
+  first synthetic touch exactly on a real node element (not the canvas
+  center, which rarely overlaps a node and let this bug hide from the
+  existing test suite) for all three modes.
+
+- **Stage 90** (branch `feature/android-app`, affects Android, desktop,
+  and browser alike) — Reported: after opening a folder, then separately
+  opening a standalone file unrelated to it, the Document map's Workspace
+  tab still showed the *previous* folder's file tree instead of correctly
+  reflecting that the active document isn't part of any workspace — Mind
+  map and Tree mode showed the right thing throughout, since they read
+  the active document directly. Root cause: `js/main.js`'s Map button
+  handler resolved which workspace to pass as
+  `workspaces.find((w) => w.rootName === workspaceRootName) || workspaces[0] || null`
+  — opening a standalone file sets `workspaceRootName` to `null`, so the
+  `.find()` came up empty and silently fell back to whatever workspace
+  happened to be first in the list, regardless of whether it had anything
+  to do with the file on screen. `js/ui/mapView.js` already handled a
+  `null` workspace correctly (hides the Workspace tab, falls back to Tree
+  mode) — the bug was solely in the caller substituting an unrelated
+  workspace instead of passing that `null` through. Fixed by only
+  resolving a workspace when `workspaceRootName` actually names one;
+  otherwise passing `null` as intended. Added a regression test opening a
+  workspace, then a standalone file, confirming the Workspace tab
+  disappears rather than showing the old folder's tree.
+
+- **Stage 91** — The README only ever illustrated the desktop app;
+  Android had no screenshots or GIFs anywhere, despite being a fully
+  supported shell by this point. Added an Android badge and a new "Also
+  on Android" section with two GIFs captured against the real running
+  APK on an emulator (not mocked): opening a folder through Android's own
+  native SAF picker end to end (including the real "Allow MD.Orchestra to
+  access files" permission dialog) through to browsing and editing a
+  section, and cycling the Document map's Tree/Mind map/Workspace modes
+  with a folder expand. Assembled as stepwise-frame GIFs via Pillow
+  (`docs/assets/demo-android-open.gif`, `demo-android-map.gif`) — the
+  same frame-by-frame approach the existing desktop GIFs already use,
+  not a continuous screen recording.
+
+- **Stage 92** (branch `feature/android-app`) — Reported from a real
+  phone: saving a document with no live write handle (a brand-new
+  standalone file, or one opened without one) silently fell back to the
+  browser-style anchor-download trick, which on Android just drops the
+  file into the Downloads folder with a toast telling the user to go
+  manually replace the original — there was no way to choose where the
+  file actually goes. Android's own Storage Access Framework has a real
+  answer for this (`ACTION_CREATE_DOCUMENT`, the native "Save As" picker)
+  that the vendored `@daniele-rolli/capacitor-scoped-storage` plugin
+  didn't expose. Added two methods to it via a patch-package patch:
+  `saveFileAs` (launches the picker, grants the resulting URI) and
+  `writeFileAtUri` (the actual write, "wt" mode for the same
+  guaranteed-truncation reason as Stage 87's fix) — the first save asks
+  where; the handle it returns is kept in app state so every save after
+  that writes straight there without asking again. `js/main.js`'s three
+  separate "no handle, fall back to download" call sites (the main save
+  shortcut, and the Changes panel's whole-file and per-section saves)
+  now share one `saveWithNoHandle()` helper, which also makes sure
+  backing out of the native picker leaves the document genuinely
+  unsaved rather than being treated as saved. Added
+  `tests/android-save.spec.js` against a Capacitor plugin stub, covering
+  both the happy path (asks once, reuses the handle on the next save)
+  and cancellation.
+
+- **Stage 93** — Reported: creating a new file landed on the Preview
+  panel (rendered, not editable) instead of the actual text editor — on
+  a phone-width layout, Preview opens full-screen by default and covers
+  the editable Sections/Full-text view entirely, leaving no obvious way
+  to reach it right after typing a filename and hitting Create. A
+  brand-new file has nothing worth previewing yet anyway. Added
+  `focusNewFileEditor()`, called after both of `handleCreateFile`'s
+  paths (a standalone document and a file created inside an open
+  workspace): hides the Preview panel for this document only (doesn't
+  touch the user's real stored open/closed preference, so opening any
+  other file still behaves exactly as before) and focuses the new
+  file's own editable textarea once it's actually in the DOM (deferred
+  slightly, since `animatedSwap` delays the section view's own re-render
+  by 140ms when replacing an already-open document). Added
+  `tests/new-file-editor.spec.js` covering both creation paths.
+
+- **Stage 94** — Reported: clicking "+ Add note" made the whole section
+  visibly blank out and redraw itself, instead of the note field just
+  appearing. Root cause: `render()` always swapped the section view
+  through `animatedSwap` — the exit/enter transition meant for
+  *navigating* to a different section (or back) — on every single state
+  change, including one that only updates the *content* of the section
+  already on screen. Fixed by tracking which document/section/view-mode
+  combination was last rendered; when a re-render targets the exact same
+  one, it now goes through a new `directRender` (transitions.js) —
+  an instant in-place refresh with no exit/enter animation — and only
+  falls back to `animatedSwap` when what's being shown is actually
+  changing. This also quietly improves every other same-section content
+  edit (a renamed title, an AI insight added), not just notes. Added
+  `tests/add-note-flicker.spec.js`, asserting the navigation-transition
+  CSS classes are never applied for an in-place note add, but still are
+  for a real section-to-section navigation; proved it fails without the
+  fix.
+
+- **Stage 95** (branch `feature/android-app`) — Reported: MD.Orchestra
+  never showed up as an option in Android's "Open with"/"Share" sheet
+  for a `.md` file — the app had no `<intent-filter>` for
+  `ACTION_VIEW`/`ACTION_SEND` at all, so the OS had no reason to ever
+  offer it. Added intent-filters for both, matching `text/markdown`,
+  `text/x-markdown`, and `text/plain` (the last one deliberately broad:
+  `.md` has no single MIME type Android and every file manager agree on,
+  and plenty report it as plain text — without that fallback the app
+  simply never appears for a real `.md` file on some devices; the
+  tradeoff is it also offers to open non-Markdown plain text). New
+  `PendingSharedFile` (a one-shot holder) and `ShareReceiverPlugin`
+  (registered directly on `MainActivity`, not the vendored ScopedStorage
+  plugin, since this is tied to the Activity's own lifecycle rather than
+  filesystem access) let `MainActivity.onCreate`/`onNewIntent` — the
+  latter needed because of `launchMode="singleTask"` — read the incoming
+  file's name and content and hand it to the JS side once it's actually
+  loaded, since there's no reliable way to call into the WebView the
+  moment the native Activity receives the intent. A file opened/shared
+  in this way now loads automatically on startup, taking priority over
+  silently reopening the last folder. Added
+  `tests/android-share-intent.spec.js` against a Capacitor plugin stub.
+
+  Caught on real-device verification (an emulator screenshot alone
+  wouldn't have shown this): sharing a file into the app while it was
+  *already* running silently did nothing. `js/main.js`'s own check for a
+  pending share only ever runs once, when the page first loads —
+  `launchMode="singleTask"` means a second share reuses that same
+  already-running page (`onNewIntent`) rather than reloading it, so
+  nothing ever asked again. Fixed by having `onNewIntent` call
+  Capacitor's own `Bridge.triggerWindowJSEvent` (the same native-to-JS
+  mechanism it uses internally, e.g. for the back button) once a file is
+  stashed, and having `js/main.js` listen for it and re-check. Verified
+  end to end against a real running emulator (not just the Playwright
+  stub): pushed a `.md` file, shared it in through the actual Android
+  Files app's own Share sheet — confirming MD.Orchestra now appears
+  there at all, which was the original bug — and confirmed a second
+  share while the app was still open also loaded correctly.
+
+- **Stage 96** (branch `feature/android-app`) — Two new features, requested
+  together since tags exist specifically to make search faster: per-file
+  tags, and search across an open workspace. Design decisions (recorded on
+  GitHub issues #4/#5): tags are free-form and stored as YAML frontmatter
+  (`markdown/frontmatter.js`, a minimal tags-only reader/writer — every
+  other frontmatter key a document already has, e.g. `title:`, is
+  preserved verbatim) rather than this app's own HTML-comment marker
+  convention (`markdown/markers.js`), specifically so a tagged file stays
+  portable to Obsidian/Jekyll/Hugo. A new chip-row editor
+  (`ui/tagsEditor.js`) sits above the breadcrumb, with autocomplete drawn
+  from every tag seen so far this session (`state/tagIndex.js`) — a
+  hand-built dropdown, not a native `<datalist>`, since Android WebView
+  doesn't reliably render those. Search (`core/searchIndex.js`,
+  `ui/searchPanel.js`, toolbar 🔍 button or Ctrl/⌘+K) covers every
+  currently open folder's filenames, headings, tags, and body text,
+  ranked in that order; each file's content is read and cached only the
+  first time it's actually searched (matching this app's existing lazy
+  per-file loading — see `state/workspace.js`), not eagerly when the
+  folder is opened, and the cache is kept fresh on save and dropped when
+  its folder is closed. Both features work identically on desktop and
+  Android, since neither touches anything platform-specific. Added
+  `tests/frontmatter.spec.js`, `tests/tagsEditor.spec.js`, and
+  `tests/search.spec.js` (including a test proving the lazy-read/caching
+  behavior itself, not just the search results).
+
+- **Stage 97** (branch `feature/android-app`) — Reported: adding a tag,
+  then saving from inside the Changes panel, left the file's row sitting
+  there looking unsaved even though it genuinely was — and the toolbar's
+  own Changes badge never showed a count for a tags-only edit either.
+  Root-caused (via #6) as an old bug in `ui/changesPanel.js`, unrelated
+  to tags: the file-level Save button only refreshed the panel's own
+  displayed list when the row *wasn't* the currently-active document
+  (`if (!isActive) { pending = ...; renderList(); }`) — for the common
+  case of saving the file you're actually looking at, the underlying
+  save/clear succeeded but the panel never found out. Confirmed present
+  since the very first commit that added the Changes panel, and,
+  checking for `isCapacitor`/`isElectron` branching in that file and in
+  `markdown/diff.js` (there is none), confirmed identical on Android.
+  Fixed by dropping the `isActive` guard, matching the Discard button's
+  existing unconditional behavior. Separately, `markdown/diff.js`'s
+  `findChangedNodes` never looked at `doc.tags` at all (tags live on the
+  root document, not any section), so a tags-only edit always diffed to
+  "0 changed sections" — added `tagsDiffer()` alongside it and folded it
+  into every "how many changes" count (the toolbar badge, the panel's
+  subtitle, and a new "🏷️ Tags changed" line on the affected row) so a
+  tags-only change is counted and shown instead of looking like nothing
+  happened. Added `tests/changesPanel.spec.js`.
+
+  Also shipped three requested UI improvements, all shared code with no
+  platform branching (desktop and Android alike): the search panel (#7)
+  now opens top-center, VSCode-command-palette-style, instead of
+  vertically centered (falls back to centered below the mobile
+  breakpoint, where the on-screen keyboard already eats most of a short
+  viewport); Map/Source/Preview/Add-section (#8) are now actually
+  `hidden` with no document open, not just grayed out via `disabled`
+  (`.edge-toggle`'s own `display: flex` needed an explicit
+  `.edge-toggle[hidden] { display: none; }` override, since author CSS
+  at equal specificity otherwise beats the attribute's UA default); and
+  "Add section" (#9) moved out of the sidebar's icon-button row (where
+  it looked identical to "Add file", easy to mis-click) into a labeled
+  "+ Add section" pill next to the document's own Full text/Sections
+  tabs, reading as "acts on this document" rather than "acts on the
+  folder". Added `tests/contextualButtons.spec.js` and
+  `tests/searchPlacement.spec.js`.
+
+- **Stage 98** (branch `feature/android-app`) — Reported: the README's
+  demo GIFs "don't look professional." Diagnosed (#10) as an aspect-ratio
+  mismatch: three landscape desktop GIFs (880×550) followed by two
+  portrait Android GIFs (360×736) embedded as bare, unconstrained markdown
+  images, so the Android pair rendered as a 736px-tall slab right after
+  the wide desktop ones. Also flagged: the GIFs themselves were stale,
+  recorded well before this session's tags/search/UI work, showing an old
+  toolbar with none of it. Research-grounded fix (see the issue for
+  sources): desktop GIFs now render at a consistent width-capped 760px via
+  `<img>` instead of raw markdown image syntax; the two Android GIFs sit
+  side by side in a small HTML table, each capped to 260px, reading as a
+  matched phone-screenshot pair instead of an oversized single column.
+  All five GIFs were re-recorded end to end against the current app
+  (Playwright driving a real headless Chromium against a fresh demo
+  dataset, not the Playwright test fixtures) so they now show the actual
+  current UI — including, in the save-flow GIF, the exact Changes-panel
+  fix from Stage 97 in action (the row correctly disappearing and the
+  badge clearing after an active-file save). Re-encoded at a smaller
+  frame count/color palette to keep total GIF weight close to the
+  original despite being five fresh recordings. Kept the existing
+  tagline/voice as-is per plan — already fits best-practice guidance on a
+  confident, point-of-view tagline.
+
+- **Stage 99** (branch `feature/android-app`) — Requested: a distinct
+  logo for the repo, in the spirit of a reference image (a wand inside
+  code brackets, dark/glowing style), with an invitation to propose
+  something better if there was one. Sketched three hand-built SVG
+  concepts (a direct recolor of the reference; a conductor's baton in
+  brackets, leaning into the actual product name "Orchestra"; and a
+  folder unfolding into a graph, literal to the Document Map feature) and
+  previewed all three before writing any repo files. Chose: the
+  conductor's baton — `docs/assets/logo.svg`, now in the README header.
+  Also requested: drop the "Last commit" badge and suggest a
+  replacement — previewed four live shields.io options and swapped in
+  "backend: none, local-first," since it reinforces the README's own
+  opening pitch rather than being purely decorative. The app's actual
+  functional icon (browser favicon, Electron window icon) is untouched —
+  this is a new, separate README-only asset, not a rebrand of the app
+  itself.
+
+- **Stage 100** (branch `feature/android-app`) — The Stage 99 logo
+  (conductor's baton) didn't land well on review; reverted it —
+  `docs/assets/logo.svg` removed, README header back to text-only. The
+  local-first/no-backend badge swap from the same stage stays, since
+  that wasn't the part flagged. Logo direction is still open; see the
+  session notes for a recommended next approach (a typographic wordmark
+  instead of an icon, sidestepping the whole "generic AI-tool wand/baton
+  icon" genre this attempt fell into).

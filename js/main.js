@@ -2,13 +2,17 @@ import { h } from './utils/dom.js';
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
-import { findChangedNodes } from './markdown/diff.js';
+import { findChangedNodes, tagsDiffer } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
+  setDocTags,
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
+import { renderTagsEditor } from './ui/tagsEditor.js';
+import { openSearchPanel } from './ui/searchPanel.js';
+import { cacheFileText, clearWorkspaceCache } from './core/searchIndex.js';
 import {
   getWorkspaces, addWorkspace, removeWorkspace, getWorkspaceFile, resolveWorkspaceLink,
   workspaceSupportsWrite, getWorkspaceDirHandle, addFileToWorkspace, removeFileFromWorkspace,
@@ -26,7 +30,8 @@ import { renderFullDocView } from './ui/fullDocView.js';
 import {
   recommendedMode, docModeKey, getStoredMode, setStoredMode,
 } from './ui/docViewMode.js';
-import { animatedSwap } from './ui/transitions.js';
+import { animatedSwap, directRender, closeOverlay } from './ui/transitions.js';
+import { bindHorizontalSwipe } from './ui/gestures.js';
 import {
   readFile, openFilePicker, writeToHandle, downloadText, supportsFileSystemAccess,
 } from './core/fileIO.js';
@@ -34,7 +39,10 @@ import {
   supportsDirectoryPicker, openDirectoryPicker, workspaceFromFileList, readWorkspaceFileText,
   createFileInDirectory, uniqueFileNameIn, deleteFileFromDirectory, reopenWorkspaceAtPath,
 } from './core/workspaceIO.js';
+import { fetchGithubRepoTree } from './core/githubIO.js';
+import { openGithubModal } from './ui/githubModal.js';
 import { isElectron } from './core/electronFsAdapter.js';
+import { isCapacitor, capacitorSaveFileAs, capacitorTakePendingSharedFile } from './core/capacitorFsAdapter.js';
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
@@ -50,6 +58,7 @@ import {
   renderPreviewPanel, getPreviewScope, setPreviewScope, getPreviewOpen, setPreviewOpen,
 } from './ui/previewPanel.js';
 import { openCodeViewer } from './ui/codeViewer.js';
+import { attachTextPinchZoom } from './ui/pinchZoomText.js';
 import { debounce } from './utils/debounce.js';
 import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot as clearRecoverySnapshotRaw, snapshotIdentity,
@@ -60,6 +69,32 @@ import { getTheme, applyTheme } from './utils/theme.js';
 // before first paint, to avoid a light-then-dark flash) — this just keeps
 // the module in sync with whatever was actually applied.
 applyTheme(getTheme());
+
+// A desktop browser tab always has devtools one keystroke away, so a script
+// error there is at worst an inconvenience to go look for. Inside a
+// packaged app — especially the Android WebView, which has no visible
+// console at all outside a USB-tethered remote-debugging session — the
+// exact same error instead just reads as "nothing happened," the app
+// silently doing nothing in response to whatever was tapped. Surfacing it
+// as a real, readable toast instead is what turns "the button doesn't
+// work" into an actual bug report. Deliberately over the default toast
+// duration (errors are worth reading, not glancing at) and deduplicated by
+// message so one error thrown repeatedly (e.g. from inside a render loop)
+// doesn't paper the screen in identical toasts.
+const recentErrorMessages = new Set();
+function reportUncaughtError(message) {
+  const key = String(message).slice(0, 200);
+  if (recentErrorMessages.has(key)) return;
+  recentErrorMessages.add(key);
+  setTimeout(() => recentErrorMessages.delete(key), 10000);
+  showToast(`Something went wrong: ${key}`, { type: 'error', duration: 9000 });
+}
+window.addEventListener('error', (e) => {
+  reportUncaughtError(e.error?.message || e.message || 'unknown error');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  reportUncaughtError(e.reason?.message || String(e.reason) || 'unknown rejection');
+});
 
 const el = {
   appBody: document.getElementById('app-body'),
@@ -73,6 +108,7 @@ const el = {
   headingTree: document.getElementById('heading-tree'),
   sidebarToggle: document.getElementById('sidebar-toggle'),
   breadcrumb: document.getElementById('breadcrumb-bar'),
+  docTagsBar: document.getElementById('doc-tags-bar'),
   viewModeBar: document.getElementById('view-mode-bar'),
   viewModeFullBtn: document.getElementById('view-mode-full-btn'),
   viewModeSectionsBtn: document.getElementById('view-mode-sections-btn'),
@@ -83,6 +119,7 @@ const el = {
   openFileBtn: document.getElementById('open-file-btn'),
   folderInput: document.getElementById('folder-input'),
   openFolderBtn: document.getElementById('open-folder-btn'),
+  openGithubBtn: document.getElementById('open-github-btn'),
   addFileBtn: document.getElementById('add-file-btn'),
   addSectionBtn: document.getElementById('add-section-btn'),
   mapViewBtn: document.getElementById('map-view-btn'),
@@ -91,6 +128,7 @@ const el = {
   previewResizeHandle: document.getElementById('preview-resize-handle'),
   changesBtn: document.getElementById('changes-btn'),
   changesBadge: document.getElementById('changes-badge'),
+  searchBtn: document.getElementById('search-btn'),
   sourceBtn: document.getElementById('source-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   dirtyIndicator: document.getElementById('dirty-indicator'),
@@ -103,12 +141,22 @@ const el = {
 // wiring below, which persists it once the user actually flips it.
 el.previewPanel.hidden = !getPreviewOpen();
 
+// Two-finger pinch-to-zoom on the reading surfaces -- attached once to the
+// containers themselves (which persist across re-renders; only their
+// innerHTML is swapped out on every selection/edit) rather than re-attached
+// per render.
+attachTextPinchZoom(el.previewPanel, { storageKey: 'preview' });
+attachTextPinchZoom(el.sectionViewWrap, { storageKey: 'section-view' });
+
 /**
- * The desktop app's own last-opened folder (see handleWorkspaceOpened and
- * the startup reopen below) — meaningless in the browser, where there's no
- * such thing as a path that survives the tab closing. Reopening it
- * silently on launch, the way VSCode reopens your last workspace, is the
- * whole point of moving off the browser's "grant access, once" model.
+ * The last-opened folder for either "real app" backend — Electron's
+ * absolute path, or Capacitor/Android's persisted SAF tree URI (see
+ * handleWorkspaceOpened and the startup reopen below) — meaningless in the
+ * browser, where there's no such thing as an identity that survives the
+ * tab closing. Reopening it silently on launch, the way VSCode reopens
+ * your last workspace, is the whole point of moving off the browser's
+ * "grant access, once" model. The key name is a holdover from when this
+ * only ever meant Electron; not worth a migration just to rename it.
  */
 const LAST_ELECTRON_FOLDER_KEY = 'mdDashboard.lastElectronFolder';
 
@@ -156,6 +204,13 @@ el.explorerToggle.addEventListener('click', () => toggleSidebarSection('explorer
 el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline'));
 
 let lastPathLength = 0;
+let previewSyncedForDoc = false;
+// Identifies "which section, in which view mode, of which document" is
+// currently on screen — when a re-render's target matches this exactly,
+// nothing is being navigated to, only its content changed (a new note, an
+// edited body, a renamed title), so it gets an instant in-place refresh
+// instead of animatedSwap's exit/enter transition (see directRender).
+let lastRenderedSectionKey = null;
 
 // `currentBaseline` holds whichever file's content is currently active as
 // it was when this editing session of it began (set in loadFromText and
@@ -253,9 +308,32 @@ function renderInner() {
   el.dirtyIndicator.classList.toggle('is-dirty', Boolean(dirty));
   el.dirtyText.textContent = !doc ? 'No document loaded' : dirty ? `${fileName} — unsaved changes` : `${fileName} — up to date`;
   el.sourceBtn.disabled = !doc;
+  el.sourceBtn.hidden = !doc;
   el.addSectionBtn.disabled = !doc;
+  el.addSectionBtn.hidden = !doc;
   el.mapViewBtn.disabled = !doc;
+  el.mapViewBtn.hidden = !doc;
   el.previewToggleBtn.disabled = !doc;
+  el.previewToggleBtn.hidden = !doc;
+
+  // With no document loaded there's nothing to preview, so the panel must
+  // stay hidden regardless of the stored open/closed preference — without
+  // this, it sat fully present (opaque background, higher z-index than the
+  // mobile sidebar) even before any file was opened, which on a phone-width
+  // layout made it cover the sidebar drawer completely: the sidebar's own
+  // toggle/transform worked correctly, but it rendered underneath this
+  // panel and so never became visible or tappable.
+  if (!doc) {
+    el.previewPanel.hidden = true;
+    previewSyncedForDoc = false;
+  } else if (!previewSyncedForDoc) {
+    // The moment a document actually appears, restore the panel to the
+    // user's real stored preference (only the "no document" state above
+    // forces it hidden; this undoes that once there's something to show).
+    el.previewPanel.hidden = !getPreviewOpen();
+    previewSyncedForDoc = true;
+  }
+
   // Drives the edge-toggle tab's docked position (see css/layout.css) — it
   // sits at the preview panel's own edge while open, and the viewport's
   // edge while closed.
@@ -268,8 +346,10 @@ function renderInner() {
     el.viewModeBar.hidden = true;
     renderSidebar(el.headingTree, null, [], selectSection, handleSidebarMove);
     el.breadcrumb.innerHTML = '';
+    el.docTagsBar.innerHTML = '';
     el.previewPanel.innerHTML = '';
     lastPathLength = 0;
+    lastRenderedSectionKey = null;
     return;
   }
 
@@ -305,6 +385,13 @@ function renderInner() {
     });
   }
 
+  // Doc-level, not per-section, so it's rendered here unconditionally
+  // rather than inside the section-view guard below — a tag add/remove is
+  // always a deliberate, discrete commit (Enter/comma/blur/suggestion
+  // click), never a mid-typing debounce, so there's no "don't rebuild
+  // while typing" concern the way a note's body textarea has.
+  renderTagsEditor(el.docTagsBar, doc.tags || [], (newTags) => setDocTags(newTags));
+
   // A note/title edit fires a store update on every autosave tick. If the user is
   // still typing in a field inside the card grid, rebuilding that DOM out from under
   // them would drop focus, jump the cursor, and swallow whatever they type next — so
@@ -334,10 +421,16 @@ function renderInner() {
 
   const direction = path.length >= lastPathLength ? 'forward' : 'back';
   lastPathLength = path.length;
+
+  const sectionKey = `${fileName}|${workspaceRootName}|${workspaceRelPath}|${node.id}|${viewMode}`;
+  const isSameSectionAsLastRender = sectionKey === lastRenderedSectionKey;
+  lastRenderedSectionKey = sectionKey;
+  const swap = isSameSectionAsLastRender ? directRender : animatedSwap;
+
   if (viewMode === 'full') {
-    animatedSwap(el.sectionView, (container) => renderFullDocView(container, doc, fileName), direction);
+    swap(el.sectionView, (container) => renderFullDocView(container, doc, fileName), direction);
   } else {
-    animatedSwap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
+    swap(el.sectionView, (container) => renderSectionView(container, node, handleNavigateFile), direction);
   }
 }
 
@@ -435,7 +528,13 @@ function activeGapChangedCount() {
   const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
   if (listRecoverySnapshots().some((s) => s.id === id)) return 0;
   try {
-    return findChangedNodes(doc, parseMarkdown(currentBaseline)).length || 1;
+    const baselineDoc = parseMarkdown(currentBaseline);
+    const sectionCount = findChangedNodes(doc, baselineDoc).length;
+    const tagCount = tagsDiffer(doc, baselineDoc) ? 1 : 0;
+    // The `|| 1` stays as a last-resort fallback for a dirty edit neither
+    // check accounts for (e.g. a title-only rename) — "something changed"
+    // (dirty is only ever true because it did) still beats reporting 0.
+    return sectionCount + tagCount || 1;
   } catch {
     return 1;
   }
@@ -488,16 +587,19 @@ function pendingWorkspacePaths(workspace) {
 function diffSnapshot(snap) {
   if (!snap.baselineMarkdown) return null;
   try {
-    return findChangedNodes(parseMarkdown(snap.markdown), parseMarkdown(snap.baselineMarkdown));
+    const doc = parseMarkdown(snap.markdown);
+    const baselineDoc = parseMarkdown(snap.baselineMarkdown);
+    return { sections: findChangedNodes(doc, baselineDoc), tagsChanged: tagsDiffer(doc, baselineDoc) };
   } catch {
     return null;
   }
 }
 
-/** How many individual sections (not files) a snapshot represents — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero). */
+/** How many individual sections (not files) a snapshot represents, plus one more if its tags changed (tags live on the root document, not any one section — see markdown/diff.js's tagsDiffer) — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero on both fronts). */
 function countChangedSections(snap) {
   const diff = diffSnapshot(snap);
-  return diff === null ? 1 : diff.length;
+  if (diff === null) return 1;
+  return diff.sections.length + (diff.tagsChanged ? 1 : 0);
 }
 
 /** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
@@ -667,13 +769,14 @@ async function handleCloseWorkspace(rootName) {
     });
   }
   removeWorkspace(rootName);
+  clearWorkspaceCache(rootName);
   forgetWorkspaceViewState(rootName);
   forgetWorkspaceGraphState(rootName);
   forgetWorkspaceCollapsed(rootName);
   // Closing means closing: don't silently bring it back on the next launch
   // (see reopenLastElectronFolder above) just because it was the most
   // recently opened one.
-  if (isElectron && getRememberedElectronFolder()?.rootName === rootName) {
+  if ((isElectron || isCapacitor) && getRememberedElectronFolder()?.rootName === rootName) {
     try { localStorage.removeItem(LAST_ELECTRON_FOLDER_KEY); } catch { /* ignore */ }
   }
   render();
@@ -686,6 +789,29 @@ function parentDirOf(relPath) {
 
 function stemOf(fileName) {
   return fileName.replace(/\.(md|markdown)$/i, '');
+}
+
+/**
+ * A freshly created file has nothing worth previewing yet — jump straight
+ * to its editable text instead of leaving the Preview panel (open by
+ * default every session) covering the editor, which on a phone-width
+ * layout takes the full screen and leaves no obvious way back to actually
+ * start typing. Session-only: sets el.previewPanel.hidden directly rather
+ * than calling setPreviewOpen(false), so it doesn't touch the user's real
+ * stored preference — opening any other file still opens Preview exactly
+ * as before. animatedSwap (transitions.js) defers the section view's own
+ * DOM swap by 140ms when replacing an already-rendered document (no delay
+ * for the very first one), so the textarea to focus may not exist yet
+ * right after loadFromText() returns — the short delay here covers both.
+ */
+function focusNewFileEditor() {
+  el.previewPanel.hidden = true;
+  el.previewPanel.innerHTML = '';
+  el.appBody.classList.remove('preview-open');
+  el.previewResizeHandle.hidden = true;
+  setTimeout(() => {
+    el.sectionView.querySelector('textarea')?.focus();
+  }, 160);
 }
 
 /**
@@ -703,6 +829,7 @@ async function handleCreateFile(fileName, target) {
   if (!target || target === '__standalone__') {
     closeNewFileModal();
     loadFromText(initialText, fileName);
+    focusNewFileEditor();
     return;
   }
   const { rootName, dirRelPath } = target;
@@ -716,6 +843,7 @@ async function handleCreateFile(fileName, target) {
     });
     closeNewFileModal();
     loadFromText(initialText, fileName, fileHandle, { workspaceRelPath: relPath, workspaceRootName: rootName });
+    focusNewFileEditor();
   } catch (err) {
     showToast(`Could not create "${fileName}": ${err.message}`, { type: 'error' });
   }
@@ -1015,7 +1143,7 @@ async function reopenCleanStandaloneFile(fileName) {
 async function handleWorkspaceOpened({
   rootName, files, dirHandles = null, rootPath = null,
 }) {
-  if (isElectron && rootPath) rememberElectronFolder(rootPath, rootName);
+  if ((isElectron || isCapacitor) && rootPath) rememberElectronFolder(rootPath, rootName);
   if (!files.length) {
     showToast(`No Markdown files found in "${rootName}".`, { type: 'error' });
     return;
@@ -1171,10 +1299,55 @@ el.folderInput.addEventListener('change', async (e) => {
   el.folderInput.value = '';
 });
 
+el.openGithubBtn.addEventListener('click', () => {
+  openGithubModal({
+    onLoad: async (owner, repo, branch) => {
+      const result = await fetchGithubRepoTree({ owner, repo, branch });
+      await handleWorkspaceOpened(result);
+      if (result.truncated) {
+        showToast(`${owner}/${repo} is large enough that GitHub truncated the file listing — some deeply-nested files may be missing.`, { duration: 6000 });
+      }
+    },
+  });
+});
+
+/**
+ * Saving a document/section with no live write handle: on Android, the
+ * native "Save As" picker (capacitorSaveFileAs) so the user chooses
+ * exactly where it goes — the real equivalent of a desktop Save As
+ * dialog, which this app's own Storage Access Framework access makes
+ * possible. Everywhere else (desktop browser, or Android's own picker
+ * cancelled), falls back to the browser-style anchor download, the only
+ * option a plain browser tab ever has.
+ *
+ * Returns `{ handle }` when a real write handle now exists (the caller
+ * should keep it for later saves), `{}` when it fell back to a download
+ * (nothing to keep, but the save still happened), or `{ cancelled: true }`
+ * when the user backed out of Android's picker — nothing was written, so
+ * callers must NOT mark the document clean or clear its recovery snapshot.
+ */
+async function saveWithNoHandle(fileName, text) {
+  if (isCapacitor) {
+    const handle = await capacitorSaveFileAs(fileName || 'document.md');
+    if (!handle) return { cancelled: true };
+    await writeToHandle(handle, text);
+    showToast(`Saved to ${handle.name}`);
+    return { handle };
+  }
+  downloadText(fileName || 'document.md', text);
+  showToast(
+    supportsFileSystemAccess
+      ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
+      : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
+    { duration: 5000 },
+  );
+  return {};
+}
+
 /**
  * The one obvious way to persist changes: write straight back to the file
  * if it was opened via "Open .md file" (a real File System Access handle),
- * otherwise download the up-to-date Markdown. Either way counts as
+ * otherwise fall through to saveWithNoHandle. Either way counts as
  * "saved" — the in-memory doc is no longer ahead of what the user has.
  */
 async function handleSave() {
@@ -1184,6 +1357,9 @@ async function handleSave() {
   if (!doc) return;
   const text = serializeMarkdown(doc);
   const identity = { fileName, workspaceRelPath, workspaceRootName };
+  // Keeps search's own lazy cache (core/searchIndex.js) from serving stale
+  // content for this file on a search run right after this save.
+  if (workspaceRelPath && workspaceRootName) cacheFileText(workspaceRootName, workspaceRelPath, text);
 
   if (fileHandle) {
     try {
@@ -1201,17 +1377,12 @@ async function handleSave() {
     return;
   }
 
-  downloadText(fileName || 'document.md', text);
-  setState({ dirty: false });
+  const result = await saveWithNoHandle(fileName, text);
+  if (result.cancelled) return;
+  setState({ dirty: false, ...(result.handle ? { fileHandle: result.handle } : {}) });
   clearRecoverySnapshot(identity);
   currentBaseline = text;
   if (!workspaceRelPath) standaloneCleanText.set(fileName, text);
-  showToast(
-    supportsFileSystemAccess
-      ? `Downloaded ${fileName} — this document wasn't opened with the file picker, so replace the original file with the download (or use "Open .md file" next time to save in place).`
-      : `Downloaded ${fileName} — replace the original file with the download to keep it in sync.`,
-    { duration: 5000 },
-  );
   notifyOtherPendingChanges(identity);
 }
 
@@ -1238,13 +1409,19 @@ function notifyOtherPendingChanges(justSavedIdentity) {
 function enrichSnapshot(snap) {
   try {
     const doc = parseMarkdown(snap.markdown);
+    const baselineDoc = snap.baselineMarkdown ? parseMarkdown(snap.baselineMarkdown) : null;
     // `null` (not `[]`) when there's no baseline to diff against — the
     // Changes panel needs to tell "couldn't determine what changed" apart
     // from "diffed it, genuinely nothing did" (see diffSnapshot() above).
-    const changedSections = snap.baselineMarkdown ? findChangedNodes(doc, parseMarkdown(snap.baselineMarkdown)) : null;
-    return { ...snap, doc, changedSections };
+    const changedSections = baselineDoc ? findChangedNodes(doc, baselineDoc) : null;
+    const tagsChanged = baselineDoc ? tagsDiffer(doc, baselineDoc) : false;
+    return {
+      ...snap, doc, changedSections, tagsChanged,
+    };
   } catch {
-    return { ...snap, doc: null, changedSections: null };
+    return {
+      ...snap, doc: null, changedSections: null, tagsChanged: false,
+    };
   }
 }
 
@@ -1260,7 +1437,10 @@ function enrichActiveSnapshot(snap) {
   const { doc: liveDoc } = getState();
   if (!liveDoc || !currentBaseline) return enrichSnapshot(snap);
   try {
-    return { ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, parseMarkdown(currentBaseline)) };
+    const baselineDoc = parseMarkdown(currentBaseline);
+    return {
+      ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, baselineDoc), tagsChanged: tagsDiffer(liveDoc, baselineDoc),
+    };
   } catch {
     return enrichSnapshot(snap);
   }
@@ -1278,8 +1458,8 @@ async function handleChangesSave(snapshot, isActive) {
       await writeToHandle(entry.fileHandle, snapshot.markdown);
       showToast(`Saved to ${snapshot.fileName}`);
     } else {
-      downloadText(snapshot.fileName, snapshot.markdown);
-      showToast(`Downloaded ${snapshot.fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+      const result = await saveWithNoHandle(snapshot.fileName, snapshot.markdown);
+      if (result.cancelled) return;
     }
     clearRecoverySnapshot(snapshot);
   } catch (err) {
@@ -1300,10 +1480,9 @@ async function writeMarkdownFor(isActive, snapshot, text) {
   if (handle) {
     await writeToHandle(handle, text);
     showToast(`Saved to ${fileName}`);
-  } else {
-    downloadText(fileName, text);
-    showToast(`Downloaded ${fileName} — no live file handle for it in this session, so replace the original with the download.`, { duration: 5000 });
+    return {};
   }
+  return saveWithNoHandle(fileName, text);
 }
 
 /**
@@ -1327,18 +1506,21 @@ async function handleChangesSaveSection(snapshot, isActive, sectionId) {
   const merged = applySectionToBase(baseDoc, editedDoc, sectionId);
   if (!merged) return;
   const mergedText = serializeMarkdown(merged);
+  let result;
   try {
-    await writeMarkdownFor(isActive, snapshot, mergedText);
+    result = await writeMarkdownFor(isActive, snapshot, mergedText);
   } catch (err) {
     showToast(`Save failed: ${err.message}`, { type: 'error' });
     return;
   }
+  if (result.cancelled) return;
   // Everything else still pending is whatever the live/edited doc still
   // disagrees with the file we just wrote — i.e. every OTHER section that
   // was changed, since this one now matches on disk.
   const remaining = findChangedNodes(editedDoc, merged);
   if (isActive) {
     currentBaseline = mergedText;
+    if (result.handle) setState({ fileHandle: result.handle });
     if (!remaining.length) {
       setState({ dirty: false });
       clearRecoverySnapshot(snapshot);
@@ -1509,8 +1691,14 @@ function handleOpenChanges() {
   openChangesPanel(enriched, activeId, changesPanelHandlers);
 }
 
+/** Opened via the toolbar's 🔍 button or Ctrl/⌘+K (see the keydown listener below) — searches every currently open folder (see core/searchIndex.js), not standalone files, which have no folder to search alongside. */
+function handleOpenSearch() {
+  openSearchPanel({ workspaces: getWorkspaces(), onOpenFile: openWorkspaceFile });
+}
+
 el.dirtyIndicator.addEventListener('click', handleSave);
 el.changesBtn.addEventListener('click', handleOpenChanges);
+el.searchBtn.addEventListener('click', handleOpenSearch);
 
 el.viewModeFullBtn.addEventListener('click', () => handleViewModeChange('full'));
 el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sections'));
@@ -1518,9 +1706,17 @@ el.viewModeSectionsBtn.addEventListener('click', () => handleViewModeChange('sec
 el.addFileBtn.addEventListener('click', handleAddFileClick);
 el.addSectionBtn.addEventListener('click', openAddSectionModal);
 el.mapViewBtn.addEventListener('click', () => {
-  const workspaces = getWorkspaces();
   const { workspaceRootName } = getState();
-  const workspace = workspaces.find((w) => w.rootName === workspaceRootName) || workspaces[0] || null;
+  // Only the workspace the *active* document actually belongs to -- never
+  // an arbitrary other open workspace. Falling back to workspaces[0] here
+  // used to mean opening a standalone file (or one from a workspace
+  // that's since been closed) while a *different* workspace was still
+  // open elsewhere would silently show that other workspace's file tree
+  // in the Workspace tab, which has nothing to do with what's on screen.
+  // openMapView already falls back to Tree mode and hides the Workspace
+  // tab entirely when workspace is null, which is the correct behavior
+  // here, not a substitute workspace.
+  const workspace = workspaceRootName ? getWorkspaces().find((w) => w.rootName === workspaceRootName) || null : null;
   openMapView({ workspace, onOpenWorkspaceFile: openWorkspaceFile });
 });
 el.previewToggleBtn.addEventListener('click', () => {
@@ -1574,6 +1770,14 @@ document.addEventListener('keydown', (e) => {
  */
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
+  // Works everywhere, including while typing in some other field — same
+  // "always available, hijacks the browser's own binding" treatment as
+  // every command-palette-style shortcut (VSCode, Slack, etc.) gives Ctrl/⌘+K.
+  if (key === 'k' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    handleOpenSearch();
+    return;
+  }
   if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.preventDefault();
     if (getState().doc) handleSave();
@@ -1736,6 +1940,53 @@ el.sidebarToggle.addEventListener('click', () => {
   el.sidebar.classList.toggle(isNarrowViewport ? 'sidebar-open' : 'sidebar-collapsed');
 });
 
+// On a phone, the sidebar is a drawer that floats over the document rather
+// than pushing it aside (see css/layout.css's mobile breakpoint) — the rest
+// of the page stays fully interactive underneath it, so without this,
+// tapping into the document to actually use it left the drawer sitting
+// open until the toggle button was pressed again. Any tap outside the
+// drawer (and outside the toggle itself, which already handles its own
+// open/close) now closes it, the same way a standard mobile nav drawer
+// dismisses on an outside tap.
+document.addEventListener('click', (e) => {
+  if (!window.matchMedia('(max-width: 860px)').matches) return;
+  if (!el.sidebar.classList.contains('sidebar-open')) return;
+  if (el.sidebar.contains(e.target) || el.sidebarToggle.contains(e.target)) return;
+  el.sidebar.classList.remove('sidebar-open');
+});
+
+// On a phone there's no keyboard for any of the shortcuts in
+// shortcutsPanel.js to bind to, and every action they cover already has
+// its own tappable button — what's actually missing on a touchscreen is
+// navigation gestures, not accelerators. Edge-swipe from the left mirrors
+// iOS's own convention: it goes back to the parent section if there's one
+// to go back to, or opens the sidebar drawer when there isn't (nothing to
+// navigate back out of, so the gesture is free for that instead).
+bindHorizontalSwipe(document.body, {
+  shouldStart: (e) => window.matchMedia('(max-width: 860px)').matches && e.clientX <= 24,
+  onSwipeRight: () => {
+    const path = getSelectedPath();
+    if (path.length > 0) {
+      const { doc } = getState();
+      const parentId = path.length >= 2 ? path[path.length - 2].id : doc?.id;
+      if (parentId) selectSection(parentId);
+    } else if (!el.sidebar.classList.contains('sidebar-open')) {
+      el.sidebar.classList.add('sidebar-open');
+    }
+  },
+});
+
+// Swiping the open drawer itself to the left closes it — the natural
+// "drag it away" complement to the outside-tap-to-close above. Interactive
+// elements (including the Explorer/Outline resize handle, which already
+// has its own vertical pointer-drag) are excluded so a swipe never hijacks
+// their own tap or drag.
+bindHorizontalSwipe(el.sidebar, {
+  shouldStart: (e) => el.sidebar.classList.contains('sidebar-open')
+    && !e.target.closest('button, a, input, textarea, [draggable="true"], .sidebar-resize-handle'),
+  onSwipeLeft: () => el.sidebar.classList.remove('sidebar-open'),
+});
+
 // Section textareas auto-grow to fit their content (see
 // editableMarkdownBody.js), but that sizing is only ever recomputed when
 // their own text changes — it goes stale the moment something *else*
@@ -1759,16 +2010,17 @@ window.addEventListener('drop', async (e) => {
 });
 
 /**
- * Silently reopens the desktop app's last-used folder on launch — the
- * same trust VSCode extends to reopening your last workspace, made
- * possible by the desktop app keeping a real path (LAST_ELECTRON_FOLDER_KEY
- * above) rather than a browser permission grant that never survives a
- * reload anyway. Never runs in the browser; never blocks the rest of
- * startup if the folder's moved or been deleted since — just a toast, the
- * same failure path a manual re-open would hit.
+ * Silently reopens the last-used folder on launch, on either "real app"
+ * backend — the same trust VSCode extends to reopening your last
+ * workspace, made possible by Electron/Capacitor keeping a real,
+ * launch-surviving identity (LAST_ELECTRON_FOLDER_KEY above) rather than a
+ * browser permission grant that never survives a reload anyway. Never
+ * runs in the browser; never blocks the rest of startup if the folder's
+ * moved or been deleted since — just a toast, the same failure path a
+ * manual re-open would hit.
  */
 async function reopenLastElectronFolder() {
-  if (!isElectron) return;
+  if (!isElectron && !isCapacitor) return;
   const remembered = getRememberedElectronFolder();
   if (!remembered) return;
   try {
@@ -1778,4 +2030,88 @@ async function reopenLastElectronFolder() {
     showToast(`Could not reopen "${remembered.rootName}": ${err.message}`, { type: 'error' });
   }
 }
-reopenLastElectronFolder();
+
+/**
+ * A .md file the user just opened/shared in from *outside* the app (see
+ * capacitorTakePendingSharedFile) is a fresh, explicit "open this" action
+ * — it should win over silently reopening whatever folder happened to be
+ * open last time, not get immediately buried under it.
+ */
+async function openPendingSharedFileIfAny() {
+  const shared = await capacitorTakePendingSharedFile();
+  if (!shared) return false;
+  loadFromText(shared.text, shared.name);
+  return true;
+}
+
+(async () => {
+  const openedSharedFile = await openPendingSharedFileIfAny();
+  if (!openedSharedFile) reopenLastElectronFolder();
+})();
+
+// The startup check above only ever runs once, when this module first
+// loads — no reason on its own to look again. But launchMode="singleTask"
+// (see AndroidManifest.xml) means a file opened/shared in while the app is
+// *already* running reuses this same page instead of reloading it, so
+// MainActivity.onNewIntent fires this event (via Capacitor's own
+// triggerWindowJSEvent, not a custom mechanism) to say "look again" —
+// without it, sharing a second file into an already-open app would just
+// silently do nothing.
+if (isCapacitor) {
+  window.addEventListener('mdorchestraPendingShare', () => { openPendingSharedFileIfAny(); });
+}
+
+/**
+ * The hardware/gesture back button on Android has no equivalent anywhere
+ * else this app runs — without handling it at all, Capacitor's own default
+ * behavior is to try the WebView's own browser-style history (which this
+ * single-page app never pushes real entries into) and otherwise do
+ * nothing, leaving back feeling dead on every screen that isn't the exact
+ * state the app happened to launch into. Once a listener is registered
+ * here, that automatic fallback stops entirely — this becomes the *only*
+ * thing back does, so it has to cover every case itself: close whatever's
+ * on top (any open overlay, or the mobile slide-in sidebar) one layer at a
+ * time, the same order Escape already closes things in, and only once
+ * there's truly nothing left open, minimize rather than kill the app —
+ * Android's own convention for what "back" means on a root screen, never
+ * a hard exit.
+ */
+if (isCapacitor) {
+  window.Capacitor.Plugins.App.addListener('backButton', () => {
+    const openOverlays = document.querySelectorAll('.overlay.overlay-open');
+    if (openOverlays.length) {
+      openOverlays.forEach((ov) => closeOverlay(ov));
+      return;
+    }
+    if (el.sidebar.classList.contains('sidebar-open')) {
+      el.sidebar.classList.remove('sidebar-open');
+      return;
+    }
+    window.Capacitor.Plugins.App.minimizeApp();
+  });
+
+  // The status bar is drawn by the OS, not this page — left alone, it
+  // stays whatever default color/icon-style Android picked, which reads
+  // as a visible seam between "the app" and "a browser tab" the instant
+  // the app opens. Matched to the current theme here, and re-matched
+  // every time the theme itself changes (see settingsPanel.js's
+  // buildThemeToggle) so switching Light/Dark mid-session doesn't leave
+  // the status bar out of sync with the page beneath it.
+  const StatusBar = window.Capacitor.Plugins.StatusBar;
+  function syncStatusBarToTheme() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+      || (!document.documentElement.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    // Matches header#app-header's own background (var(--surface) in
+    // css/base.css) exactly, not an approximation — the status bar sits
+    // directly above it, so anything else reads as a visible seam.
+    StatusBar.setBackgroundColor({ color: dark ? '#1e2233' : '#ffffff' }).catch(() => {});
+    StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => {});
+  }
+  syncStatusBarToTheme();
+  // 'system' mode (no data-theme attribute) tracks the OS preference
+  // directly; an explicit Light/Dark choice fires the theme-changed event
+  // below instead (see utils/theme.js's applyTheme) — between the two,
+  // every way the effective theme can change is covered.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncStatusBarToTheme);
+  document.addEventListener('md-orchestra:theme-changed', syncStatusBarToTheme);
+}

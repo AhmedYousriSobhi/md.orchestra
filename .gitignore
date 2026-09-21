@@ -5,3 +5,21 @@ node_modules/
 .claude/
 *.tmp
 dist/
+dist-android/
+# The Android native project itself is committed (Capacitor's own
+# convention — it can carry real hand-written native changes), but not its
+# own generated build output/caches, nor the copy of the web app that
+# `cap sync` recreates from web-dist/ on every build.
+web-dist/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/build/
+# Playwright's own generated output (HTML report, screenshots/traces from
+# failed runs) -- see run-tests.sh/TESTING.md for how to produce these
+# locally; nothing here is meant to be committed.
+playwright-report/
+test-results/
+android/ext-build/

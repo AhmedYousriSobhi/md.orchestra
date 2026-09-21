@@ -12,6 +12,17 @@
 /* Center-modal overlays (code viewer, insight popup) */
 .code-viewer-overlay, .insight-overlay { align-items: center; justify-content: center; padding: 2rem; }
 
+/* Search (ui/searchPanel.js): top-center, VSCode-command-palette-style —
+   sits near the top of the window rather than jumping to dead center, so
+   it reads as "acting on what's already on screen" while typing. Falls
+   back to the same centered treatment as every other modal below the
+   app's own mobile breakpoint, where the on-screen keyboard already eats
+   a large share of a short viewport's remaining height. */
+.search-overlay { align-items: flex-start; justify-content: center; padding: 2rem; padding-top: 12vh; }
+@media (max-width: 860px) {
+  .search-overlay { align-items: center; padding-top: 2rem; }
+}
+
 .code-viewer-panel, .insight-panel {
   background: var(--surface);
   border-radius: var(--radius-lg);
@@ -106,6 +117,26 @@
 .insight-error { padding: 1.5rem 1.35rem; color: var(--danger); }
 .insight-error p { margin-bottom: 0.75rem; }
 
+/* Search (ui/searchPanel.js) */
+.search-panel { width: min(560px, 100%); }
+.search-body { display: flex; flex-direction: column; gap: 0.75rem; }
+.search-results { display: flex; flex-direction: column; gap: 0.4rem; max-height: 55vh; overflow-y: auto; }
+.search-result {
+  display: flex; flex-direction: column; gap: 0.2rem; text-align: left;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft);
+  padding: 0.6rem 0.8rem; cursor: pointer; font-family: inherit;
+}
+.search-result:hover, .search-result:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-default) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent-default) 6%, var(--bg-soft));
+  outline: none;
+}
+.search-result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
+.search-result-name { font-weight: 700; font-size: 0.88rem; color: var(--text); word-break: break-all; }
+.search-result-meta { font-size: 0.72rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+.search-result-snippet { font-size: 0.82rem; color: var(--text-soft); }
+.search-empty { font-size: 0.85rem; color: var(--text-faint); padding: 0.5rem 0.1rem; }
+
 .spinner {
   width: 22px; height: 22px; border-radius: 50%;
   border: 3px solid var(--border); border-top-color: var(--accent-default);
@@ -127,6 +158,7 @@
 .recovery-file { font-weight: 700; font-size: 0.9rem; color: var(--text); word-break: break-all; }
 .recovery-time { font-size: 0.72rem; color: var(--text-faint); flex-shrink: 0; }
 .recovery-excerpt { font-size: 0.82rem; color: var(--text-soft); margin: 0.4rem 0 0.7rem; }
+.recovery-tags-changed { font-size: 0.78rem; color: var(--accent-default); font-weight: 600; margin: 0.4rem 0 0; }
 
 /* One stacked sub-row per individually-changed section within a file, each
    with its own Save/Discard — separate from the file-level "Save all" /
@@ -177,6 +209,23 @@
   transition: transform 0.24s cubic-bezier(.2,.8,.3,1);
 }
 .overlay-open .map-panel { transform: translateY(0) scale(1); }
+
+.map-panel-head {
+  border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface);
+  padding: 1.1rem 1.35rem 0.8rem;
+}
+.map-panel-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.map-panel-close {
+  font-size: 1.1rem; padding: 0.3rem 0.55rem; flex-shrink: 0;
+}
+/* Full labels on every mode button, never collapsed to icon-only (however
+   little room there is) — wrapping onto a second line, rather than
+   cropping the row or the close button above it off the screen, is what
+   actually fixes a narrow phone width here. */
+.map-mode-toggle {
+  display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.7rem;
+  background: var(--bg-soft); border-radius: 999px; padding: 0.2rem;
+}
 .map-scroll { flex: 1; overflow: auto; padding: 1rem 1.5rem 1.5rem; }
 
 .map-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
@@ -189,8 +238,7 @@
 .map-node-current .map-label { fill: var(--accent, var(--accent-default)); font-weight: 700; }
 
 /* ---- Workspace mode's node-link tree (ui/workspaceGraph.js) ---- */
-.map-workspace-graph { display: flex; }
-.wsgraph-svg { display: block; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+.wsgraph-svg { font-family: -apple-system, Helvetica, Arial, sans-serif; }
 .wsgraph-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
 .wsgraph-node-bg {
   fill: var(--surface); stroke: var(--border); stroke-width: 1.5;
@@ -207,16 +255,18 @@
 .wsgraph-node-inert { cursor: default; }
 .wsgraph-node-inert .wsgraph-node-label { fill: var(--text-faint); }
 
-.map-mode-toggle { display: flex; gap: 0.3rem; background: var(--bg-soft); border-radius: 999px; padding: 0.2rem; }
 .map-mode-btn {
   border: none; background: none; border-radius: 999px; padding: 0.4rem 0.8rem;
   font-size: 0.78rem; font-weight: 600; color: var(--text-faint); cursor: pointer;
 }
 .map-mode-btn.map-mode-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 
-.mindmap-container { position: relative; width: 100%; height: 100%; min-height: 480px; }
-.mindmap-container svg { cursor: grab; }
-.mindmap-container svg.mindmap-panning { cursor: grabbing; }
+/* Shared by all three Document map modes' own SVG canvas (mind map, tree,
+   workspace) — each pans/zooms via panZoom.js now, not native scrolling,
+   so each needs a real fixed-size box to measure and transform within. */
+.map-canvas-container { position: relative; width: 100%; height: 100%; min-height: 480px; }
+.map-canvas-container svg { cursor: grab; }
+.map-canvas-container svg.panzoom-panning { cursor: grabbing; }
 .mindmap-fit-btn {
   position: absolute; top: 0.6rem; right: 0.6rem;
   border: 1px solid var(--border); background: var(--surface); color: var(--text-soft);

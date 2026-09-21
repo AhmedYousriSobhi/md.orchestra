@@ -308,6 +308,49 @@ main#main-panel {
 .crumb-current { color: var(--text); font-weight: 600; }
 .crumb-sep { color: var(--text-faint); font-size: 0.75rem; }
 
+/* A document's own frontmatter tags (markdown/frontmatter.js) — one row,
+   shared across the whole file, sitting right under the breadcrumb since
+   tags describe the document as a whole, not any one section. */
+#doc-tags-bar {
+  padding: 0.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+#doc-tags-bar:empty { display: none; }
+.tags-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.tags-editor-label { font-size: 0.85rem; opacity: 0.75; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.65rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-default) 14%, var(--surface));
+  color: var(--accent-default); font-size: 0.78rem; font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--accent-default) 30%, transparent);
+}
+.tag-chip-remove {
+  background: none; border: none; cursor: pointer; padding: 0.1rem 0.25rem;
+  color: inherit; opacity: 0.65; font-size: 0.9rem; line-height: 1; border-radius: 999px;
+}
+.tag-chip-remove:hover { opacity: 1; background: color-mix(in srgb, var(--accent-default) 20%, transparent); }
+.tag-input-wrap { position: relative; }
+.tag-input {
+  border: none; background: none; color: var(--text); font-size: 0.82rem;
+  padding: 0.25rem 0.2rem; min-width: 6rem; font-family: inherit;
+}
+.tag-input:focus { outline: none; }
+.tag-suggestions {
+  position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 0.25rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  display: flex; flex-direction: column; min-width: 9rem; overflow: hidden;
+}
+.tag-suggestion {
+  text-align: left; background: none; border: none; padding: 0.45rem 0.7rem;
+  font-size: 0.82rem; color: var(--text); cursor: pointer;
+}
+.tag-suggestion:hover { background: var(--bg-soft); }
+
 /* A short document (or one with nothing to structurally split — see
    ui/docViewMode.js) defaults to reading as one continuous page instead of
    being fragmented into a handful of near-empty per-section cards; this
@@ -324,6 +367,19 @@ main#main-panel {
 }
 .view-mode-tab:hover { color: var(--text); }
 .view-mode-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent-default) 16%, var(--bg-soft)); color: var(--accent-default); }
+
+.view-mode-bar-spacer { flex: 1; }
+/* Deliberately not the sidebar's icon+"➕badge" pattern (add-file-btn etc.)
+   — this button acts on the document currently on screen, not on the
+   folder in the sidebar, and a labeled pill reads unambiguously as "add a
+   section here" rather than pattern-matching "add a file". */
+.btn-add-section {
+  background: color-mix(in srgb, var(--accent-default) 12%, var(--bg-soft));
+  border: 1px solid color-mix(in srgb, var(--accent-default) 30%, var(--border));
+  color: var(--accent-default);
+  border-radius: 999px; padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600;
+}
+.btn-add-section:hover { background: color-mix(in srgb, var(--accent-default) 20%, var(--bg-soft)); }
 
 #section-view-wrap {
   flex: 1;
@@ -355,6 +411,16 @@ main#main-panel {
    value, so it can be overridden per-session/persisted without touching
    this rule; the min()/40vw fallback is what shows before any drag ever
    sets one. */
+/* Toggling preview used to be an instant, jarring display:none <-> block
+   flip with no visual transition at all. A @keyframes animation (rather
+   than a `transition`, which can't animate to/from display:none) plays
+   automatically the moment the [hidden] attribute comes off and the panel
+   actually starts rendering -- no JS class bookkeeping needed alongside
+   the existing hidden-state logic in main.js, which stays untouched. */
+@keyframes preview-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateX(8px); }
+  to { opacity: 1; transform: scale(1) translateX(0); }
+}
 aside#preview-panel {
   width: var(--preview-width, min(460px, 40vw));
   flex-shrink: 0;
@@ -362,6 +428,7 @@ aside#preview-panel {
   border-left: 1px solid var(--border);
   overflow-y: auto;
   padding: 1.25rem 1.5rem 3rem;
+  animation: preview-pop-in 0.26s cubic-bezier(.2,.8,.3,1);
 }
 aside#preview-panel[hidden] { display: none; }
 
@@ -392,6 +459,10 @@ aside#preview-panel[hidden] { display: none; }
 }
 .edge-toggle:hover:not(:disabled) { color: var(--text); background: var(--bg-soft); }
 .edge-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Its own `display: flex` above otherwise beats the [hidden] attribute's
+   default display:none at equal specificity — needed now that main.js
+   actually hides this button (not just disables it) with no document open. */
+.edge-toggle[hidden] { display: none; }
 #app-body.preview-open .edge-toggle { right: var(--preview-width, min(460px, 40vw)); }
 
 /* The actual draggable divider between the content pane and the preview —
@@ -488,9 +559,37 @@ aside#preview-panel[hidden] { display: none; }
     position: absolute; top: 0; bottom: 0; left: 0; z-index: 15;
     transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: var(--shadow-lg);
   }
-  aside#sidebar.sidebar-open { transform: translateX(0); }
+  /* Both panels are full-viewport absolute overlays at this width, and the
+     preview panel's own z-index (16) normally sits above the sidebar's
+     (15) so it can cover the whole screen when the user opens it — but
+     that meant opening the sidebar *while* preview was already showing
+     (its default state, or right after creating a file, which opens the
+     new file straight into a doc with preview on) put the sidebar right
+     back underneath it: the ☰ button and its class-toggle worked every
+     time, the drawer just rendered invisibly behind an opaque layer.
+     Whenever the sidebar is actually open, it needs to be the topmost
+     thing regardless of preview's own state. */
+  aside#sidebar.sidebar-open { transform: translateX(0); z-index: 17; }
+  /* At this width the preview panel already covers the whole screen like a
+     modal — sliding it up from the bottom on open reads as a real sheet
+     "popping up" rather than the desktop entrance's more subtle scale, the
+     same reasoning that already led the map/settings/etc. overlays to
+     animate their own entrances rather than just snapping into place. */
+  @keyframes preview-pop-in-mobile {
+    from { opacity: 0; transform: translateY(28px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   aside#preview-panel {
     position: absolute; inset: 0; z-index: 16; width: auto;
+    animation: preview-pop-in-mobile 0.28s cubic-bezier(.2,.8,.3,1);
   }
   #breadcrumb-bar, #section-view-wrap { padding-left: 1rem; padding-right: 1rem; }
+  /* .edge-toggle's own desktop rule (see above) slides it left by the
+     preview panel's own *desktop* width whenever preview is open, so it
+     stays peeking out from the panel's edge — but the preview panel is
+     full-screen at this width instead, so that same offset instead drops
+     the button somewhere in the middle of the screen, overlapping
+     whatever content is under it. Nothing needs peeking at when the panel
+     already covers everything; its own ✕ closes it. */
+  #app-body.preview-open .edge-toggle { display: none; }
 }

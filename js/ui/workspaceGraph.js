@@ -1,4 +1,5 @@
-import { svg } from '../utils/dom.js';
+import { h, svg } from '../utils/dom.js';
+import { attachPanZoom } from './panZoom.js';
 
 // A proper node-link tree for Workspace mode's whole-folder map — branches
 // fan out left-to-right by depth, and a parent sits vertically centered on
@@ -85,19 +86,40 @@ function nodeHasToggle(entry) {
   return entry.isDir && entry.node.children.length > 0 && entry.depth > 0;
 }
 
+/**
+ * Renders into `container` and wires up the same pan/wheel-zoom/pinch-zoom
+ * behavior mind-map and Tree mode both have (see panZoom.js) — a workspace
+ * with any real depth used to only be reachable by native-scrolling a
+ * content-sized SVG, with no way to zoom out and see its actual shape.
+ * The SVG root and its pan/zoom listeners are created once and kept across
+ * every expand/collapse click (`rerender()` only rebuilds the graph's own
+ * contents inside it), so toggling a folder never resets your current
+ * pan/zoom back to some default. Returns a `stop()` to disconnect the
+ * pan/zoom listeners, matching renderMindMap/renderTreeMap.
+ */
 export function renderWorkspaceGraph(container, workspace, onOpenFile) {
   const expanded = getExpanded(workspace.rootName);
 
+  const root = svg('svg', {
+    class: 'wsgraph-svg',
+    style: 'display:block; width:100%; height:100%; touch-action: none;',
+  });
+  const world = svg('g', { class: 'wsgraph-world' });
+  root.appendChild(world);
+
+  let contentBounds = {
+    minX: 0, minY: 0, maxX: 100, maxY: 100,
+  };
+
   function rerender() {
-    container.innerHTML = '';
+    world.innerHTML = '';
 
     const { positioned, leafRows, maxDepth } = layoutTidyTree(workspace.tree, expanded);
     const width = (maxDepth + 1) * LEVEL_W + PAD * 2;
     const height = leafRows * ROW_H + PAD * 2;
-
-    const root = svg('svg', {
-      width, height, viewBox: `0 0 ${width} ${height}`, class: 'wsgraph-svg',
-    });
+    contentBounds = {
+      minX: 0, minY: 0, maxX: width, maxY: height,
+    };
 
     const edgeLayer = svg('g', { class: 'wsgraph-edges' });
     const nodeLayer = svg('g', { class: 'wsgraph-nodes' });
@@ -159,12 +181,29 @@ export function renderWorkspaceGraph(container, workspace, onOpenFile) {
       nodeLayer.appendChild(group);
     });
 
-    root.appendChild(edgeLayer);
-    root.appendChild(nodeLayer);
-    container.appendChild(root);
+    world.appendChild(edgeLayer);
+    world.appendChild(nodeLayer);
   }
 
   rerender();
+
+  const panZoom = attachPanZoom(root, world, container, {
+    getContentBounds: () => contentBounds,
+    shouldStartPan: (e) => !(e.target.closest && e.target.closest('.wsgraph-node')),
+  });
+
+  const fitBtn = h('button', {
+    class: 'mindmap-fit-btn',
+    type: 'button',
+    title: 'Fit the whole graph in view',
+    onClick: () => panZoom.fitToContent(),
+  }, '⤢ Fit');
+
+  container.innerHTML = '';
+  container.appendChild(root);
+  container.appendChild(fitBtn);
+
+  return panZoom.stop;
 }
 
 /** Drops a closed workspace's own remembered expansion state — see main.js's handleCloseWorkspace, which does the same for focalGraph.js. */

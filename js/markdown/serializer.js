@@ -1,3 +1,5 @@
+import { buildFrontmatter } from './frontmatter.js';
+
 /**
  * Turn a section tree back into a single Markdown string. Each node's raw
  * `bodyMarkdown` (main content + marker-wrapped AI insert / note, see
@@ -5,7 +7,9 @@
  * from level + title and inter-block spacing is normalized to one blank
  * line. This is a faithful re-serialization, not a byte-for-byte one:
  * untouched documents keep their content and structure, but incidental
- * whitespace between blocks is normalized.
+ * whitespace between blocks is normalized. The root's own `tags`/
+ * `frontmatterOtherLines` (see markdown/frontmatter.js) are rebuilt back
+ * into a leading `---` block, if there's anything worth writing there.
  */
 export function serializeMarkdown(root) {
   const blocks = [];
@@ -21,5 +25,6 @@ export function serializeMarkdown(root) {
   }
 
   walk(root);
-  return blocks.join('\n\n').trim() + '\n';
+  const frontmatter = buildFrontmatter(root.tags, root.frontmatterOtherLines);
+  return frontmatter + blocks.join('\n\n').trim() + '\n';
 }
