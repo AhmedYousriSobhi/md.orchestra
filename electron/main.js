@@ -256,7 +256,7 @@ function createWindow() {
           buttons: ['Quit', 'Cancel'],
           defaultId: 1,
           cancelId: 1,
-          message: 'This file has unsaved changes.',
+          message: 'You have unsaved changes.',
           detail: 'Quitting now will lose them. Quit anyway?',
         });
         if (choice === 0) {

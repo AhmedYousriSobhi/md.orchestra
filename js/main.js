@@ -608,6 +608,44 @@ function clearRecoverySnapshot(identity) {
   updateChangesBadge();
 }
 
+/**
+ * Whether ONE specific file (by identity, active or not) currently has any
+ * unsaved edit — the live `dirty` flag if this identity IS the document
+ * currently loaded into store.js, otherwise whether it has a pending
+ * recovery snapshot elsewhere. Every close/discard-style action should
+ * gate its confirm dialog on this, not on "is this the active document":
+ * that's a fact about *how* to discard it (revert the live doc vs. just
+ * drop a cached snapshot), not about whether there's real content to lose
+ * — and treating it as the latter is exactly what let a file's own close
+ * button skip the warning the moment the user switched away from it.
+ */
+function isFileDirty({ fileName, workspaceRelPath = null, workspaceRootName = null }) {
+  const current = getState();
+  const targetId = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
+  if (current.doc) {
+    const currentId = snapshotIdentity({
+      fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: current.workspaceRootName,
+    });
+    if (currentId === targetId) return current.dirty;
+  }
+  return listRecoverySnapshots().some((s) => s.id === targetId);
+}
+
+/**
+ * Whether ANYTHING open right now has unsaved changes — the active
+ * document, or any other open file with a pending recovery snapshot —
+ * regardless of which one is currently selected in the sidebar. Whole-app
+ * lifecycle guards (window close/quit, browser tab close) need this global
+ * view: the active document's own `dirty` flag only ever answered "would
+ * closing THIS tab/window lose the one file currently loaded," which is
+ * silently false the instant the user has switched to a different, clean
+ * file while an earlier one they edited and switched away from still has
+ * unsaved work sitting in a recovery snapshot.
+ */
+function hasAnyUnsavedChanges() {
+  return getState().dirty || listRecoverySnapshots().length > 0;
+}
+
 // The standard "leave site?" browser confirmation. Electron only, not a
 // browser tab: exposed for electron/main.js's own window-close handler to
 // call (a plain executeJavaScript() reaches this regardless of
@@ -615,12 +653,14 @@ function clearRecoverySnapshot(identity) {
 // close button has no equivalent native "leave site?" prompt the way a
 // browser tab does, so confirming before quitting with unsaved changes
 // has to be driven from the main process instead, deciding whether to
-// actually let the window close.
-window.__mdOrchestraIsDirty = () => getState().dirty;
+// actually let the window close. Checked globally (hasAnyUnsavedChanges),
+// not just against the active document — quitting closes every open file
+// at once, not just the one currently on screen.
+window.__mdOrchestraIsDirty = () => hasAnyUnsavedChanges();
 
 if (!isElectron) {
   window.addEventListener('beforeunload', (e) => {
-    if (getState().dirty) {
+    if (hasAnyUnsavedChanges()) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -1052,8 +1092,14 @@ function renderExplorerStandaloneEntries() {
         type: 'button',
         title: snap ? 'Discard these changes and close' : 'Close this file',
         'aria-label': snap ? 'Discard these changes and close' : 'Close this file',
-        onClick: () => {
-          if (snap) handleChangesDiscard(snap, false);
+        onClick: async () => {
+          // This file isn't the active document (see renderExplorerStandaloneEntries
+          // above), so its dirty state — if any — lives entirely in `snap`.
+          // Awaiting the confirm result is what actually makes this close
+          // interceptable: closing it out from under a still-open dialog
+          // (the previous bug) discarded the edit regardless of the user's
+          // answer.
+          if (snap && !(await handleChangesDiscard(snap, false))) return;
           openStandaloneFileNames.delete(name);
           standaloneCleanText.delete(name);
           render();
@@ -1544,27 +1590,32 @@ async function handleChangesSaveSection(snapshot, isActive, sectionId) {
  * pending section's edit untouched (see markdown/sectionMerge.js). For the
  * active document this mutates the live in-memory doc directly (not via
  * loadDocument, which would reset the current selection/undo history —
- * unwanted for reverting a single section elsewhere in the tree); confirms
- * first, same as discarding the whole active file, since it's just as
- * irreversible for that one section. Non-active files skip the confirm,
- * matching handleChangesDiscard's reasoning: nothing currently open is at
- * risk, just a cached pending edit.
+ * unwanted for reverting a single section elsewhere in the tree). Confirms
+ * first whenever isFileDirty() says this file genuinely has something to
+ * lose — for both the active document and any other one, since a section
+ * being discarded through this path is always a real edit either way, not
+ * only when it happens to be the one currently on screen. Returns whether
+ * the discard actually happened (false on cancel), so callers know whether
+ * it's safe to drop this section from their own row list.
  */
 async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
   const baseText = isActive ? currentBaseline : snapshot.baselineMarkdown;
-  if (!baseText) return;
+  if (!baseText) return false;
   const baseDoc = parseMarkdown(baseText);
 
-  if (isActive) {
+  if (isFileDirty(snapshot)) {
     const ok = await confirmDialog({
       title: 'Discard this section\'s changes?',
       message: 'This reverts just this section back to its last saved version, discarding everything changed in it since. This can\'t be undone.',
       confirmLabel: 'Discard section',
       danger: true,
     });
-    if (!ok) return;
+    if (!ok) return false;
+  }
+
+  if (isActive) {
     const reverted = revertSectionToBase(baseDoc, getState().doc, sectionId);
-    if (!reverted) return;
+    if (!reverted) return false;
     const remaining = findChangedNodes(reverted, baseDoc);
     setState({ doc: reverted, dirty: Boolean(remaining.length) });
     if (!remaining.length) {
@@ -1572,12 +1623,12 @@ async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
     } else {
       snapshotNow();
     }
-    return;
+    return true;
   }
 
   const editedDoc = snapshot.doc ?? parseMarkdown(snapshot.markdown);
   const reverted = revertSectionToBase(baseDoc, editedDoc, sectionId);
-  if (!reverted) return;
+  if (!reverted) return false;
   const remaining = findChangedNodes(reverted, baseDoc);
   const identity = { fileName: snapshot.fileName, workspaceRelPath: snapshot.workspaceRelPath, workspaceRootName: snapshot.workspaceRootName };
   if (!remaining.length) {
@@ -1586,6 +1637,7 @@ async function handleChangesDiscardSection(snapshot, isActive, sectionId) {
     saveRecoverySnapshot({ ...identity, markdown: serializeMarkdown(reverted), baselineMarkdown: baseText });
     updateChangesBadge();
   }
+  return true;
 }
 
 /**
@@ -1626,18 +1678,26 @@ function handleChangesOpenSection(snapshot, sectionId) {
 }
 
 /**
- * Discard a pending snapshot from the Changes panel. For any other file,
- * that's just dropping the cached copy — nothing currently loaded is
- * affected. For the *active* document, there's a real in-memory edit to
- * throw away too: revert it back to currentBaseline (the content this
- * editing session started from — set on load and after every save) rather
- * than just clearing the safety-net snapshot and leaving the unsaved edit
- * sitting in memory unchanged.
+ * Discard a pending snapshot — from the Changes panel, or from any other
+ * close/discard affordance for a file that isn't the active document (see
+ * the Explorer's "Open files" ✕). For any other file, that's just dropping
+ * the cached copy — nothing currently loaded is affected. For the *active*
+ * document, there's a real in-memory edit to throw away too: revert it
+ * back to currentBaseline (the content this editing session started from
+ * — set on load and after every save) rather than just clearing the
+ * safety-net snapshot and leaving the unsaved edit sitting in memory
+ * unchanged. `isActive` only decides *how* to discard (revert the live doc
+ * vs. just drop the snapshot) — whether to confirm first is decided by
+ * isFileDirty(), since a file being discarded through this path always has
+ * real content to lose. Returns whether the discard actually happened
+ * (false on cancel), so callers can avoid updating their own UI — closing
+ * a file, dropping a Changes-panel row — out from under a dialog the user
+ * hasn't answered yet.
  */
 async function handleChangesDiscard(snapshot, isActive) {
-  if (!isActive) {
+  if (!isFileDirty(snapshot)) {
     clearRecoverySnapshot(snapshot);
-    return;
+    return true;
   }
   const ok = await confirmDialog({
     title: 'Discard unsaved changes?',
@@ -1645,7 +1705,12 @@ async function handleChangesDiscard(snapshot, isActive) {
     confirmLabel: 'Discard changes',
     danger: true,
   });
-  if (!ok) return;
+  if (!ok) return false;
+  if (!isActive) {
+    clearRecoverySnapshot(snapshot);
+    showToast(`Discarded unsaved changes to "${snapshot.fileName}"`);
+    return true;
+  }
   try {
     const { fileHandle, workspaceRelPath, workspaceRootName } = getState();
     const doc = parseMarkdown(currentBaseline);
@@ -1654,9 +1719,11 @@ async function handleChangesDiscard(snapshot, isActive) {
     });
     clearRecoverySnapshot(snapshot);
     showToast(`Discarded unsaved changes to "${snapshot.fileName}"`);
+    return true;
   } catch (err) {
     console.error(err);
     showToast(`Could not discard changes: ${err.message}`, { type: 'error' });
+    return false;
   }
 }
 

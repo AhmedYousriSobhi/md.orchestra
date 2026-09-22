@@ -60,8 +60,14 @@ format, no account, no server holding the data.
   below), and the switch surfaces that non-destructively (a toast, not a blocking
   confirm — see `js/main.js`'s `snapshotNow({ notify })` and issue #11) rather than
   either interrupting the switch or looking identical to a real silent discard.
-- Closing a file that has unsaved changes (the active file's own close action) does
-  block with an explicit discard-confirmation dialog.
+- Closing or discarding a file that has unsaved changes blocks with an explicit
+  discard-confirmation dialog — for the active file's own close action, and equally
+  for any other open file that isn't currently active/focused (a different
+  workspace's file, or a standalone file switched away from): dirty-state checks are
+  per-file, not scoped to whichever file/workspace happens to be selected in the
+  sidebar right now. Quitting the whole app (or closing the browser tab) is guarded
+  the same way — it's blocked by any open file with unsaved changes, not just the
+  one currently on screen.
 
 ### Crash recovery
 - Edits are periodically stashed into a `localStorage`-backed recovery snapshot per
