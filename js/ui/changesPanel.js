@@ -40,6 +40,10 @@ function excerptOf(markdown, max = 110) {
  * is `{ onSaveFile(snapshot, isActive), onSaveSection(snapshot, isActive, sectionId),
  * onOpen(snapshot), onOpenSection(snapshot, sectionId),
  * onDiscardFile(snapshot, isActive), onDiscardSection(snapshot, isActive, sectionId) }`.
+ * Both discard handlers may show their own confirm dialog and resolve to
+ * `false` on cancel — this panel awaits that result before dropping the
+ * row/section from its own list, so a still-open confirm never gets raced
+ * by the UI already acting as if it were answered.
  */
 export function openChangesPanel(snapshots, activeId, handlers) {
   if (panelEl) panelEl.remove();
@@ -106,8 +110,9 @@ export function openChangesPanel(snapshots, activeId, handlers) {
       fileActions.push(h('button', {
         class: 'btn btn-ghost',
         type: 'button',
-        onClick: stop(() => {
-          handlers.onDiscardFile(snap, isActive);
+        onClick: stop(async () => {
+          const discarded = await handlers.onDiscardFile(snap, isActive);
+          if (!discarded) return;
           pending = pending.filter((s) => s.id !== snap.id);
           renderList();
         }),
@@ -136,7 +141,8 @@ export function openChangesPanel(snapshots, activeId, handlers) {
               type: 'button',
               title: `Discard changes to "${sec.title}"`,
               onClick: stop(async () => {
-                await handlers.onDiscardSection(snap, isActive, sec.id);
+                const discarded = await handlers.onDiscardSection(snap, isActive, sec.id);
+                if (!discarded) return;
                 removeSectionLocally(sec.id);
               }),
             }, '↩'),

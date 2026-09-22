@@ -2051,3 +2051,34 @@ picker itself worked correctly; it was a test-tooling quirk, not an app bug.
   session notes for a recommended next approach (a typographic wordmark
   instead of an icon, sidestepping the whole "generic AI-tool wand/baton
   icon" genre this attempt fell into).
+
+- **Stage 101** (branch `fix/global-unsaved-changes-warning`, issue #16)
+  — Bug fix: closing an unsaved file from the Explorer's "Open files" ✕
+  (or discarding it from the Changes panel) skipped the confirmation
+  dialog entirely whenever that file wasn't the currently active
+  document — e.g. switch to a different file/workspace, then close the
+  one you switched away from, and it discarded silently with no warning.
+  Root cause: every discard-style handler decided whether to warn based
+  on `isActive` ("is this the live document in `store.js`") instead of
+  whether the file actually had unsaved content — a fact `isFileDirty()`
+  (new, `js/main.js`) now looks up per-file via the recovery-snapshot
+  subsystem regardless of which file is active. `handleChangesDiscard`/
+  `handleChangesDiscardSection` now gate their confirm dialog on that
+  real check and return whether the discard actually happened, so their
+  callers (the Explorer's "Open files" ✕, the Changes panel's own
+  Discard buttons) can await the answer instead of closing the file
+  unconditionally the instant the dialog opened — the same bug's other
+  half, since a caller that showed a dialog but didn't wait for it was
+  just as unsafe as one that never showed it at all. Whole-app lifecycle
+  guards (`window.__mdOrchestraIsDirty`, used by Electron's window-close
+  handler, and the browser's `beforeunload` listener) previously asked
+  only the active document's own `dirty` flag — now they ask a new
+  `hasAnyUnsavedChanges()`, so quitting can't silently drop a file just
+  because it isn't the one on screen. New regression coverage in
+  `tests/close-confirmation.spec.js` covers all of the above (confirmed
+  failing against the pre-fix code first). Along the way, found — but
+  deliberately did not fix here, as it's a separate, pre-existing race —
+  a bug where switching files while a raw full-document-source edit
+  (`js/ui/fullDocView.js`) is still inside its own 700ms save debounce
+  lets that stale edit silently overwrite whichever document is active
+  by the time the debounce fires; filed as issue #17.
