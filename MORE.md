@@ -2,6 +2,9 @@
 
 You made it past the README. Here's everything it didn't bother you with.
 
+- **[SPEC.md](SPEC.md)** — the functional spec: what the app is supposed to
+  do, platform by platform, independent of how it's built or what's been
+  checked so far.
 - **[TESTING.md](TESTING.md)** — the real scenarios this app is built
   around (a personal notes vault, reviewing a teammate's doc, onboarding
   into a new folder of docs...), and the full list of what's been checked
