@@ -10,7 +10,7 @@
     "start": "electron .",
     "web": "python3 -m http.server 8899",
     "build": "electron-builder --linux AppImage",
-    "build:web-assets": "rm -rf web-dist && mkdir -p web-dist && cp -r index.html js css icons web-dist/",
+    "build:web-assets": "rm -rf web-dist && mkdir -p web-dist && cp -r index.html js css icons vendor web-dist/",
     "cap:sync": "npm run build:web-assets && cap sync android",
     "postinstall": "patch-package",
     "test": "playwright test",
@@ -35,6 +35,7 @@
       "electron/**/*",
       "js/**/*",
       "css/**/*",
+      "vendor/**/*",
       "icons/**/*",
       "index.html",
       "!**/*.md"
