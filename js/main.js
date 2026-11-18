@@ -485,6 +485,8 @@ render();
 // in this file, before the first render() call — see there).
 
 /** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
+const warnedUnprotected = new Set();
+
 function snapshotNow() {
   // Land any not-yet-debounced raw-source edit on the current document first,
   // so the snapshot (and therefore a file switch) doesn't drop it (#17).
@@ -509,11 +511,20 @@ function snapshotNow() {
     clearRecoverySnapshot(identity);
     return;
   }
-  saveRecoverySnapshot({
+  const stored = saveRecoverySnapshot({
     ...identity,
     markdown: serialized,
     baselineMarkdown: currentBaseline,
   });
+  // A snapshot that couldn't be stored means this file is NOT crash-protected
+  // right now. Say so once per file instead of failing silently.
+  const unprotectedId = snapshotIdentity(identity);
+  if (!stored && !warnedUnprotected.has(unprotectedId)) {
+    warnedUnprotected.add(unprotectedId);
+    showToast(`"${fileName}" is too large to keep a crash-recovery copy of. Save it soon to avoid losing changes.`, { type: 'error' });
+  } else if (stored) {
+    warnedUnprotected.delete(unprotectedId);
+  }
   // Writing a snapshot is a side effect, not a setState() — nothing else
   // would otherwise re-render the Changes button's badge to reflect it
   // until some unrelated state change happened to trigger render() again.

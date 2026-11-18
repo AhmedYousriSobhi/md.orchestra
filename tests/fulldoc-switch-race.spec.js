@@ -24,7 +24,7 @@ test.describe('full-document source edit racing a file switch (#17)', () => {
     expect(activeSource).not.toContain('RACE-MARKER');
 
     // The edit was not lost: it sits in the first file's recovery snapshot.
-    const snapshots = await page.evaluate(() => localStorage.getItem('mdDashboard.recovery.v2'));
+    const snapshots = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('mdDashboard.recovery.v')).map((k) => localStorage.getItem(k)).join('\n'));
     expect(snapshots).toContain('RACE-MARKER');
   });
 });

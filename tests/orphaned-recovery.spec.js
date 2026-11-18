@@ -33,6 +33,6 @@ test('restoring a snapshot from an unopened workspace yields a visible, closable
   await expect(page.locator('.explorer-open-files', { hasText: 'ghost.md' })).toHaveCount(0);
 
   // The stored snapshot was consumed: a reload doesn't offer it again.
-  const left = await page.evaluate(() => JSON.parse(localStorage.getItem('mdDashboard.recovery.v2') || '[]').map((s) => s.fileName));
+  const left = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('mdDashboard.recovery.v3:')).map((k) => JSON.parse(localStorage.getItem(k)).fileName));
   expect(left).not.toContain('ghost.md');
 });
