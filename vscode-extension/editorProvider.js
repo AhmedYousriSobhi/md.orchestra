@@ -55,6 +55,7 @@ class MdOrchestraEditorProvider {
       // planEdit), never applied as-is.
       syncSeq: 0,
       bases: new Map(),
+      webviewTexts: new Map(),
       editChain: Promise.resolve(),
       hostSeq: 0,
       hostPending: new Map(),
@@ -76,6 +77,7 @@ class MdOrchestraEditorProvider {
       session.syncSeq += 1;
       const text = document.getText();
       session.bases.set(session.syncSeq, text);
+      session.webviewTexts.set(session.syncSeq, text);
       if (session.bases.size > 50) session.bases.delete(session.bases.keys().next().value);
       return { syncId: session.syncSeq, ...docInfo(text) };
     };
@@ -94,22 +96,11 @@ class MdOrchestraEditorProvider {
 
     disposables.push(vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() !== document.uri.toString()) return;
-      if (!e.contentChanges.length) {
-        // Dirty-state-only change (e.g. after a save or revert to saved).
-        if (session.ready) post({ type: 'dirty', isDirty: document.isDirty });
-        return;
+      const t0 = this.isTestMode ? process.hrtime.bigint() : null;
+      try { this.onDocumentChange(session, e, post, snapshot); } finally {
+        if (t0 !== null) (session.echoPerf = session.echoPerf || []).push(Number(process.hrtime.bigint() - t0) / 1e6);
       }
-      const isOwnEcho = e.document.version === session.expectedVersion
-        && e.document.getText() === session.expectedText;
-      if (isOwnEcho) {
-        session.expectedVersion = null;
-        session.expectedText = null;
-        if (session.ready) post({ type: 'dirty', isDirty: document.isDirty });
-        return;
-      }
-      if (session.ready) post({ type: 'externalChange', ...snapshot() });
     }));
-
     disposables.push(vscode.workspace.onDidSaveTextDocument((doc) => {
       if (doc.uri.toString() === document.uri.toString() && session.ready) post({ type: 'dirty', isDirty: doc.isDirty });
     }));
@@ -131,6 +122,24 @@ class MdOrchestraEditorProvider {
     panel.webview.html = await buildWebviewHtml(panel.webview, mediaRoot);
   }
 
+  onDocumentChange(session, e, post, snapshot) {
+    const { document } = session;
+    if (!e.contentChanges.length) {
+      // Dirty-state-only change (e.g. after a save or revert to saved).
+      if (session.ready) post({ type: 'dirty', isDirty: document.isDirty });
+      return;
+    }
+    const isOwnEcho = e.document.version === session.expectedVersion
+      && e.document.getText() === session.expectedText;
+    if (isOwnEcho) {
+      session.expectedVersion = null;
+      session.expectedText = null;
+      if (session.ready) post({ type: 'dirty', isDirty: document.isDirty });
+      return;
+    }
+    if (session.ready) post({ type: 'externalChange', ...snapshot() });
+  }
+
   onMessage(session, msg, snapshot) {
     if (!msg || typeof msg !== 'object') return;
     if (this.isTestMode) session.received.push(msg);
@@ -143,9 +152,22 @@ class MdOrchestraEditorProvider {
         session.post({ type: 'load', ...snapshot() });
         session.readyWaiters.splice(0).forEach((fn) => fn());
         break;
-      case 'edit':
-        if (typeof msg.text === 'string') this.queueEdit(session, msg.text, msg.syncId);
+      case 'edit': {
+        // PROTOTYPE: either the full text, or a diff against this webview's
+        // previous text under the same syncId (rebuilt at receipt).
+        let { text } = msg;
+        if (typeof text !== 'string' && msg.diff && session.webviewTexts.has(msg.syncId)) {
+          const prev = session.webviewTexts.get(msg.syncId);
+          text = prev.slice(0, msg.diff.start) + msg.diff.text + prev.slice(msg.diff.end);
+        }
+        if (typeof text !== 'string') {
+          session.post({ type: 'externalChange', ...session.snapshot() });
+          break;
+        }
+        session.webviewTexts.set(msg.syncId, text);
+        this.queueEdit(session, text, msg.syncId);
         break;
+      }
       case 'save':
         session.document.save();
         break;
@@ -174,8 +196,20 @@ class MdOrchestraEditorProvider {
 
   /** Edits are applied strictly in order, one at a time. */
   queueEdit(session, text, syncId) {
+    const receivedAt = Date.now();
+    session.queued = (session.queued || 0) + 1;
+    if (this.isTestMode) session.maxQueued = Math.max(session.maxQueued || 0, session.queued);
     session.editChain = session.editChain
-      .then(() => this.applyText(session, text, syncId))
+      .then(async () => {
+        const t0 = process.hrtime.bigint();
+        await this.applyText(session, text, syncId);
+        session.queued -= 1;
+        if (this.isTestMode) {
+          (session.perf = session.perf || []).push({
+            bytes: text.length, applyMs: Number(process.hrtime.bigint() - t0) / 1e6, latencyMs: Date.now() - receivedAt,
+          });
+        }
+      })
       .catch((err) => console.error('MD.Orchestra: applying an edit failed', err));
     return session.editChain;
   }

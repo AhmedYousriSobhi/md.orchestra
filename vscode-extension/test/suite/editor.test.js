@@ -61,6 +61,8 @@ async function openEditor(uri, column) {
   await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, column);
   const session = await waitFor(() => provider.sessionsFor(uri).find((s) => !before.has(s)), { what: 'a new editor session' });
   assert.ok(await provider.waitReady(session, 30000), 'webview posted ready (its ES modules loaded)');
+  // MDO_STRATEGY: run the suite against another edit-sending strategy.
+  if (process.env.MDO_STRATEGY) await provider.hostRequest(session, 'setStrategy', { strategy: JSON.parse(process.env.MDO_STRATEGY) }, 10000);
   return session;
 }
 
@@ -315,6 +317,37 @@ test(`Tab switch racing a keystroke never loses a typed edit (full text, section
   // nothing was typed, so nothing can be lost. Recorded, not required.
   record(`tab-switch-race-x${REPEAT}`, outcomes);
   assert.strictEqual(outcomes.lost, 0, 'no typed edit was lost');
+});
+
+test(`Closing the tab right after typing: the edit reaches the document before the editor closes (x${REPEAT})`, async () => {
+  // A real close of a now-dirty tab would open VS Code's blocking "Save
+  // changes?" dialog, so this closes with revertAndCloseActiveEditor and
+  // instead watches whether the typed edit reached the TextDocument at all
+  // before the close (it is then reverted). A lost edit never shows up.
+  const outcomes = { reached: 0, lost: 0 };
+  for (let round = 0; round < REPEAT; round += 1) {
+    for (const target of ['full', 'section', 'note']) {
+      const uri = fresh();
+      const session = await openEditor(uri);
+      await hostRequest(session, 'viewMode', { mode: target === 'full' ? 'full' : 'sections' });
+      if (target !== 'full') await hostRequest(session, 'select', { slug: 'second-section' });
+      if (target === 'note') assert.ok(await hostRequest(session, 'addNote'));
+      await sleep(300);
+      const marker = `CLOSE-${target}-${round}`;
+      let reached = false;
+      const sub = vscode.workspace.onDidChangeTextDocument((e) => {
+        if (e.document.uri.toString() === uri.toString() && e.document.getText().includes(marker)) reached = true;
+      });
+      assert.strictEqual(await hostRequest(session, 'typePending', { target, text: ` ${marker} ` }), true);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+      await sleep(800);
+      sub.dispose();
+      if (reached) outcomes.reached += 1; else outcomes.lost += 1;
+      await closeAll();
+    }
+  }
+  record(`close-after-typing-x${REPEAT}`, outcomes);
+  assert.strictEqual(outcomes.lost, 0, 'no typed edit was lost on close');
 });
 
 test('With files.autoSave=afterDelay, an autosave while typing keeps focus in the live text field', async () => {

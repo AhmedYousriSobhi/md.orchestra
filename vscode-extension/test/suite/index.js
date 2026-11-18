@@ -4,7 +4,9 @@ const tests = require('./editor.test');
 
 async function run() {
   const phase = process.env.MDO_PHASE || 'main';
-  const selected = tests.filter((t) => (t.phase || 'main') === phase);
+  // MDO_ONLY: a regular expression; run only the tests whose name matches.
+  const only = process.env.MDO_ONLY ? new RegExp(process.env.MDO_ONLY) : null;
+  const selected = tests.filter((t) => (t.phase || 'main') === phase && (!only || only.test(t.name)));
   let failed = 0;
   for (const t of selected) {
     const started = Date.now();

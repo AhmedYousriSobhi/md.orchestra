@@ -16,6 +16,7 @@ import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugMaps } from './markdown/slug.js';
 import { setImageBaseUri } from './markdown/render.js';
+import { minimalEdit } from './core/textDiff.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getDocSession, flushPendingEdits,
   getSelectedNode, updateNode, registerPendingFlush,
@@ -83,6 +84,7 @@ function loadFromHost(msg, { keepSelection }) {
   const doc = parseMarkdown(msg.text);
   lastSerialized = serializeMarkdown(doc);
   lastSent = null;
+  rawFromFullText = null;
   syncId = msg.syncId ?? null;
   lastHostText = msg.text;
   loadDocument({ doc, fileName: msg.fileName || getState().fileName, dirty: Boolean(msg.isDirty) });
@@ -97,8 +99,53 @@ function onStoreChange(state) {
   const text = serializeMarkdown(state.doc);
   if (text === lastSerialized) return;
   lastSerialized = text;
+  // The full-text field already sent what the user typed. When its debounced
+  // re-parse lands, the model holds only the normalized form of that same
+  // text (serializer.js normalizes blank lines between blocks), so don't send
+  // it back over the raw text, or the document would flip between the two.
+  if (rawFromFullText !== null && text !== lastSent && lastSent === rawFromFullText
+    && serializeMarkdown(parseMarkdown(rawFromFullText)) === text) return;
+  sendText(text);
+}
+
+// The last text sent straight from the full-text field (fast path), if any.
+let rawFromFullText = null;
+
+/** Posts the document's new full text, unless the host already has exactly it. */
+function sendText(text) {
+  const previous = lastSent ?? lastHostText;
+  if (text === previous) return;
   lastSent = text;
+  counters.editMessages += 1;
+  if (sendStrategy.diff) {
+    const diff = minimalEdit(previous, text);
+    counters.editBytes += diff.text.length;
+    post({ type: 'edit', diff, syncId });
+    return;
+  }
+  counters.editBytes += text.length;
   post({ type: 'edit', text, syncId });
+}
+
+// --- PROTOTYPE: send strategies, switchable from the benchmark (test mode) ---
+const counters = { editMessages: 0, editBytes: 0 };
+let sendStrategy = { mode: 'perKeystroke' };
+let strategyTimer = null;
+function onInput(e) {
+  const { mode } = sendStrategy;
+  if (mode === 'perKeystroke') { flushAllEdits(); return; }
+  if (mode === 'fastPath') {
+    // The full-text field holds the whole document: send its text as is,
+    // without re-parsing it; the model catches up on the field's own debounce.
+    const t = e.target;
+    if (t && t.classList?.contains('full-doc-source-textarea')) { sendText(t.value); rawFromFullText = t.value; }
+    else flushAllEdits();
+    return;
+  }
+  if (mode === 'off') return;
+  if (strategyTimer !== null) return;
+  if (mode === 'coalesce') strategyTimer = setTimeout(() => { strategyTimer = null; flushAllEdits(); }, sendStrategy.ms);
+  else if (mode === 'frame') strategyTimer = requestAnimationFrame(() => { strategyTimer = null; flushAllEdits(); });
 }
 
 /**
@@ -168,6 +215,16 @@ async function runTestOp(msg) {
         cspViolations: diagnostics.cspViolations.slice(),
         errors: diagnostics.errors.slice(),
       };
+    case 'setStrategy':
+      sendStrategy = { ...msg.strategy };
+      return sendStrategy;
+    case 'closePreview': {
+      const panel = document.getElementById('preview-panel');
+      if (panel && !panel.hidden) document.getElementById('preview-edge-toggle')?.click();
+      return document.getElementById('preview-panel')?.hidden ?? null;
+    }
+    case 'bench':
+      return runBench(msg);
     case 'addNote': {
       const { addNote } = await import('./markdown/markers.js');
       const node = getSelectedNode();
@@ -240,6 +297,60 @@ async function runTestOp(msg) {
     default:
       return null;
   }
+}
+
+const BENCH_SELECTORS = { full: '.full-doc-source-textarea', section: '#section-view .content-edit-textarea', note: '#section-view .notes-textarea' };
+
+/**
+ * Types `keys` characters into a field the way a user does
+ * (execCommand('insertText') fires real, trusted input events), one every
+ * `intervalMs`, and measures each keystroke: the synchronous handler time,
+ * and input-to-next-paint (until after the next animation frame). Long
+ * tasks (>50 ms) are collected with a PerformanceObserver.
+ */
+async function runBench({ target, keys = 30, intervalMs = 80 }) {
+  const ta = document.querySelector(BENCH_SELECTORS[target]);
+  if (!ta) return { error: `no ${target} field` };
+  ta.focus();
+  const pos = target === 'full' ? ta.value.indexOf('\n', Math.floor(ta.value.length / 2)) : ta.value.length;
+  ta.setSelectionRange(pos, pos);
+  const longTasks = [];
+  const po = new PerformanceObserver((list) => list.getEntries().forEach((e) => longTasks.push(e.duration)));
+  try { po.observe({ type: 'longtask', buffered: false }); } catch { /* unsupported */ }
+  const c0 = { ...counters };
+  const heap0 = performance.memory?.usedJSHeapSize ?? null;
+  const sync = [];
+  const paint = [];
+  // A frame can stall entirely while the window is occluded or not
+  // rendering; those samples are counted, not reported as latency.
+  let paintStalls = 0;
+  const start = performance.now();
+  for (let i = 0; i < keys; i += 1) {
+    const t0 = performance.now();
+    document.execCommand('insertText', false, 'x');
+    const t1 = performance.now();
+    const painted = await new Promise((resolve) => {
+      const cap = setTimeout(() => resolve(false), 1000);
+      requestAnimationFrame(() => setTimeout(() => { clearTimeout(cap); resolve(true); }, 0));
+    });
+    const t2 = performance.now();
+    sync.push(t1 - t0);
+    if (painted) paint.push(t2 - t0); else paintStalls += 1;
+    const rest = intervalMs - (t2 - t0);
+    if (rest > 0) await new Promise((resolve) => { setTimeout(resolve, rest); });
+  }
+  const typingMs = performance.now() - start;
+  // Let any coalesced or debounced edit land.
+  await new Promise((resolve) => { setTimeout(resolve, 1500); });
+  po.disconnect();
+  return {
+    sync, paint, paintStalls, longTasks, typingMs,
+    messages: counters.editMessages - c0.editMessages,
+    bytes: counters.editBytes - c0.editBytes,
+    heap0, heap1: performance.memory?.usedJSHeapSize ?? null,
+    docLength: lastSerialized ? lastSerialized.length : 0,
+    fieldHasText: ta.isConnected && ta.value.split('x').length - 1 >= keys,
+  };
 }
 
 function onMessage(msg) {
@@ -320,7 +431,7 @@ export function initHostedMode({ dirtyIndicator }) {
   // edit still waiting in a field's debounce would be lost on a tab switch.
   // Every keystroke's edit is landed and sent at once (fields' own input
   // handlers run first, at the target, then this document-level one).
-  document.addEventListener('input', flushAllEdits);
+  document.addEventListener('input', onInput);
   // Belt and braces, for whatever does get a chance to run.
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushAllEdits(); });
   window.addEventListener('pagehide', flushAllEdits);
