@@ -2,7 +2,7 @@ import { h } from './utils/dom.js';
 import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugIndex } from './markdown/slug.js';
-import { findChangedNodes, tagsDiffer } from './markdown/diff.js';
+import { findChangedNodes } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
@@ -46,6 +46,8 @@ import { isCapacitor, capacitorSaveFileAs, capacitorTakePendingSharedFile } from
 import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
+import * as ct from './core/changeTracking.js';
+import { diffSnapshot, countChangedSections, enrichSnapshot } from './core/changeTracking.js';
 import { openShortcutsPanel } from './ui/shortcutsPanel.js';
 import { maybeShowShortcutHint } from './ui/shortcutHint.js';
 import { showContextMenu } from './ui/contextMenu.js';
@@ -546,23 +548,7 @@ subscribe(snapshotIfDirty);
  * window where the badge would otherwise undercount.
  */
 function activeGapChangedCount() {
-  const {
-    doc, dirty, fileName, workspaceRelPath, workspaceRootName,
-  } = getState();
-  if (!doc || !dirty || !currentBaseline) return 0;
-  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
-  if (listRecoverySnapshots().some((s) => s.id === id)) return 0;
-  try {
-    const baselineDoc = parseMarkdown(currentBaseline);
-    const sectionCount = findChangedNodes(doc, baselineDoc).length;
-    const tagCount = tagsDiffer(doc, baselineDoc) ? 1 : 0;
-    // The `|| 1` stays as a last-resort fallback for a dirty edit neither
-    // check accounts for (e.g. a title-only rename) — "something changed"
-    // (dirty is only ever true because it did) still beats reporting 0.
-    return sectionCount + tagCount || 1;
-  } catch {
-    return 1;
-  }
+  return ct.activeGapChangedCount(getState(), currentBaseline, listRecoverySnapshots());
 }
 
 /**
@@ -572,15 +558,7 @@ function activeGapChangedCount() {
  * needs to carry identity fields.
  */
 function activeGapSnapshot() {
-  const {
-    doc, dirty, fileName, workspaceRelPath, workspaceRootName,
-  } = getState();
-  if (!doc || !dirty) return null;
-  const id = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
-  if (listRecoverySnapshots().some((s) => s.id === id)) return null;
-  return {
-    id, fileName, workspaceRelPath, workspaceRootName, savedAt: Date.now(), markdown: '',
-  };
+  return ct.activeGapSnapshot(getState(), listRecoverySnapshots());
 }
 
 /** The badge (and the Changes panel's own subtitle) count individual changed *sections* across every pending file, not just how many files have any changes — editing two different sections of the same file is two changes, not one. */
@@ -592,39 +570,7 @@ function updateChangesBadge() {
 
 /** Every relPath within `workspace` that currently has a pending recovery snapshot — for the sidebar tree/graph's own small pending-changes dot (see filesPanel.js/focalGraph.js), so switching freely between files (nothing is ever discarded now) still leaves a visible trail of what's been touched. */
 function pendingWorkspacePaths(workspace) {
-  if (!workspace) return new Set();
-  return new Set(
-    listRecoverySnapshots()
-      .filter((s) => s.workspaceRelPath && s.workspaceRootName === workspace.rootName)
-      .map((s) => s.workspaceRelPath),
-  );
-}
-
-/**
- * The list of {id, title, level} sections a snapshot actually touched, vs.
- * its own baseline — see markdown/diff.js. `null` (not an empty array) when
- * there's no baseline to compare against or either parse fails — a real,
- * successfully-computed diff can legitimately be an empty array (every
- * edit since baseline got undone again), and that must stay distinguishable
- * from "couldn't tell": countChangedSections() below treats them very
- * differently.
- */
-function diffSnapshot(snap) {
-  if (!snap.baselineMarkdown) return null;
-  try {
-    const doc = parseMarkdown(snap.markdown);
-    const baselineDoc = parseMarkdown(snap.baselineMarkdown);
-    return { sections: findChangedNodes(doc, baselineDoc), tagsChanged: tagsDiffer(doc, baselineDoc) };
-  } catch {
-    return null;
-  }
-}
-
-/** How many individual sections (not files) a snapshot represents, plus one more if its tags changed (tags live on the root document, not any one section — see markdown/diff.js's tagsDiffer) — the real diffed count when one's available, or 1 as a fallback only for a legacy/undiffable snapshot with no baseline (there's still *something* unsaved, we just can't say which section — never claim "at least 1" for a snapshot that genuinely diffed to zero on both fronts). */
-function countChangedSections(snap) {
-  const diff = diffSnapshot(snap);
-  if (diff === null) return 1;
-  return diff.sections.length + (diff.tagsChanged ? 1 : 0);
+  return ct.pendingWorkspacePaths(workspace, listRecoverySnapshots());
 }
 
 /** clearRecoverySnapshot() is a side effect, not a setState() — nothing else would re-render the Changes badge to reflect it, so every call site in this file goes through here instead of the raw import. */
@@ -644,16 +590,8 @@ function clearRecoverySnapshot(identity) {
  * — and treating it as the latter is exactly what let a file's own close
  * button skip the warning the moment the user switched away from it.
  */
-function isFileDirty({ fileName, workspaceRelPath = null, workspaceRootName = null }) {
-  const current = getState();
-  const targetId = snapshotIdentity({ fileName, workspaceRelPath, workspaceRootName });
-  if (current.doc) {
-    const currentId = snapshotIdentity({
-      fileName: current.fileName, workspaceRelPath: current.workspaceRelPath, workspaceRootName: current.workspaceRootName,
-    });
-    if (currentId === targetId) return current.dirty;
-  }
-  return listRecoverySnapshots().some((s) => s.id === targetId);
+function isFileDirty(identity) {
+  return ct.isFileDirty(identity, getState(), listRecoverySnapshots());
 }
 
 /**
@@ -668,7 +606,7 @@ function isFileDirty({ fileName, workspaceRelPath = null, workspaceRootName = nu
  * unsaved work sitting in a recovery snapshot.
  */
 function hasAnyUnsavedChanges() {
-  return getState().dirty || listRecoverySnapshots().length > 0;
+  return ct.hasAnyUnsavedChanges(getState(), listRecoverySnapshots());
 }
 
 // The standard "leave site?" browser confirmation. Electron only, not a
@@ -1487,32 +1425,6 @@ function notifyOtherPendingChanges(justSavedIdentity) {
 }
 
 /**
- * Attaches each snapshot's own parsed `doc` (so opening it later reuses
- * these exact node ids instead of re-parsing — see loadSnapshotAsActive)
- * and its list of individually-changed sections, for the Changes panel to
- * render as separate, individually-jumpable entries within that one
- * file's row.
- */
-function enrichSnapshot(snap) {
-  try {
-    const doc = parseMarkdown(snap.markdown);
-    const baselineDoc = snap.baselineMarkdown ? parseMarkdown(snap.baselineMarkdown) : null;
-    // `null` (not `[]`) when there's no baseline to diff against — the
-    // Changes panel needs to tell "couldn't determine what changed" apart
-    // from "diffed it, genuinely nothing did" (see diffSnapshot() above).
-    const changedSections = baselineDoc ? findChangedNodes(doc, baselineDoc) : null;
-    const tagsChanged = baselineDoc ? tagsDiffer(doc, baselineDoc) : false;
-    return {
-      ...snap, doc, changedSections, tagsChanged,
-    };
-  } catch {
-    return {
-      ...snap, doc: null, changedSections: null, tagsChanged: false,
-    };
-  }
-}
-
-/**
  * Same idea as enrichSnapshot(), but for the row representing the file
  * that's *currently* the live active document: diffed against the real
  * in-memory doc (and currentBaseline) rather than re-parsing the
@@ -1521,16 +1433,7 @@ function enrichSnapshot(snap) {
  * reload (see handleChangesOpenSection).
  */
 function enrichActiveSnapshot(snap) {
-  const { doc: liveDoc } = getState();
-  if (!liveDoc || !currentBaseline) return enrichSnapshot(snap);
-  try {
-    const baselineDoc = parseMarkdown(currentBaseline);
-    return {
-      ...snap, doc: liveDoc, changedSections: findChangedNodes(liveDoc, baselineDoc), tagsChanged: tagsDiffer(liveDoc, baselineDoc),
-    };
-  } catch {
-    return enrichSnapshot(snap);
-  }
+  return ct.enrichActiveSnapshot(snap, getState().doc, currentBaseline);
 }
 
 /** Save one pending snapshot (from the Changes panel) directly to disk, without switching away from whatever's currently open. `isActive` means this row IS the live document, so it just goes through the normal save path. */
