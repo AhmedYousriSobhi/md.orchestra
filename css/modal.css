@@ -332,3 +332,15 @@
 .toast-in { opacity: 1; transform: translateY(0); }
 .toast-out { opacity: 0; }
 .toast-error { background: #7a2419; }
+
+/* First-run shortcut tip */
+.shortcut-hint {
+  position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 150;
+  display: flex; align-items: center; gap: 0.75rem;
+  background: var(--surface); color: var(--text, inherit); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-md); padding: 0.5rem 0.75rem; font-size: 0.85rem;
+  max-width: calc(100vw - 2rem);
+}
+.shortcut-hint kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 0.35rem; font-family: inherit; }
+.shortcut-hint-close { background: none; border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; color: inherit; opacity: 0.6; }
+.shortcut-hint-close:hover { opacity: 1; }

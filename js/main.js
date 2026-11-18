@@ -47,6 +47,7 @@ import { showToast } from './ui/toast.js';
 import { openSettingsPanel } from './ui/settingsPanel.js';
 import { openSourcePanel } from './ui/sourcePanel.js';
 import { openShortcutsPanel } from './ui/shortcutsPanel.js';
+import { maybeShowShortcutHint } from './ui/shortcutHint.js';
 import { showContextMenu } from './ui/contextMenu.js';
 import { openNewFileModal, closeNewFileModal } from './ui/newFileModal.js';
 import { openAddSectionModal } from './ui/addSectionModal.js';
@@ -279,6 +280,7 @@ function renderInner() {
   } = getState();
 
   updateChangesBadge();
+  if (doc) maybeShowShortcutHint({ onOpenShortcuts: openShortcutsPanel });
 
   // VSCode-style, fixed two-pane sidebar: Explorer (every open
   // directory/standalone file, always fully shown — see
