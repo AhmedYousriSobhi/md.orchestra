@@ -41,7 +41,7 @@ async function main() {
       ...(process.env.MDO_LAUNCH_ARGS ? process.env.MDO_LAUNCH_ARGS.split(' ') : [])],
   };
   const pass = (name) => ({
-    MDO_WS: ws, MDO_PHASE: name, MDO_REPEAT: process.env.MDO_REPEAT || '', MDO_ONLY: process.env.MDO_ONLY || '', MDO_STRATEGY: process.env.MDO_STRATEGY || '',
+    MDO_WS: ws, MDO_PHASE: name, MDO_REPEAT: process.env.MDO_REPEAT || '', MDO_ONLY: process.env.MDO_ONLY || ''
   });
   await runTests({ ...common, extensionTestsEnv: pass('main') });
   if (!process.env.MDO_ONLY) await runTests({ ...common, extensionTestsEnv: pass('restart') });

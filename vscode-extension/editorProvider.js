@@ -55,7 +55,6 @@ class MdOrchestraEditorProvider {
       // planEdit), never applied as-is.
       syncSeq: 0,
       bases: new Map(),
-      webviewTexts: new Map(),
       editChain: Promise.resolve(),
       hostSeq: 0,
       hostPending: new Map(),
@@ -77,7 +76,6 @@ class MdOrchestraEditorProvider {
       session.syncSeq += 1;
       const text = document.getText();
       session.bases.set(session.syncSeq, text);
-      session.webviewTexts.set(session.syncSeq, text);
       if (session.bases.size > 50) session.bases.delete(session.bases.keys().next().value);
       return { syncId: session.syncSeq, ...docInfo(text) };
     };
@@ -152,22 +150,9 @@ class MdOrchestraEditorProvider {
         session.post({ type: 'load', ...snapshot() });
         session.readyWaiters.splice(0).forEach((fn) => fn());
         break;
-      case 'edit': {
-        // PROTOTYPE: either the full text, or a diff against this webview's
-        // previous text under the same syncId (rebuilt at receipt).
-        let { text } = msg;
-        if (typeof text !== 'string' && msg.diff && session.webviewTexts.has(msg.syncId)) {
-          const prev = session.webviewTexts.get(msg.syncId);
-          text = prev.slice(0, msg.diff.start) + msg.diff.text + prev.slice(msg.diff.end);
-        }
-        if (typeof text !== 'string') {
-          session.post({ type: 'externalChange', ...session.snapshot() });
-          break;
-        }
-        session.webviewTexts.set(msg.syncId, text);
-        this.queueEdit(session, text, msg.syncId);
+      case 'edit':
+        if (typeof msg.text === 'string') this.queueEdit(session, msg.text, msg.syncId);
         break;
-      }
       case 'save':
         session.document.save();
         break;

@@ -43,6 +43,27 @@ test('an in-app edit posts the whole serialized document, once', async ({ page }
   expect(await sentOfType(page, 'edit')).toHaveLength(1);
 });
 
+test('full-text typing sends the raw text on the keystroke itself; the model re-parses later without sending it back', async ({ page }) => {
+  await hostLoad(page);
+  await page.locator('#view-mode-full-btn').click();
+  const ta = page.locator('.full-doc-source-textarea');
+  await ta.focus();
+  // Extra blank lines: the serializer would normalize these to one.
+  const typed = `${DOC}\n\n\n# Brand new heading\n\nNew body.\n`;
+  await ta.evaluate((el, value) => { el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); }, typed);
+  // Sent synchronously, as typed, before the outline (the model) knows about it.
+  expect((await sentOfType(page, 'edit')).map((m) => m.text)).toEqual([typed]);
+  await expect(page.locator('#heading-tree .nav-label', { hasText: 'Brand new heading' })).toHaveCount(0);
+  // The field's own debounce re-parses the model (the outline itself
+  // redraws once focus leaves the field, as in the standalone app)...
+  await page.waitForTimeout(1000);
+  await ta.evaluate((el) => el.blur());
+  await expect(page.locator('#heading-tree .nav-label', { hasText: 'Brand new heading' })).toHaveCount(1, { timeout: 5000 });
+  await page.waitForTimeout(500);
+  // ...and the normalized form is not sent back over what the user typed.
+  expect(await sentOfType(page, 'edit')).toHaveLength(1);
+});
+
 test('externalChange reloads the text and keeps the selected heading (by slug)', async ({ page }) => {
   await hostLoad(page);
   await page.locator('#heading-tree .nav-label', { hasText: 'Second' }).click();

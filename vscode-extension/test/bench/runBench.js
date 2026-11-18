@@ -3,10 +3,13 @@
 // each in MD.Orchestra inside a real VS Code, types into the full-text,
 // section and note fields, and records per-keystroke webview time,
 // input-to-paint latency, long tasks, host apply/echo time, message volume
-// and memory. Results: <scratch>/bench-results.json plus a printed table.
+// and memory. Results: <workspace>/bench-results.json (or MDO_BENCH_OUT)
+// plus a printed table. Variants: the default UI, or with the preview
+// panel closed ({"previewOff": true}) to separate preview cost.
 //
-//   cd vscode-extension && node test/bench/runBench.js
-//   MDO_BENCH='{"sizes":[10000,100000],"strategies":[{"mode":"perKeystroke"}]}' node test/bench/runBench.js
+//   npm run vscode:sync            # at the repo root, first
+//   cd vscode-extension && npm run bench
+//   MDO_BENCH='{"sizes":[10000,100000],"keys":20,"variants":[{},{"previewOff":true}]}' npm run bench
 //
 // Needs a display; ELECTRON_RUN_AS_NODE is cleared here.
 const fs = require('fs');
@@ -20,7 +23,7 @@ delete process.env.ELECTRON_RUN_AS_NODE;
 const DEFAULTS = {
   sizes: [10e3, 100e3, 1e6, 5e6],
   targets: ['full', 'section', 'note'],
-  strategies: [{ mode: 'perKeystroke' }],
+  variants: [{}],
   keys: 30,
   intervalMs: 80,
 };
@@ -33,11 +36,11 @@ function pct(values, p) {
 const f = (n) => (n === null || n === undefined ? '-' : n >= 100 ? n.toFixed(0) : n.toFixed(1));
 
 function printTable(results) {
-  const rows = [['size', 'strategy', 'field', 'sync p50/p95 ms', 'paint p50/p95 ms', 'long tasks (n, max ms)', 'host apply p50/p95', 'host latency p50', 'msgs', 'MB sent', 'landed']];
+  const rows = [['size', 'variant', 'field', 'sync p50/p95 ms', 'paint p50/p95 ms', 'long tasks (n, max ms)', 'host apply p50/p95', 'host latency p50', 'msgs', 'MB sent', 'landed']];
   for (const r of results) {
-    if (r.error) { rows.push([r.size, r.strategy, r.target, r.error]); continue; }
+    if (r.error) { rows.push([r.size, r.variant, r.target, r.error]); continue; }
     rows.push([
-      `${(r.size / 1e3).toFixed(0)}KB`, r.strategy, r.target,
+      `${(r.size / 1e3).toFixed(0)}KB`, r.variant, r.target,
       `${f(pct(r.web.sync, 50))}/${f(pct(r.web.sync, 95))}`,
       `${f(pct(r.web.paint, 50))}/${f(pct(r.web.paint, 95))}${r.web.paintStalls ? ` (${r.web.paintStalls} stalled)` : ''}`,
       `${r.web.longTasks.length}, ${f(Math.max(0, ...r.web.longTasks))}`,

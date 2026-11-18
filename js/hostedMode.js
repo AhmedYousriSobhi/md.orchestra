@@ -16,7 +16,6 @@ import { parseMarkdown } from './markdown/parser.js';
 import { serializeMarkdown } from './markdown/serializer.js';
 import { buildSlugMaps } from './markdown/slug.js';
 import { setImageBaseUri } from './markdown/render.js';
-import { minimalEdit } from './core/textDiff.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getDocSession, flushPendingEdits,
   getSelectedNode, updateNode, registerPendingFlush,
@@ -108,44 +107,45 @@ function onStoreChange(state) {
   sendText(text);
 }
 
-// The last text sent straight from the full-text field (fast path), if any.
+// The last text sent straight from the full-text field, if any (see onInput).
 let rawFromFullText = null;
+// Message volume, read by the benchmark (vscode-extension/test/bench/).
+const counters = { editMessages: 0, editBytes: 0 };
 
 /** Posts the document's new full text, unless the host already has exactly it. */
 function sendText(text) {
-  const previous = lastSent ?? lastHostText;
-  if (text === previous) return;
+  if (text === (lastSent ?? lastHostText)) return;
   lastSent = text;
   counters.editMessages += 1;
-  if (sendStrategy.diff) {
-    const diff = minimalEdit(previous, text);
-    counters.editBytes += diff.text.length;
-    post({ type: 'edit', diff, syncId });
-    return;
-  }
   counters.editBytes += text.length;
   post({ type: 'edit', text, syncId });
 }
 
-// --- PROTOTYPE: send strategies, switchable from the benchmark (test mode) ---
-const counters = { editMessages: 0, editBytes: 0 };
-let sendStrategy = { mode: 'perKeystroke' };
-let strategyTimer = null;
+/**
+ * Every keystroke's edit is sent to the host in the same event that handles
+ * the keystroke. There is no debounce or coalescing window to lose:
+ * retainContextWhenHidden is false, and a hidden or closed webview is
+ * destroyed without any event reaching the host (measured, ADR 0001: a
+ * 50 ms or per-frame coalescing window lost 6 of 6 edits on a tab switch
+ * and 6 of 6 on a close).
+ *
+ * - The full-text field holds the whole document, so its text is sent as
+ *   is, without re-parsing it; the app model (outline, preview) catches up
+ *   on the field's own debounce, as in the standalone app. Re-parsing and
+ *   re-rendering on every keystroke cost 123 ms per keystroke at 100 KB and
+ *   1.1 s at 1 MB; sending the text as is costs 8 ms and 28 ms (p50).
+ * - Section and note fields land their edit through their flushers (an
+ *   in-place node update) and the document is re-serialized: about 7 ms per
+ *   keystroke at 100 KB, 19 ms at 1 MB and 41-50 ms at 5 MB (p50).
+ */
 function onInput(e) {
-  const { mode } = sendStrategy;
-  if (mode === 'perKeystroke') { flushAllEdits(); return; }
-  if (mode === 'fastPath') {
-    // The full-text field holds the whole document: send its text as is,
-    // without re-parsing it; the model catches up on the field's own debounce.
-    const t = e.target;
-    if (t && t.classList?.contains('full-doc-source-textarea')) { sendText(t.value); rawFromFullText = t.value; }
-    else flushAllEdits();
+  const t = e.target;
+  if (t && t.classList?.contains('full-doc-source-textarea')) {
+    rawFromFullText = t.value;
+    sendText(t.value);
     return;
   }
-  if (mode === 'off') return;
-  if (strategyTimer !== null) return;
-  if (mode === 'coalesce') strategyTimer = setTimeout(() => { strategyTimer = null; flushAllEdits(); }, sendStrategy.ms);
-  else if (mode === 'frame') strategyTimer = requestAnimationFrame(() => { strategyTimer = null; flushAllEdits(); });
+  flushAllEdits();
 }
 
 /**
@@ -215,9 +215,6 @@ async function runTestOp(msg) {
         cspViolations: diagnostics.cspViolations.slice(),
         errors: diagnostics.errors.slice(),
       };
-    case 'setStrategy':
-      sendStrategy = { ...msg.strategy };
-      return sendStrategy;
     case 'closePreview': {
       const panel = document.getElementById('preview-panel');
       if (panel && !panel.hidden) document.getElementById('preview-edge-toggle')?.click();

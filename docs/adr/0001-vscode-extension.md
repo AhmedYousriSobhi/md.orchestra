@@ -308,9 +308,70 @@ Other findings:
   - Hot exit.
   - Preference persistence across restarts.
   - Closing a tab right after typing.
-  - Typing cost. Every keystroke now serializes the whole document and posts it, and the host diffs it against the `TextDocument`. This is untested on large documents.
+  - Typing on documents above about 1 MB: measured, see "Typing cost" below. It lags there regardless of strategy.
   - Typing performance on large documents.
   - A real Claude key.
+
+## Typing cost (measured)
+
+**Question.** Hosted mode sends every keystroke's edit at once, because a hidden or closed webview is destroyed before any event reaches the host. Is that affordable? If not, what is the best option that still never loses an edit?
+
+**How it was measured.** The benchmark is `vscode-extension/test/bench/` (`npm run bench`, not part of any default test run). It ran in a real VS Code 1.147 (`@vscode/test-electron`) on generated, realistic Markdown: headings, prose, lists, a code block per section and one mermaid block.
+
+For each document it typed into the full-text, section and note fields, one key every 80 ms, using `execCommand('insertText')`, which fires real input events. It recorded:
+- **sync:** the webview's synchronous handler time per keystroke;
+- **input-to-paint:** until after the next animation frame. Frames that stalled, because the window was occluded, are counted and not reported as latency;
+- **long tasks:** collected with a PerformanceObserver;
+- host apply time, host queue depth, the echo handler, message volume and heap.
+
+The tables below give p50/p95 in ms, from 12–20 keystrokes per cell.
+
+**Before: every keystroke re-parses (full text) or re-serializes (section, note) and sends the whole document**
+
+| Size | Full text: sync (paint p50, long tasks) | Section: sync | Note: sync |
+|---|---|---|---|
+| 10 KB | 19 / 44 (41) | 2.6 / 6.6 | 6.3 / 6.8 |
+| 100 KB | **123 / 134** (203; 21 long tasks, max 233) | 7.0 / 8.4 | 7.5 / 10.4 |
+| 1 MB | **1122 / 1240** (1822; 26, max 1974) | 18.6 / 20.9 | 19.4 / 21.3 |
+| 5 MB | **6986 / 8196** (long tasks up to 12.3 s) | 41 / 50 | 48 / 61 |
+
+Typing in the full-text field visibly lagged from 100 KB up. Closing the preview cut the 1 MB full-text cost from 1122 to 45 ms. So the cause was the **webview re-rendering the whole-document preview and re-parsing the text on every keystroke**, work the standalone app only does once per 700 ms pause. Sending the text was not the cause. The host side stayed cheap throughout:
+- apply: p50 1–6 ms up to 1 MB, and 16–29 ms at 5 MB (p95 ≤ 150 ms);
+- echo handler: about 1 ms at 1 MB and 5 ms at 5 MB;
+- queue depth: never above 3.
+
+Message volume equals the document size per keystroke (12 keystrokes at 5 MB sent 60 MB). Heap deltas were dominated by garbage collection (from −90 to +187 MB at 5 MB) and are not conclusive.
+
+**Alternatives, measured the same way, then run through the loss-safety tests.** Those tests are: tab switch right after typing; close right after typing (new); save right after typing; and the racing-keystroke test. Each covers the full-text, section and note fields and was repeated.
+
+| Option | Sync, full / section / note at 1 MB | At 5 MB | Loss safety | Verdict |
+|---|---|---|---|---|
+| (a) Coalesce 50 ms, plus flushes on hide, blur and pagehide | 24 / 1.0 / 0.5 | 315 / 3.5 / 12 | **Tab switch: 6 of 6 edits lost. Close: 6 of 6 lost.** Save safe (onWillSave) | **Rejected:** loses edits. No hide or close event reaches the host in time. |
+| (a') Coalesce per animation frame | 26 / 1.7 / 0.9 | 300 / 14 / 6.2 | **Tab switch: 6/6 lost. Close: 6/6 lost.** | **Rejected:** loses edits. |
+| (b) Send only the changed range; host rebuilds the text from the webview's previous text for that `syncId` | 31 / 22 / 23 | 184 (p95 1436) / 62 / 69 | Safe: tab 6/6, close 6/6, 0 lost | **Rejected:** bytes fall from 60 MB to 2.5 MB, but webview time doesn't (the diff is O(n) in JS). It also adds a resync failure mode. |
+| (c) Adaptive: immediate when small, coalesced when large | — | — | Inherits (a)'s losses above the threshold | **Rejected** by (a)'s loss result. |
+| **(d) Fast path (chosen).** The full-text field sends its text the moment it is typed, without re-parsing; the model catches up on the field's own debounce. Section and note fields stay per-keystroke. | **28 / 18.5 / 19.5** | 295 / 50 / 46 | Safe: tab 6/6, close 6/6, 0 lost (prototype). Final implementation, `MDO_REPEAT=5`: tab switch **15/15**, close **15/15**, 0 lost, and save right after typing 5/5, on **both VS Code 1.147 and 1.90.0**. | **Chosen.** |
+
+The racing-keystroke test, in which the tab switch is not made to wait for the keystroke, never managed to type first under any option. The webview was always destroyed before it typed, so nothing was typed and nothing was lost.
+
+**Chosen: (d), measured p50/p95 sync per keystroke**
+
+| Size | Full text | Section | Note |
+|---|---|---|---|
+| 10 KB | 1.7 / 1.9 | 5.7 / 7.0 | 4.7 / 6.1 |
+| 100 KB | 7.7 / 8.9 | 7.6 / 8.6 | 7.3 / 8.7 |
+| 1 MB | 28 / 66 | 18.5 / 20.9 | 19.5 / 21.6 |
+| 5 MB | 295 / 371 | 50 / 75 | 46 / 56 |
+
+A re-run of the benchmark on the final code (not the prototype switch) agrees. At 100 KB, p50 is 7.3 ms full text, 7.4 ms section and 8.1 ms note. At 1 MB it is 27.5, 19.9 and 18.9 ms.
+
+**Decision.** (d) is the only option measured as both safe and fast.
+- **Up to about 1 MB:** typing is fine in every field. p50 is ≤ 28 ms, and section and note fields have no long tasks.
+- **Remaining long tasks** (2 at 100 KB, 5 at 1 MB) are the app's own debounced re-parse and preview render after a pause. The standalone app has the same cost.
+- **At 5 MB:** typing lags under every option, including sending nothing at all. That baseline costs 142–326 ms per keystroke in a 5 MB `<textarea>`, and the app's debounced re-parse blocks for up to about 9 s. That is a limit of the app's UI, not of the VS Code transport, and is outside this ADR.
+- **Stated limit:** documents up to about 1 MB.
+
+**Full-text normalization.** Because the full-text field's raw text is sent as typed, the model's debounced re-parse can produce a normalized form: the serializer collapses runs of blank lines between blocks. Hosted mode does not send that form back over what the user typed, so the document doesn't flip between the two. A Playwright test covers this.
 
 ## Open questions for the owner
 

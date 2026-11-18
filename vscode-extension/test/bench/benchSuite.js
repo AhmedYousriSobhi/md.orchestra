@@ -18,13 +18,7 @@ async function waitFor(fn, timeout, what) {
   throw new Error(`timed out: ${what}`);
 }
 
-function label(strategy) {
-  let s = strategy.mode;
-  if (strategy.ms) s += `${strategy.ms}`;
-  if (strategy.diff) s += '+diff';
-  if (strategy.previewOff) s += '+noPreview';
-  return s;
-}
+const label = (variant) => (variant.previewOff ? 'previewClosed' : 'default');
 
 const countX = (text) => text.split('x').length - 1;
 
@@ -38,13 +32,13 @@ async function run() {
     const text = fs.readFileSync(source, 'utf8');
     const sections = (text.match(/^## Section /gm) || []).length;
     const midSlug = `section-${Math.max(1, Math.floor(sections / 2))}`;
-    for (const strategy of config.strategies) {
+    for (const variant of config.variants) {
       for (const target of config.targets) {
         n += 1;
         const file = path.join(WS, `run-${n}.md`);
         fs.copyFileSync(source, file);
         const uri = vscode.Uri.file(file);
-        const entry = { size, actualBytes: text.length, strategy: label(strategy), target };
+        const entry = { size, actualBytes: text.length, variant: label(variant), target };
         try {
           const t0 = Date.now();
           await vscode.commands.executeCommand('vscode.openWith', uri, 'mdOrchestra.editor');
@@ -53,11 +47,10 @@ async function run() {
           const req = (op, payload = {}, timeout = 600000) => provider.hostRequest(session, op, payload, timeout);
           await waitFor(async () => (await req('probe', {}, 120000))?.hasDoc, 180000, 'document loaded');
           entry.openMs = Date.now() - t0;
-          await req('setStrategy', { strategy });
           await req('viewMode', { mode: target === 'full' ? 'full' : 'sections' });
           if (target !== 'full') await req('select', { slug: midSlug });
           if (target === 'note') await req('addNote');
-          if (strategy.previewOff) await req('closePreview');
+          if (variant.previewOff) await req('closePreview');
           await sleep(1000);
           const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
           const xBefore = countX(doc.getText());
@@ -83,7 +76,7 @@ async function run() {
         }
         results.push(entry);
         fs.writeFileSync(OUT, JSON.stringify(results, null, 1));
-        console.log(`[bench] ${entry.size} ${entry.strategy} ${entry.target} ${entry.error || 'done'}`);
+        console.log(`[bench] ${entry.size} ${entry.variant} ${entry.target} ${entry.error || 'done'}`);
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await sleep(500);
       }

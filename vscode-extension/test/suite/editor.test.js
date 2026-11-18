@@ -61,8 +61,6 @@ async function openEditor(uri, column) {
   await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, column);
   const session = await waitFor(() => provider.sessionsFor(uri).find((s) => !before.has(s)), { what: 'a new editor session' });
   assert.ok(await provider.waitReady(session, 30000), 'webview posted ready (its ES modules loaded)');
-  // MDO_STRATEGY: run the suite against another edit-sending strategy.
-  if (process.env.MDO_STRATEGY) await provider.hostRequest(session, 'setStrategy', { strategy: JSON.parse(process.env.MDO_STRATEGY) }, 10000);
   return session;
 }
 
@@ -302,7 +300,8 @@ test(`Tab switch racing a keystroke never loses a typed edit (full text, section
       if (target === 'note') assert.ok(await hostRequest(session, 'addNote'), 'a note field exists');
       await sleep(300);
       const marker = `RACE-${target}-${round}`;
-      const typed = hostRequest(session, 'typePending', { target, text: ` ${marker} ` });
+      // Short timeout: when the switch wins, the webview never answers.
+      const typed = testApi.provider.hostRequest(session, 'typePending', { target, text: ` ${marker} ` }, 3000);
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
       const didType = await typed;
       const doc = docFor(uri);
