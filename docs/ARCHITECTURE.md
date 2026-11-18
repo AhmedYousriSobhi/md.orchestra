@@ -88,3 +88,28 @@ There is no backend/proxy. Only Claude is supported for now.
 - The document map lays every node out in one scrollable region sized for
   the typical case; a very large document/folder still needs scrolling
   within that region to see all of it.
+
+## VS Code extension (`vscode-extension/`)
+
+A third delivery target, built from the same `index.html` + `js/` as the other two
+(not a fork). The host side is plain CommonJS; the webview runs the existing UI with
+hosted mode switched on when `acquireVsCodeApi` exists.
+
+- `vscode-extension/extension.js` / `editorProvider.js` — a `CustomTextEditorProvider`
+  for `*.md` (opt-in via *Reopen Editor With…*). VS Code's `TextDocument` is the source
+  of truth: it owns save, dirty state, undo/redo and backup. The webview sends edits;
+  the host applies them as one minimal `WorkspaceEdit` (`minimalEdit.js`) and ignores
+  its own echo by document version. `retainContextWhenHidden` is `false`.
+- `vscode-extension/webviewHtml.js` — generates the webview HTML: `asWebviewUri`
+  rewriting, nonce + CSP, `localResourceRoots`.
+- `vscode-extension/aiProxy.js` — the Claude call is made by the host with the key from
+  `SecretStorage`; the webview never sees it.
+- `js/core/vscodeBridge.js` (the only file that touches `acquireVsCodeApi`) and
+  `js/hostedMode.js` (load/edit/external-change/dirty messages, view-state restore,
+  hidden UI) are the webview side. `main.js` has one gate per subsystem
+  (Explorer, recovery, shortcuts, ...), not per call site.
+- `npm run vscode:sync` copies the UI into `vscode-extension/media/` (a gitignored build
+  product); `npm run vscode:package` builds the `.vsix`.
+- Tests: `tests/vscode-hosted.spec.js` (webview side, via `VSCODE_STUB`, part of
+  `npm test`) and `npm run test:vscode` (real VS Code via `@vscode/test-electron`,
+  separate, needs a display). Measurements and decisions: [adr/0001-vscode-extension.md](adr/0001-vscode-extension.md).

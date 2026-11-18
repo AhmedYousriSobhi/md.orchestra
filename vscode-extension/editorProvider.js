@@ -30,6 +30,9 @@ class MdOrchestraEditorProvider {
     this.isTestMode = context.extensionMode === vscode.ExtensionMode.Test;
     /** Every live editor, for the extension-host tests. */
     this.sessions = new Set();
+    // uri -> { anchor, expires }: a #heading from a link into a file whose editor is
+    // about to be created; consumed by that editor's first 'ready'.
+    this.pendingAnchors = new Map();
   }
 
   async resolveCustomTextEditor(document, panel) {
@@ -147,7 +150,7 @@ class MdOrchestraEditorProvider {
         // per editor (e.g. if retainContextWhenHidden is ever turned off), so
         // always resend the document's *current* text.
         session.ready = true;
-        session.post({ type: 'load', ...snapshot() });
+        session.post({ type: 'load', ...snapshot(), anchor: this.takeAnchor(session.document.uri) });
         session.readyWaiters.splice(0).forEach((fn) => fn());
         break;
       case 'edit':
@@ -309,17 +312,35 @@ class MdOrchestraEditorProvider {
     session.post({ type: 'response', id: msg.id, result, error });
   }
 
+  takeAnchor(uri) {
+    const key = uri.toString();
+    const pending = this.pendingAnchors.get(key);
+    this.pendingAnchors.delete(key);
+    return pending && pending.expires > Date.now() ? pending.anchor : null;
+  }
+
   async openLink(document, href) {
     if (/^https?:/i.test(href)) {
       vscode.env.openExternal(vscode.Uri.parse(href));
       return;
     }
-    const [rawPath] = href.split('#');
+    const [rawPath, rawFragment] = href.split('#');
     if (!rawPath) return;
     let decoded;
     try { decoded = decodeURIComponent(rawPath); } catch { decoded = rawPath; }
     const target = document.uri.with({ path: path.posix.resolve(path.posix.dirname(document.uri.path), decoded), fragment: '', query: '' });
     if (/\.(md|markdown)$/i.test(target.path)) {
+      let anchor = null;
+      if (rawFragment) {
+        try { anchor = decodeURIComponent(rawFragment); } catch { anchor = rawFragment; }
+      }
+      const open = this.sessionsFor(target).filter((x) => x.ready);
+      if (anchor && open.length) {
+        // Already open: its webview won't send 'ready' again, so tell it directly.
+        open.forEach((x) => x.post({ type: 'goto', anchor }));
+      } else if (anchor) {
+        this.pendingAnchors.set(target.toString(), { anchor, expires: Date.now() + 15000 });
+      }
       await vscode.commands.executeCommand('vscode.openWith', target, VIEW_TYPE);
     } else {
       await vscode.commands.executeCommand('vscode.open', target);

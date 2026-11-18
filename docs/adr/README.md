@@ -12,7 +12,7 @@ complement, not replace, the other docs:
 
 | # | Title | Status | Date |
 |---|---|---|---|
-| [0001](0001-vscode-extension.md) | Deliver MD.Orchestra as a VS Code extension | Proposed | 2026-11-18 |
+| [0001](0001-vscode-extension.md) | Deliver MD.Orchestra as a VS Code extension | Accepted (Option A) | 2026-11-18 |
 
 ## How to add one
 

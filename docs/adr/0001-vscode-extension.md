@@ -1,6 +1,6 @@
 # 0001. Deliver MD.Orchestra as a VS Code extension (in addition to Electron and Android)
 
-- **Status:** Proposed
+- **Status:** Accepted for Option A (single-file Custom Text Editor), implemented in #51/#52. Publishing, multi-file navigation and the unverified items in TESTING.md remain open.
 - **Date:** 2026-11-18
 - **Deciders:** repo owner
 - **Related:** [SPEC.md](../../SPEC.md), [docs/ARCHITECTURE.md](../ARCHITECTURE.md),
