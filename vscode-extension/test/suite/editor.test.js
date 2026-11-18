@@ -258,6 +258,82 @@ test('Save right after typing (debounced edit still pending) saves the latest te
   await closeAll();
 });
 
+test('Switching tabs right after typing (debounced edit still pending) does not lose it', async () => {
+  const uri = fresh();
+  const session = await openEditor(uri);
+  await hostRequest(session, 'viewMode', { mode: 'full' });
+  assert.strictEqual(await hostRequest(session, 'typePending', { text: '\nTYPED-BEFORE-TAB-SWITCH\n' }), true);
+  await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
+  const doc = docFor(uri);
+  let landed = false;
+  try { await waitFor(() => doc.getText().includes('TYPED-BEFORE-TAB-SWITCH'), { timeout: 3000 }); landed = true; } catch { /* recorded */ }
+  record('pending-edit-on-tab-switch', { landed });
+  assert.ok(landed, 'the pending edit reached the document when the tab was hidden');
+  await closeAll();
+});
+
+test('With files.autoSave=afterDelay, an autosave while typing keeps focus in the live text field', async () => {
+  const files = vscode.workspace.getConfiguration('files');
+  await files.update('autoSave', 'afterDelay', vscode.ConfigurationTarget.Global);
+  await files.update('autoSaveDelay', 200, vscode.ConfigurationTarget.Global);
+  try {
+    const uri = fresh();
+    const session = await openEditor(uri);
+    await hostRequest(session, 'viewMode', { mode: 'full' });
+    await hostRequest(session, 'typePending', { text: '\nAUTOSAVE-1\n' });
+    const doc = docFor(uri);
+    await waitFor(() => fs.readFileSync(uri.fsPath, 'utf8').includes('AUTOSAVE-1'), { what: 'autosave wrote the edit', timeout: 8000 });
+    await sleep(500);
+    const probe = await hostRequest(session, 'probe');
+    record('autosave-focus', probe.active);
+    assert.strictEqual(probe.active.tag, 'TEXTAREA', 'focus is still in a text field');
+    assert.strictEqual(probe.active.connected, true, 'and that field is still in the page');
+    assert.ok(!doc.isDirty);
+  } finally {
+    await files.update('autoSave', undefined, vscode.ConfigurationTarget.Global);
+    await files.update('autoSaveDelay', undefined, vscode.ConfigurationTarget.Global);
+    await closeAll();
+  }
+});
+
+test('A webview edit based on stale text never silently reverts a newer external change', async () => {
+  const uri = fresh();
+  const session = await openEditor(uri);
+  const doc = docFor(uri);
+  const staleBase = doc.getText();
+  const external = new vscode.WorkspaceEdit();
+  external.insert(uri, new vscode.Position(0, 0), 'EXTERNAL LINE\n');
+  await vscode.workspace.applyEdit(external);
+  // The webview had not yet seen the external change when it sent this.
+  const loadSyncId = session.sent.find((m) => m.type === 'load').syncId;
+  testApi.provider.onMessage(session, { type: 'edit', syncId: loadSyncId, text: staleBase.replace('Some text in the second section.', 'Some text in the second section. WEBVIEW') }, () => ({}));
+  await sleep(800);
+  const text = doc.getText();
+  record('stale-edit', { externalKept: text.includes('EXTERNAL LINE'), webviewKept: text.includes('WEBVIEW') });
+  assert.ok(text.includes('EXTERNAL LINE'), 'the external change survived');
+  assert.ok(text.includes('WEBVIEW'), 'and so did the non-overlapping webview edit (rebased)');
+  // The view is told about the merged text.
+  await waitFor(() => session.sent.some((m) => m.type === 'externalChange' && m.text === text), { what: 'merged text sent to the webview' });
+
+  // Overlapping: refused, the document keeps the external change, and the view reloads.
+  const before = doc.getText();
+  const sync2 = session.sent.filter((m) => m.type === 'externalChange').pop().syncId;
+  const overlapping = new vscode.WorkspaceEdit();
+  const at = before.indexOf('body.', before.indexOf('Nested body.'));
+  overlapping.replace(uri, new vscode.Range(doc.positionAt(at), doc.positionAt(at + 'body'.length)), 'BODY-EXTERNAL');
+  await vscode.workspace.applyEdit(overlapping);
+  const externalCount = session.sent.filter((m) => m.type === 'externalChange').length;
+  // The webview rewrote the whole line, overlapping the external change.
+  testApi.provider.onMessage(session, { type: 'edit', syncId: sync2, text: before.replace('Nested body.', 'Rewritten in the webview.') }, () => ({}));
+  await sleep(800);
+  assert.ok(doc.getText().includes('Nested BODY-EXTERNAL.'), 'overlapping stale edit was not applied');
+  assert.ok(!doc.getText().includes('Rewritten in the webview.'));
+  assert.ok(session.sent.filter((m) => m.type === 'externalChange').length > externalCount, 'view reloaded to the real text');
+  record('stale-edit-overlap', { refused: true });
+  await vscode.commands.executeCommand('notifications.clearAll');
+  await closeAll();
+});
+
 test('A relative .md link opens the target in MD.Orchestra', async () => {
   const uri = fresh();
   const session = await openEditor(uri);
@@ -319,8 +395,9 @@ test('S2: webview localStorage vs vscode.setState across hide/show and close/reo
   await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
   await sleep(800);
   await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, vscode.ViewColumn.One);
-  await waitFor(() => countReceived(session, 'ready') > readyBefore, { what: 'webview reloaded after being shown again', timeout: 20000 });
-  await sleep(300);
+  await sleep(1500);
+  // With retainContextWhenHidden: true the webview is kept alive, not reloaded.
+  const reloadedOnShow = countReceived(session, 'ready') > readyBefore;
   const afterShow = await hostRequest(session, 'storage', { key: 'mdo.s2' });
 
   // (b) close the editor and open it again (a brand new webview).
@@ -328,7 +405,7 @@ test('S2: webview localStorage vs vscode.setState across hide/show and close/reo
   session = await openEditor(uri);
   const afterReopen = await hostRequest(session, 'storage', { key: 'mdo.s2' });
   record('S2', {
-    hideShow: afterShow, reloadedOnShow: true, closeReopen: afterReopen,
+    hideShow: afterShow, reloadedOnShow, closeReopen: afterReopen,
   });
   await closeAll();
 });

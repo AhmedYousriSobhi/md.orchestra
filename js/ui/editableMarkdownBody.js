@@ -4,6 +4,7 @@ import { updateNode } from '../state/store.js';
 import { debounce } from '../utils/debounce.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
+import { registerHostedFieldFlush } from '../hostedMode.js';
 
 const EDITING_HINT = 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in';
 
@@ -69,7 +70,10 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
     const parts = splitBody(node.bodyMarkdown);
     updateNode(node.id, { bodyMarkdown: joinBody({ ...parts, main: value }) });
   };
+  // The not-yet-saved value, for registerHostedFieldFlush (VS Code only).
+  let pendingValue = null;
   const debouncedSave = debounce((value) => {
+    pendingValue = null;
     save(value);
     status.textContent = 'Saved';
     setTimeout(() => { status.textContent = ''; }, 1200);
@@ -77,8 +81,16 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
 
   textarea.addEventListener('input', () => {
     cancelled = false;
+    pendingValue = textarea.value;
     status.textContent = 'Saving…';
     debouncedSave(textarea.value);
+  });
+  registerHostedFieldFlush(textarea, () => {
+    if (pendingValue === null) return;
+    debouncedSave.cancel();
+    const value = pendingValue;
+    pendingValue = null;
+    save(value);
   });
   // Deferred to a fresh macrotask, same reasoning as notesPanel.js's own
   // blur handler: blurring this textarea is very often *caused* by
@@ -93,6 +105,7 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
   // guard).
   textarea.addEventListener('blur', () => {
     debouncedSave.cancel();
+    pendingValue = null;
     setTimeout(() => save(textarea.value), 0);
   });
 

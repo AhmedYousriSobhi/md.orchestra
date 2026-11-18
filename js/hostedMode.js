@@ -18,7 +18,7 @@ import { buildSlugMaps } from './markdown/slug.js';
 import { setImageBaseUri } from './markdown/render.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getDocSession, flushPendingEdits,
-  getSelectedNode, updateNode,
+  getSelectedNode, updateNode, registerPendingFlush,
 } from './state/store.js';
 
 export const isHosted = isVSCode;
@@ -35,6 +35,9 @@ let lastSerialized = null;
 // The last text this webview actually sent, or null if it hasn't sent
 // anything since the host's text last replaced it.
 let lastSent = null;
+// Which host load/externalChange this view is based on; sent back with every
+// edit so the host can rebase an edit made before a newer change arrived.
+let syncId = null;
 let testMode = false;
 
 const diagnostics = { cspViolations: [], errors: [] };
@@ -78,6 +81,7 @@ function loadFromHost(msg, { keepSelection }) {
   const doc = parseMarkdown(msg.text);
   lastSerialized = serializeMarkdown(doc);
   lastSent = null;
+  syncId = msg.syncId ?? null;
   loadDocument({ doc, fileName: msg.fileName || getState().fileName, dirty: Boolean(msg.isDirty) });
   hostedSession = getDocSession();
   selectBySlug(slug);
@@ -91,26 +95,36 @@ function onStoreChange(state) {
   if (text === lastSerialized) return;
   lastSerialized = text;
   lastSent = text;
-  post({ type: 'edit', text });
+  post({ type: 'edit', text, syncId });
 }
 
-/** Lands every debounced field edit now (the same path Ctrl/Cmd+S used to take in the standalone app). */
-async function flushAllEdits() {
+/**
+ * VS Code only (a no-op elsewhere): lets a debounced text field's pending
+ * edit be landed synchronously, through the store's existing
+ * registerPendingFlush mechanism, before a save or when the tab is hidden.
+ * Synchronous on purpose: a hidden webview is torn down without running
+ * any more timers, and blurring the field instead (as the standalone app's
+ * Ctrl+S does) would take focus away mid-typing on every autosave.
+ * `flush` must be a no-op when nothing is pending.
+ */
+export function registerHostedFieldFlush(field, flush) {
+  if (!isHosted) return;
+  const unregister = registerPendingFlush(() => {
+    flush();
+    if (!field.isConnected) unregister();
+  });
+}
+
+/** Lands every debounced field edit now; posting it is synchronous too (onStoreChange). */
+function flushAllEdits() {
   flushPendingEdits();
-  const active = document.activeElement;
-  if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
-    active.blur();
-    // Field blur handlers save on a setTimeout(0).
-    await new Promise((resolve) => { setTimeout(resolve, 30); });
-    active.focus();
-  }
 }
 
 async function answerHostRequest(msg) {
   let result = null;
   if (msg.op === 'flush') {
-    await flushAllEdits();
-    result = { text: lastSent };
+    flushAllEdits();
+    result = { text: lastSent, syncId };
   } else if (testMode) {
     result = await runTestOp(msg);
   }
@@ -139,6 +153,11 @@ async function runTestOp(msg) {
         explorerVisible: Boolean(document.getElementById('explorer-section')?.offsetParent),
         openFileVisible: Boolean(document.getElementById('open-file-btn')?.offsetParent),
         bodyClasses: document.body.className,
+        active: {
+          tag: document.activeElement?.tagName || null,
+          connected: Boolean(document.activeElement?.isConnected),
+          className: document.activeElement?.className || '',
+        },
         cspViolations: diagnostics.cspViolations.slice(),
         errors: diagnostics.errors.slice(),
       };
@@ -238,5 +257,10 @@ export function initHostedMode({ dirtyIndicator }) {
   if (dirtyIndicator) dirtyIndicator.title = 'Save (VS Code Save, Ctrl/⌘+S)';
   subscribe(onStoreChange);
   onHostMessage(onMessage);
+  // Land pending field edits whenever the webview may be about to go away
+  // (tab hidden or closed) or loses focus.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushAllEdits(); });
+  window.addEventListener('pagehide', flushAllEdits);
+  window.addEventListener('blur', flushAllEdits);
   post({ type: 'ready' });
 }

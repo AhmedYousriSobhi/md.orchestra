@@ -50,4 +50,32 @@ function applyMinimalEdit(oldText, edit) {
   return oldText.slice(0, edit.start) + edit.text + oldText.slice(edit.end);
 }
 
-module.exports = { computeMinimalEdit, applyMinimalEdit };
+/**
+ * Re-targets an edit the webview made against `base` onto `current`, the
+ * document's text after a change the webview hadn't seen yet (the split
+ * text editor, VS Code undo, another MD.Orchestra editor).
+ *
+ * The webview always sends the whole document, so applying its text
+ * directly would silently revert that newer change. Instead, both sides
+ * are reduced to their minimal edits against `base`: if the two don't
+ * overlap, the webview's edit is shifted past the other one and both
+ * survive. If they overlap, `{ conflict: true }` and the caller must not
+ * apply it.
+ *
+ * Returns `{ edit }` (an edit against `current`, or null for none) or
+ * `{ conflict: true }`.
+ */
+function rebaseEdit(base, mine, current) {
+  const ours = computeMinimalEdit(base, mine);
+  if (!ours) return { edit: null };
+  const theirs = computeMinimalEdit(base, current);
+  if (!theirs) return { edit: ours };
+  if (ours.end <= theirs.start) return { edit: ours };
+  if (ours.start >= theirs.end) {
+    const shift = theirs.text.length - (theirs.end - theirs.start);
+    return { edit: { start: ours.start + shift, end: ours.end + shift, text: ours.text } };
+  }
+  return { conflict: true };
+}
+
+module.exports = { computeMinimalEdit, applyMinimalEdit, rebaseEdit };

@@ -258,7 +258,7 @@ Everything marked **verified** below was run on 2026-11-18 against VS Code 1.147
 | # | Outcome | Evidence |
 |---|---|---|
 | S1 | **Verified: works, no bundler.** `<script type="module">` via `asWebviewUri`, under `script-src 'nonce-…' ${cspSource}`, loads the whole relative-import graph of `js/`. | The webview's `ready` message is posted from the last line of `js/main.js`, so it is only sent once every import has resolved. A probe then reports hljs, markdown-it, DOMPurify and mermaid all present, with zero script errors. |
-| S2 | **Partly verified.** (a) Hide, then show: with `retainContextWhenHidden: false` the webview reloads; `localStorage` and `setState` both survive. (b) Close, then reopen: `localStorage` survives; `getState` is empty (expected without a serializer). (c) Reload Window and (d) full restart: **unverified**. | Under extension tests, VS Code keeps all its storage in memory (`useInMemoryStorage: !!extensionTestsLocationURI` in its main process). That includes the memento in which the workbench keeps each webview's origin (`getOrigin(viewType, extensionId)` → `generateUuid()` → `saveMemento()`). So a second test launch gets a new `vscode-webview://` origin and an empty `localStorage` by construction. Read from the code, the origin is persisted per (viewType, extension), so preferences should survive in real use. That has to be checked by hand. The planned storage shim (`js/utils/storage.js`, backed by `globalState`) was prototyped and backed out, because the need for it is not shown. It is the owner's call whether to add it anyway. |
+| S2 | **Partly verified.** (a) Hide, then show: with `retainContextWhenHidden: false` the webview reloads; `localStorage` and `setState` both survive. With `true`, which the extension now uses (see the next section), it is not reloaded at all. (b) Close, then reopen: `localStorage` survives; `getState` is empty (expected without a serializer). (c) Reload Window and (d) full restart: **unverified**. | Under extension tests, VS Code keeps all its storage in memory (`useInMemoryStorage: !!extensionTestsLocationURI` in its main process). That includes the memento in which the workbench keeps each webview's origin (`getOrigin(viewType, extensionId)` → `generateUuid()` → `saveMemento()`). So a second test launch gets a new `vscode-webview://` origin and an empty `localStorage` by construction. Read from the code, the origin is persisted per (viewType, extension), so preferences should survive in real use. That has to be checked by hand. The planned storage shim (`js/utils/storage.js`, backed by `globalState`) was prototyped and backed out, because the need for it is not shown. It is the owner's call whether to add it anyway. |
 | S3 | **Partly verified.** In VS Code 1.147's webview frame (`pre/index.html`, `handleInnerKeydown`), the frame calls `preventDefault` on undo/redo, save, find and print inside the webview. It also forwards **every** keydown to the workbench, whether or not the page itself called `preventDefault`. So the app's handlers could never block VS Code's Save. Without hosted mode, the app's Ctrl+S, Shift+S, Shift+P and K handlers would fire **as well as** VS Code's commands. | Hosted mode returns before handling those combinations. Playwright verifies that the app neither handles them nor calls `preventDefault` on them. A real keypress in a real webview: **unverified**. A consequence: Ctrl/⌘+Z inside a field runs VS Code's document Undo, not the field's own undo. |
 | S4 | **Verified.** | See the list after this table. |
 | S5 | **Verified.** A mermaid SVG renders, highlight.js highlights code, and DOMPurify is active, with **zero** `securitypolicyviolation` events. The CSP is `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; script-src 'nonce-…' ${cspSource}; connect-src 'none'`. | Not measured: whether `style-src 'unsafe-inline'` is strictly needed. It was kept for mermaid's inline `<style>`. |
@@ -278,8 +278,16 @@ The S4 checks:
 
 Other findings:
 - **Byte-identical round trip: verified.** Opening and saving an untouched file posts no edit and leaves the bytes unchanged. This holds for an LF fixture and for a CRLF fixture with trailing spaces and no final newline. The webview compares against `serialize(parse(text))` taken at load time, so a document whose round trip is lossy is only rewritten when the user actually edits it.
-- **Echo suppression** records the expected `document.version` and text *before* calling `applyEdit`, because the change event can fire before `applyEdit` resolves.
-- **Save right after typing.** The app's fields debounce their edits by up to 700 ms. An `onWillSaveTextDocument` participant asks the webview to flush and returns the remaining edit as `TextEdit`s. Verified: text typed and saved immediately with `workbench.action.files.save` is on disk. `TextDocument.save()` is a no-op on a clean document, so the test has to use the command, as Ctrl+S does.
+- **Echo suppression** records the expected `document.version` and text *before* calling `applyEdit`. That way the order in which the change event and `applyEdit`'s promise arrive doesn't matter. The order itself was not measured.
+- **Save right after typing.** The app's fields debounce their edits by up to 900 ms. An `onWillSaveTextDocument` participant asks the webview to flush and returns the remaining edit as `TextEdit`s. Verified: text typed and saved immediately with `workbench.action.files.save` is on disk. `TextDocument.save()` is a no-op on a clean document, so the test has to use the command, as Ctrl+S does.
+- **Three data-loss cases were found by tests and then fixed.** The basic S4 checks above did not cover them.
+  1. **A tab switch within the debounce window lost the edit.** This happened with `retainContextWhenHidden: false`: a hidden webview is torn down, and no event (`visibilitychange`, `pagehide`, `blur`, `beforeunload`) reached the host. With `true`, the webview's `blur` fires and the edit lands. The extension therefore uses **`retainContextWhenHidden: true`**, which costs memory per open MD.Orchestra tab. **Owner decision:** keep `true`, or go back to the plan's `false` and accept this loss.
+  2. **Autosave stole focus.** The first flush blurred the active field, as the standalone app's Ctrl+S does. With `files.autoSave: afterDelay`, every autosave then dropped focus to `<body>` mid-typing. Section and note fields now register a VS Code-only synchronous flusher through the store's existing `registerPendingFlush` (`registerHostedFieldFlush` in `js/hostedMode.js`). The flush no longer blurs anything, and this is verified. Electron, Android and the browser don't register these flushers.
+  3. **A stale webview edit reverted an external change.** The webview always sends the whole document. An edit it made before seeing a newer change (split editor, VS Code undo, another MD.Orchestra tab) was diffed against the new text, which silently undid that change. Now:
+     - each load/externalChange carries a `syncId`, which the webview echoes with every edit;
+     - the host rebases a stale edit onto the current text (`rebaseEdit` in `minimalEdit.js`), so both survive, as verified;
+     - if the two edits overlap, the webview's edit is **refused**: VS Code shows a warning and the view reloads, as verified. That edit is lost. **Owner decision:** whether the other side should win instead.
+- **Not covered by the fixes above:** closing an MD.Orchestra tab within a second of typing. The close tears down the webview, and whether its `blur` arrives first is not verified. The case is on the manual checklist.
 - **Hosted mode needed more gates than the plan listed.** Without them:
   - Ctrl/⌘+Shift+P would open the app's palette as well as VS Code's;
   - a dropped file would have replaced the bound document, and its content would then have been written over it;
@@ -287,7 +295,16 @@ Other findings:
   - a relative link would have navigated the webview away.
 - **Packaging:** `npx @vscode/vsce package` produces a 1.24 MB `.vsix` with 97 files. The vendored libraries are 3.4 MB of that before compression. It installs with `code --install-extension` and lists as `md-orchestra-placeholder.md-orchestra@0.0.1`. The publisher is a placeholder (Q5).
 - **Not done:** cross-file links don't scroll to a `#heading` in the opened file, and the GitHub button is hidden, which allows `connect-src 'none'`.
-- **Unverified:** Remote-SSH and WSL, Live Share, the real keyboard path, hot exit, preference persistence across restarts, large-document typing performance, a real Claude key.
+- **Unverified:**
+  - Remote-SSH and WSL. The manifest no longer claims `virtualWorkspaces`, since non-`file` schemes were never exercised.
+  - Live Share.
+  - The real keyboard path.
+  - Hot exit.
+  - Preference persistence across restarts.
+  - Closing a tab right after typing.
+  - The memory cost of `retainContextWhenHidden: true`.
+  - Typing performance on large documents.
+  - A real Claude key.
 
 ## Open questions for the owner
 

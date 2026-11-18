@@ -17,7 +17,7 @@
 //                    {type:'hostRequest', id, op, ...}    'flush' (before save), or test-only ops
 const path = require('path');
 const vscode = require('vscode');
-const { computeMinimalEdit } = require('./minimalEdit');
+const { computeMinimalEdit, applyMinimalEdit, rebaseEdit } = require('./minimalEdit');
 const { buildWebviewHtml } = require('./webviewHtml');
 const aiProxy = require('./aiProxy');
 
@@ -47,6 +47,14 @@ class MdOrchestraEditorProvider {
       // can fire before applyEdit's promise resolves.
       expectedVersion: null,
       expectedText: null,
+      // Every load/externalChange carries a syncId, and the webview echoes
+      // the one it last received with each edit. bases maps syncId -> the
+      // text the webview's view held under it (what it was sent, then each
+      // edit it made). An edit whose base is no longer the document's text
+      // was made before the webview saw a newer change, and is rebased (see
+      // planEdit), never applied as-is.
+      syncSeq: 0,
+      bases: new Map(),
       editChain: Promise.resolve(),
       hostSeq: 0,
       hostPending: new Map(),
@@ -59,17 +67,26 @@ class MdOrchestraEditorProvider {
     this.sessions.add(session);
 
     const post = (msg) => {
-      session.sent.push(msg);
+      if (this.isTestMode) session.sent.push(msg);
       return panel.webview.postMessage(msg);
     };
     session.post = post;
-    const snapshot = () => ({
-      text: document.getText(),
+    // A load/externalChange payload: the current text, under a new syncId.
+    const snapshot = () => {
+      session.syncSeq += 1;
+      const text = document.getText();
+      session.bases.set(session.syncSeq, text);
+      if (session.bases.size > 50) session.bases.delete(session.bases.keys().next().value);
+      return { syncId: session.syncSeq, ...docInfo(text) };
+    };
+    const docInfo = (text) => ({
+      text,
       fileName: path.posix.basename(document.uri.path),
       isDirty: document.isDirty,
       documentBaseUri: panel.webview.asWebviewUri(docDir).toString(),
       testMode: this.isTestMode,
     });
+    session.snapshot = snapshot;
 
     const disposables = [];
 
@@ -119,15 +136,15 @@ class MdOrchestraEditorProvider {
     if (this.isTestMode) session.received.push(msg);
     switch (msg.type) {
       case 'ready':
-        // Sent on every webview (re)load. With retainContextWhenHidden off,
-        // showing a hidden tab reloads the webview from scratch, so always
-        // resend the document's *current* text.
+        // Sent on every webview (re)load, which can happen more than once
+        // per editor (e.g. if retainContextWhenHidden is ever turned off), so
+        // always resend the document's *current* text.
         session.ready = true;
         session.post({ type: 'load', ...snapshot() });
         session.readyWaiters.splice(0).forEach((fn) => fn());
         break;
       case 'edit':
-        if (typeof msg.text === 'string') this.queueEdit(session, msg.text);
+        if (typeof msg.text === 'string') this.queueEdit(session, msg.text, msg.syncId);
         break;
       case 'save':
         session.document.save();
@@ -156,30 +173,62 @@ class MdOrchestraEditorProvider {
   }
 
   /** Edits are applied strictly in order, one at a time. */
-  queueEdit(session, text) {
+  queueEdit(session, text, syncId) {
     session.editChain = session.editChain
-      .then(() => this.applyText(session, text))
+      .then(() => this.applyText(session, text, syncId))
       .catch((err) => console.error('MD.Orchestra: applying an edit failed', err));
     return session.editChain;
   }
 
-  async applyText(session, text) {
+  /**
+   * Works out how to apply the webview's full text, made under `syncId`, to
+   * the document as it is now: `{ edit, resultText, rebased }`, or
+   * `{ conflict: true }`. Records `text` as that webview's new base.
+   */
+  planEdit(session, text, syncId) {
+    const current = session.document.getText();
+    const base = session.bases.has(syncId) ? session.bases.get(syncId) : null;
+    if (session.bases.has(syncId)) session.bases.set(syncId, text);
+    if (base === null || base === current) {
+      return { edit: computeMinimalEdit(current, text), resultText: text, rebased: false };
+    }
+    const r = rebaseEdit(base, text, current);
+    if (r.conflict) return { conflict: true };
+    return { edit: r.edit, resultText: applyMinimalEdit(current, r.edit), rebased: true };
+  }
+
+  reportConflict(session) {
+    vscode.window.showWarningMessage('MD.Orchestra: your last edit in MD.Orchestra overlapped a change made elsewhere in this file at the same moment, so it was not applied. The view now shows the file as it is.');
+    session.post({ type: 'externalChange', ...session.snapshot() });
+  }
+
+  async applyText(session, text, syncId) {
     const { document } = session;
-    const edit = computeMinimalEdit(document.getText(), text);
-    if (!edit) return true;
+    const plan = this.planEdit(session, text, syncId);
+    if (plan.conflict) { this.reportConflict(session); return false; }
+    if (!plan.edit) {
+      if (plan.rebased) session.post({ type: 'externalChange', ...session.snapshot() });
+      return true;
+    }
+    const { edit } = plan;
     const workspaceEdit = new vscode.WorkspaceEdit();
     workspaceEdit.replace(document.uri, new vscode.Range(document.positionAt(edit.start), document.positionAt(edit.end)), edit.text);
-    session.expectedVersion = document.version + 1;
-    session.expectedText = text;
+    if (!plan.rebased) {
+      session.expectedVersion = document.version + 1;
+      session.expectedText = plan.resultText;
+    }
     const ok = await vscode.workspace.applyEdit(workspaceEdit);
     if (!ok) {
       session.expectedVersion = null;
       session.expectedText = null;
       // The document didn't take the edit (e.g. read-only); put the webview
       // back in sync with what the document really holds.
-      session.post({ type: 'externalChange', text: document.getText(), isDirty: document.isDirty });
+      session.post({ type: 'externalChange', ...session.snapshot() });
+      return false;
     }
-    return ok;
+    // A rebased edit isn't suppressed as an echo: the resulting change event
+    // sends the merged text back, so the view shows both changes.
+    return true;
   }
 
   /** Asks the webview for any not-yet-sent edit; resolves to TextEdits for onWillSave. */
@@ -188,11 +237,15 @@ class MdOrchestraEditorProvider {
     await session.editChain;
     const text = result && typeof result.text === 'string' ? result.text : null;
     if (text === null) return [];
+    const plan = this.planEdit(session, text, result.syncId);
+    if (plan.conflict) { this.reportConflict(session); return []; }
+    if (!plan.edit) return [];
     const { document } = session;
-    const edit = computeMinimalEdit(document.getText(), text);
-    if (!edit) return [];
-    session.expectedVersion = document.version + 1;
-    session.expectedText = text;
+    if (!plan.rebased) {
+      session.expectedVersion = document.version + 1;
+      session.expectedText = plan.resultText;
+    }
+    const { edit } = plan;
     return [vscode.TextEdit.replace(new vscode.Range(document.positionAt(edit.start), document.positionAt(edit.end)), edit.text)];
   }
 

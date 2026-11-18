@@ -7,7 +7,11 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
-      webviewOptions: { retainContextWhenHidden: false },
+      // true, not the cheaper false: a hidden (not retained) webview is torn
+      // down without any event reaching the host, so a field edit still in
+      // its debounce window when the tab is switched would be lost
+      // (measured: see ADR 0001). Retained, it lands normally.
+      webviewOptions: { retainContextWhenHidden: true },
       supportsMultipleEditorsPerDocument: true,
     }),
     vscode.commands.registerCommand('mdOrchestra.setApiKey', async () => {

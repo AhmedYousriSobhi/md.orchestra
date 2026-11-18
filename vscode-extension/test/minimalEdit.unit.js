@@ -1,6 +1,6 @@
 // Plain-Node unit tests for minimalEdit.js (no VS Code needed): `node test/minimalEdit.unit.js`.
 const assert = require('assert');
-const { computeMinimalEdit, applyMinimalEdit } = require('../minimalEdit');
+const { computeMinimalEdit, applyMinimalEdit, rebaseEdit } = require('../minimalEdit');
 
 const cases = [
   ['abc', 'abc'],
@@ -32,4 +32,15 @@ for (const [a, b] of cases) {
 const big = computeMinimalEdit('x'.repeat(1000), `${'x'.repeat(500)}Y${'x'.repeat(500)}`);
 assert.strictEqual(big.end - big.start, 0);
 assert.strictEqual(big.text, 'Y');
-console.log(`minimalEdit: ${n + 1} cases passed`);
+// rebaseEdit: both sides survive when they don't overlap; overlap is a conflict.
+const base = '# A\n\none\n\n# B\n\ntwo\n';
+const mine = base.replace('two', 'two (webview)');
+const theirs = `EXTERNAL\n${base}`;
+const r1 = rebaseEdit(base, mine, theirs);
+assert.strictEqual(applyMinimalEdit(theirs, r1.edit), `EXTERNAL\n${mine}`);
+const theirsAfter = base.replace('two', 'two').concat('tail\n');
+const r2 = rebaseEdit(base, base.replace('one', 'ONE'), theirsAfter);
+assert.strictEqual(applyMinimalEdit(theirsAfter, r2.edit), base.replace('one', 'ONE').concat('tail\n'));
+assert.deepStrictEqual(rebaseEdit(base, base.replace('two', 'mine'), base.replace('two', 'theirs')), { conflict: true });
+assert.deepStrictEqual(rebaseEdit(base, base, theirs), { edit: null });
+console.log(`minimalEdit: ${n + 1} cases passed; rebaseEdit: 4 cases passed`);

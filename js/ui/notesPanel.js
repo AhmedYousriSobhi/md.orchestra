@@ -3,6 +3,7 @@ import { debounce } from '../utils/debounce.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
 import { confirmDialog } from './confirmDialog.js';
+import { registerHostedFieldFlush } from '../hostedMode.js';
 
 const EDITING_HINT = 'Enter continues a list · Tab/Shift+Tab indents · Ctrl/⌘+B/I/` formats · paste or drag an image in';
 
@@ -72,15 +73,26 @@ function createNoteCard(note, { onUpdate, onDelete }) {
   wireImageAttach(textarea);
 
   const status = h('span', { class: 'notes-status' }, '');
+  // The not-yet-saved value, for registerHostedFieldFlush (VS Code only).
+  let pendingValue = null;
   const debouncedSave = debounce((value) => {
+    pendingValue = null;
     onUpdate(note.id, value);
     status.textContent = 'Saved';
     setTimeout(() => { status.textContent = ''; }, 1200);
   }, 900);
 
   textarea.addEventListener('input', () => {
+    pendingValue = textarea.value;
     status.textContent = 'Saving…';
     debouncedSave(textarea.value);
+  });
+  registerHostedFieldFlush(textarea, () => {
+    if (pendingValue === null) return;
+    debouncedSave.cancel();
+    const value = pendingValue;
+    pendingValue = null;
+    onUpdate(note.id, value);
   });
   // Deferred to a fresh macrotask rather than calling onUpdate() straight
   // away: blurring this textarea is very often *caused* by the user
@@ -92,6 +104,7 @@ function createNoteCard(note, { onUpdate, onDelete }) {
   // when the user pressed down, before anything gets rebuilt.
   textarea.addEventListener('blur', () => {
     debouncedSave.cancel();
+    pendingValue = null;
     setTimeout(() => onUpdate(note.id, textarea.value), 0);
   });
 
