@@ -23,3 +23,10 @@ android/capacitor-cordova-android-plugins/build/
 playwright-report/
 test-results/
 android/ext-build/
+# VS Code extension build products: media/ is a copy of the web app made by
+# `npm run vscode:sync`; .vscode-test/ is the VS Code build downloaded by
+# the extension-host tests; *.vsix is the packaged extension.
+vscode-extension/media/
+vscode-extension/.vscode-test/
+vscode-extension/node_modules/
+*.vsix

@@ -68,6 +68,9 @@ import {
   saveRecoverySnapshot, listRecoverySnapshots, clearRecoverySnapshot as clearRecoverySnapshotRaw, snapshotIdentity,
 } from './core/recovery.js';
 import { getTheme, applyTheme } from './utils/theme.js';
+import {
+  isHosted, initHostedMode, hostedSave, hostedNavigateFile,
+} from './hostedMode.js';
 
 // Belt-and-suspenders: index.html already stamps this inline (synchronously,
 // before first paint, to avoid a light-then-dark flash) — this just keeps
@@ -536,7 +539,8 @@ function snapshotNow() {
   updateChangesBadge();
 }
 const snapshotIfDirty = debounce(snapshotNow, 1500);
-subscribe(snapshotIfDirty);
+// In VS Code (hosted mode) hot exit and backups replace recovery snapshots.
+if (!isHosted) subscribe(snapshotIfDirty);
 
 /**
  * How many sections the ACTIVE document's own dirty edit represents, but
@@ -620,9 +624,10 @@ function hasAnyUnsavedChanges() {
 // actually let the window close. Checked globally (hasAnyUnsavedChanges),
 // not just against the active document — quitting closes every open file
 // at once, not just the one currently on screen.
-window.__mdOrchestraIsDirty = () => hasAnyUnsavedChanges();
+// Hosted mode: VS Code's own unsaved-changes prompt guards closing.
+if (!isHosted) window.__mdOrchestraIsDirty = () => hasAnyUnsavedChanges();
 
-if (!isElectron) {
+if (!isElectron && !isHosted) {
   window.addEventListener('beforeunload', (e) => {
     if (hasAnyUnsavedChanges()) {
       e.preventDefault();
@@ -733,6 +738,7 @@ async function openWorkspaceFile(rootName, relPath, anchor = null) {
  * folder — is left to behave normally).
  */
 function handleNavigateFile(href) {
+  if (isHosted) return hostedNavigateFile(href);
   const { workspaceRelPath, workspaceRootName } = getState();
   if (!workspaceRelPath) return false;
   const resolved = resolveWorkspaceLink(workspaceRootName, workspaceRelPath, href);
@@ -1276,7 +1282,7 @@ function checkForRecovery() {
 // addEventListener() calls that make the rest of the app work, from
 // running at all.
 try {
-  checkForRecovery();
+  if (!isHosted) checkForRecovery();
 } catch (err) {
   console.error('Crash-recovery check failed on startup.', err);
 }
@@ -1377,6 +1383,7 @@ async function saveWithNoHandle(fileName, text) {
  * "saved" — the in-memory doc is no longer ahead of what the user has.
  */
 async function handleSave() {
+  if (isHosted) { hostedSave(); return; }
   const {
     doc, fileName, fileHandle, workspaceRelPath, workspaceRootName,
   } = getState();
@@ -1705,6 +1712,8 @@ function handleOpenChanges() {
 
 /** Opened via the toolbar's 🔍 button or Ctrl/⌘+K (see the keydown listener below) — searches every currently open folder (see core/searchIndex.js), not standalone files, which have no folder to search alongside. */
 function handleOpenSearch() {
+  // Hosted mode has no open folders to search (single-document mode).
+  if (isHosted) return;
   openSearchPanel({ workspaces: getWorkspaces(), onOpenFile: openWorkspaceFile });
 }
 
@@ -1806,8 +1815,15 @@ function handleOpenCommandPalette() {
   ]);
 }
 
+// Alt shortcuts whose buttons don't exist in hosted (VS Code) mode.
+const HOSTED_DISABLED_ALT_KEYS = new Set(['o', 'd', 'f', 'c']);
+
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
+  // Hosted mode: Ctrl/Cmd+S (Save), +Shift+S (Save As), +Shift+P (Command
+  // Palette) and +K (chord prefix) belong to VS Code, so the app doesn't
+  // handle them at all.
+  if (isHosted && (e.ctrlKey || e.metaKey) && (key === 's' || key === 'k' || (key === 'p' && e.shiftKey))) return;
   // Works everywhere, including while typing in some other field — same
   // "always available, hijacks the browser's own binding" treatment as
   // every command-palette-style shortcut (VSCode, Slack, etc.) gives Ctrl/⌘+K.
@@ -1862,7 +1878,7 @@ document.addEventListener('keydown', (e) => {
     ',': () => el.settingsBtn.click(),
   };
   const action = altActions[key];
-  if (!action) return;
+  if (!action || (isHosted && HOSTED_DISABLED_ALT_KEYS.has(key))) return;
   e.preventDefault();
   action();
 });
@@ -2042,6 +2058,9 @@ new ResizeObserver(() => resizeEditableMarkdownTextareas()).observe(el.sectionVi
 
 ['dragover', 'drop'].forEach((evt) => window.addEventListener(evt, (e) => e.preventDefault()));
 window.addEventListener('drop', async (e) => {
+  // Hosted mode is bound to one VS Code document; a dropped file must never
+  // replace it (its content would be written over that document).
+  if (isHosted) return;
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
   if (!/\.(md|markdown|txt)$/i.test(file.name)) {
@@ -2087,7 +2106,7 @@ async function openPendingSharedFileIfAny() {
   return true;
 }
 
-(async () => {
+if (!isHosted) (async () => {
   const openedSharedFile = await openPendingSharedFileIfAny();
   if (!openedSharedFile) reopenLastElectronFolder();
 })();
@@ -2158,3 +2177,7 @@ if (isCapacitor) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncStatusBarToTheme);
   document.addEventListener('md-orchestra:theme-changed', syncStatusBarToTheme);
 }
+
+// Last, so every listener above is registered before the host's document
+// arrives.
+if (isHosted) initHostedMode({ dirtyIndicator: el.dirtyIndicator });

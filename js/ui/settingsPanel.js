@@ -7,6 +7,7 @@ import { openShortcutsPanel } from './shortcutsPanel.js';
 import { openGesturesPanel } from './gesturesPanel.js';
 import { isElectron } from '../core/electronFsAdapter.js';
 import { isCapacitor } from '../core/capacitorFsAdapter.js';
+import { isVSCode, request } from '../core/vscodeBridge.js';
 
 let panelEl = null;
 
@@ -87,6 +88,51 @@ function buildUpdateSection() {
   return { section, unsubscribe };
 }
 
+/**
+ * VS Code (hosted mode): the key is kept by the extension host in VS Code
+ * SecretStorage. This field only ever sends a new key to the host; the
+ * stored key is never sent back, so it is never shown here.
+ */
+function buildHostedKeyControls(modelSelect) {
+  const keyInput = h('input', { type: 'password', class: 'settings-input', id: 'ai-key-input', placeholder: 'sk-ant-…', autocomplete: 'off' });
+  const statusLine = h('p', { class: 'settings-status' }, 'Checking for a saved key…');
+  const refresh = () => request('hasApiKey')
+    .then((has) => { statusLine.textContent = has ? 'A key is saved in VS Code SecretStorage.' : 'No key saved yet.'; })
+    .catch(() => { statusLine.textContent = ''; });
+  refresh();
+  return [
+    h('p', { class: 'settings-help' }, 'Provider support today is limited to Claude (Anthropic). In VS Code your key is stored in VS Code SecretStorage (OS keychain-backed, not synced), and requests are sent from the extension to api.anthropic.com — never anywhere else. You can also use the "MD.Orchestra: Set Claude API Key" command.'),
+    h('label', { class: 'settings-label', for: 'ai-model-select' }, 'Model'),
+    modelSelect,
+    h('label', { class: 'settings-label', for: 'ai-key-input' }, 'Anthropic API key'),
+    h('div', { class: 'settings-key-row' }, [keyInput]),
+    statusLine,
+    h('div', { class: 'settings-actions' }, [
+      h('button', {
+        class: 'btn btn-primary',
+        type: 'button',
+        onClick: async () => {
+          saveAiSettings({ model: modelSelect.value, provider: 'claude' });
+          const value = keyInput.value.trim();
+          keyInput.value = '';
+          if (value) await request('setApiKey', { value });
+          await refresh();
+          showToast('AI settings saved');
+        },
+      }, 'Save'),
+      h('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        onClick: async () => {
+          await request('clearApiKey');
+          await refresh();
+          showToast('AI settings cleared');
+        },
+      }, 'Clear key'),
+    ]),
+  ];
+}
+
 function build() {
   const overlay = h('div', { class: 'overlay side-panel-overlay', hidden: true });
   const updateSection = buildUpdateSection();
@@ -137,7 +183,7 @@ function build() {
     ]),
     h('div', { class: 'side-panel-body' }, [
       h('label', { class: 'settings-label' }, 'Appearance'),
-      buildThemeToggle(),
+      isVSCode ? h('p', { class: 'settings-help' }, 'The theme follows your VS Code color theme.') : buildThemeToggle(),
       h('hr', { class: 'settings-divider' }),
       updateSection?.section,
       h('label', { class: 'settings-label' }, 'Help'),
@@ -156,6 +202,8 @@ function build() {
           onClick: () => { handleClose(); openShortcutsPanel(); },
         }, '⌨ Keyboard shortcuts'),
       h('hr', { class: 'settings-divider' }),
+      // The standalone apps' key field; VS Code gets its own (see above).
+      ...(isVSCode ? buildHostedKeyControls(modelSelect) : [
       h('p', { class: 'settings-help' }, 'Provider support today is limited to Claude (Anthropic). Your key is stored only in this browser’s localStorage and is sent directly to api.anthropic.com — never anywhere else.'),
       h('label', { class: 'settings-label', for: 'ai-model-select' }, 'Model'),
       modelSelect,
@@ -182,6 +230,7 @@ function build() {
             showToast('AI settings cleared');
           },
         }, 'Clear key'),
+      ]),
       ]),
     ]),
   ]);

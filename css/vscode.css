@@ -1,0 +1,45 @@
+/* Loaded only inside the VS Code webview (injected by
+   vscode-extension/webviewHtml.js, never by index.html), so none of this
+   applies to Electron, Android or the browser.
+
+   1. Theme: the app's tokens are mapped onto VS Code's own --vscode-*
+      variables, so the editor follows whatever color theme VS Code uses.
+      VS Code puts vscode-light / vscode-dark / vscode-high-contrast on
+      <body>; tokens redefined there override the :root ones in base.css
+      for everything on the page, overlays included. */
+body.vscode-light,
+body.vscode-dark,
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --bg-soft: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --surface: var(--vscode-editor-background);
+  --border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+  --text: var(--vscode-editor-foreground, var(--vscode-foreground));
+  --text-soft: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  --text-faint: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+  --accent-default: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+  --danger: var(--vscode-errorForeground);
+  font-family: var(--vscode-font-family), "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+body.vscode-light,
+body.vscode-high-contrast-light { color-scheme: light; }
+body.vscode-dark,
+body.vscode-high-contrast { color-scheme: dark; }
+
+/* 2. Hosted single-document mode: VS Code's own Explorer, Source Control
+      and search replace the app's. Only the Outline stays in the sidebar. */
+body.hosted-vscode #open-file-btn,
+body.hosted-vscode #open-folder-btn,
+body.hosted-vscode #open-github-btn,
+body.hosted-vscode #add-file-btn,
+body.hosted-vscode #changes-btn,
+body.hosted-vscode #search-btn,
+body.hosted-vscode #explorer-section,
+body.hosted-vscode #sidebar-resize-handle,
+body.hosted-vscode #empty-state #drop-hint {
+  display: none !important;
+}
+/* Every sidebar-toolbar button is one of the above. */
+body.hosted-vscode .sidebar-toolbar { display: none !important; }
+body.hosted-vscode #outline-section { flex: 1 1 auto; }
