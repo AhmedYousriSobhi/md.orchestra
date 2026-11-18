@@ -21,4 +21,8 @@ You made it past the README. Here's everything it didn't bother you with.
 - **[docs/ANDROID.md](docs/ANDROID.md)** — the beginning of an Android
   build, what's actually verified vs. still missing, and how to build it
   yourself.
+- **[docs/adr/](docs/adr/README.md)** — architecture decision records. ADR 0001 is the
+  VS Code extension: the options weighed, what was measured (typing cost, edit
+  loss), and what's still unverified. Its how-to-build companion is
+  [docs/VSCODE_EXTENSION_PLAN.md](docs/VSCODE_EXTENSION_PLAN.md).
 - **[CHANGELOG.md](CHANGELOG.md)** — the whole build, stage by stage.

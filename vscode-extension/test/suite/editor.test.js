@@ -454,6 +454,34 @@ test('A relative .md link opens the target in MD.Orchestra', async () => {
   await closeAll();
 });
 
+test('A link with a #heading opens the target and selects that heading (new editor, then already-open editor)', async () => {
+  const uri = fresh();
+  const session = await openEditor(uri);
+  await hostRequest(session, 'select', { slug: 'rendering' });
+  await sleep(500);
+  hostRequest(session, 'clickLink', { href: 'other.md#target-heading' });
+  const otherUri = vscode.Uri.file(path.join(WS, 'other.md'));
+  const other = await waitFor(() => testApi.provider.sessionsFor(otherUri)[0], { what: 'other.md opened in MD.Orchestra' });
+  assert.ok(await testApi.provider.waitReady(other));
+  const first = await waitFor(async () => {
+    const p = await hostRequest(other, 'probe');
+    return p && p.selectedSlug === 'target-heading' ? p : null;
+  }, { what: 'anchor selected on a newly opened editor', timeout: 8000 });
+  assert.strictEqual(first.selectedSlug, 'target-heading');
+
+  // Already open: no new 'ready', so the host tells the live webview directly.
+  await hostRequest(other, 'select', { slug: 'other-note' });
+  await sleep(300);
+  await testApi.provider.openLink(other.document, 'other.md#target-heading');
+  const second = await waitFor(async () => {
+    const p = await hostRequest(other, 'probe');
+    return p && p.selectedSlug === 'target-heading' ? p : null;
+  }, { what: 'anchor selected on an already-open editor', timeout: 8000 });
+  assert.strictEqual(second.selectedSlug, 'target-heading');
+  record('link-anchor', { newEditor: first.selectedSlug, alreadyOpen: second.selectedSlug });
+  await closeAll();
+});
+
 test('S7: Claude call goes through the extension host with the SecretStorage key; key never reaches the webview', async () => {
   const KEY = 'sk-ant-test-0123456789';
   const seen = [];

@@ -356,6 +356,11 @@ function onMessage(msg) {
       testMode = Boolean(msg.testMode);
       loadFromHost(msg, { keepSelection: false });
       restoreViewState();
+      // A link like other.md#heading: land on that heading, over the restored one.
+      if (typeof msg.anchor === 'string' && msg.anchor) selectBySlug(msg.anchor);
+      break;
+    case 'goto':
+      if (typeof msg.anchor === 'string') selectBySlug(msg.anchor);
       break;
     case 'externalChange':
       loadFromHost(msg, { keepSelection: true });

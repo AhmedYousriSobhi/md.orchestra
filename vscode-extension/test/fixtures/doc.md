@@ -18,7 +18,7 @@ graph TD
   A[Start] --> B[End]
 ```
 
-See [the other note](other.md) for more.
+See [the other note](other.md) for more, or jump to [its target heading](other.md#target-heading).
 
 ## Second section
 

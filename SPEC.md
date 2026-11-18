@@ -20,6 +20,7 @@ format, no account, no server holding the data.
 | Electron desktop (Linux) | Primary, supported | Real OS filesystem, unrestricted within picked folders/files | `npm start` / packaged AppImage via `./build-desktop.sh` |
 | Android | Supported | Real device filesystem via Android's native folder/file picker | Built via `./build-android.sh`; see [docs/ANDROID.md](docs/ANDROID.md) for what's verified vs. still manual |
 | Browser dev server (`npm run web`) | Development convenience only | File System Access API — no persisted folder across a reload | Not an equivalent deployment; do not treat bugs unique to this mode as blocking unless they also affect Electron/Android |
+| VS Code extension (`vscode-extension/`) | Implemented, not yet published | VS Code's own document model (`TextDocument`); VS Code owns save, dirty state, undo/redo and backup | Single-file only: *Reopen Editor With → MD.Orchestra* on any `.md`. No Explorer, workspaces, Changes panel, recovery snapshots or folder search in this mode. See [docs/adr/0001-vscode-extension.md](docs/adr/0001-vscode-extension.md) |
 | Static-web/Docker (pre-Electron) | Archived | — | Lives on the `legacy/browser-only-v1` branch, not maintained |
 
 ## Core functional requirements
