@@ -1,5 +1,6 @@
 import { nextId } from '../utils/id.js';
 import { extractFrontmatter } from './frontmatter.js';
+import { serializeNormalized } from './serializer.js';
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_RE = /^(```+|~~~+)(.*)$/;
@@ -66,6 +67,20 @@ export function parseMarkdown(mdText) {
 
   finalizeNode(root);
   mergeLeadingEmptyH1s(root);
+  // What serializeMarkdown() needs to return an untouched document verbatim
+  // (see there). Non-enumerable: it's bookkeeping, not part of the tree.
+  const text = String(mdText ?? '');
+  Object.defineProperty(root, 'source', {
+    value: {
+      text,
+      normalized: serializeNormalized(root),
+      eol: text.includes('\r\n') ? '\r\n' : '\n',
+      endsWithNewline: text === '' || text.endsWith('\n'),
+    },
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
   return root;
 }
 

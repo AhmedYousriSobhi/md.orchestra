@@ -90,8 +90,13 @@ format, no account, no server holding the data.
 ## Data guarantees
 
 - A document round-trips: opening and re-saving a file you didn't touch reproduces
-  its structure and content byte-faithfully (verbatim `bodyMarkdown` per section,
-  see `js/markdown/parser.js` / `serializer.js`).
+  it byte-for-byte (`parseMarkdown` remembers the original text and
+  `serializeMarkdown` returns it verbatim while the tree is unchanged — also after
+  undoing back to the original). Once something is edited, the file is
+  re-serialized with normalized whitespace between blocks (headings regenerated,
+  blank lines collapsed), keeping its line endings (LF/CRLF) and final-newline
+  state; minimal-diff preservation of untouched sections is a known gap (see
+  Known gaps).
 - Notes and AI insertions are stored inside the Markdown itself (between marker
   comments), so they survive a reload/reopen without a side-channel database and
   without duplicating on repeated loads.
@@ -118,3 +123,5 @@ and [docs/UI_UX_REVIEW.md](docs/UI_UX_REVIEW.md) for the full audits. Notably:
 on Electron, a file changed on disk since it was opened is detected only at save time (the save is refused, not merged) — there is no live file watching and no conflict-resolution UI;
 the document map lays a very large document/folder out in one scrollable region
 rather than paginating or virtualizing it.
+An edit to one section re-normalizes whitespace across the whole file, so it can
+produce a noisy diff (tracked as a follow-up to #53).
