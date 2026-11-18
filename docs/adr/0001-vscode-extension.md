@@ -170,7 +170,7 @@ The extension owns a document model, so it could keep MD.Orchestra's own save se
 
 ## Decision (recommendation, pending the owner)
 
-**Recommended: run a timeboxed spike (2–3 days) of Option A. Decide between A→C, B, or D based on the spike's exit criteria and the owner's answer to Open Question 1. Do not commit to a full-parity extension up front.**
+**Recommended: run a spike of Option A (no time estimate; it ends when its exit criteria are met or fail). Decide between A→C, B, or D based on the spike's exit criteria and the owner's answer to Open Question 1. Do not commit to a full-parity extension up front.**
 
 Rationale:
 

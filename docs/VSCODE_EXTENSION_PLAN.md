@@ -4,11 +4,11 @@ The how-to-start companion to [ADR 0001](adr/0001-vscode-extension.md) (status: 
 
 **Phases:** Spike (gate) → MVP (Option A, single-file Custom Text Editor) → Parity (Option C navigation, or Option B if the owner chooses it) → Publish.
 
-The estimates are for one developer who already knows this codebase. They are ranges, not commitments. Everything after the spike depends on what the spike finds.
+This plan deliberately gives no time estimates: the owner does not trust them, and none were measured. Phases are ordered by dependency and gated by exit criteria, not by dates. Everything after the spike depends on what the spike finds.
 
 ---
 
-## Phase 0: Spike (timebox: 2–3 days)
+## Phase 0: Spike
 
 **Goal:** prove or disprove that the existing UI can run inside a VS Code webview, bound to a `.md` `TextDocument`, without forking `js/`. The answers decide between A, B and D.
 
@@ -78,7 +78,6 @@ The estimates are for one developer who already knows this codebase. They are ra
 - S2 fails → a storage shim becomes a hard requirement for the MVP (it is already planned below).
 - Update ADR 0001 with the results. Its status stays Proposed until the owner decides.
 
-**Effort:** 2–3 days.
 
 ---
 
@@ -193,7 +192,6 @@ The estimates are for one developer who already knows this codebase. They are ra
   - Note: this needs a display, or `xvfb-run` on Linux CI.
 - **Manual checklist:** add a "VS Code" section to `TESTING.md` for S3, S4 and S8-style behaviour that can't be automated reliably (keybindings, hot exit, remote windows).
 
-**Effort:** 1.5–3 weeks. Most of it goes to the hosted-mode isolation in `main.js`, the storage shim, and the edit-sync edge cases.
 
 ---
 
@@ -210,7 +208,6 @@ The owner picks one path at the end of Phase 1, informed by ADR Q1 and Q2.
 5. The cross-file "Changes" view is replaced by VS Code's own Source Control and dirty-editor indicators. Optionally add a `TreeView` (native, not a webview) listing dirty MD.Orchestra documents.
 6. File creation, deletion and rename use VS Code's own Explorer. Don't rebuild them (SPEC non-goal: not a file manager).
 
-**Effort:** 2–4 weeks.
 
 ### 2B (only if the owner chooses "dashboard owns saves"): full dashboard panel (Option B)
 
@@ -255,7 +252,6 @@ Hard requirements, which are not follow-ups:
 
 6. A `WebviewPanelSerializer`, so the dashboard reopens after a restart.
 
-**Effort:** 3–6 weeks, most of it in requirements 3–5 and in testing them.
 
 ---
 
@@ -278,18 +274,17 @@ Hard requirements, which are not follow-ups:
    - Add a `CHANGELOG.md` stage entry.
    - Set ADR 0001 to **Accepted**.
 
-**Effort:** 2–4 days, plus marketplace verification lead time, which is outside our control.
 
 ---
 
-## Summary of effort (one developer, ranges)
+## Summary of phases and gates
 
-| Phase | Effort | Gate |
-|---|---|---|
-| 0 Spike | 2–3 days | S1/S4/S5 pass. Owner answers ADR Q1 |
-| 1 MVP (A) | 1.5–3 weeks | Exit criteria above. Owner approves the save-semantics SPEC change |
-| 2C Navigation | 2–4 weeks | Owner wants multi-file navigation in VS Code |
-| 2B Dashboard (alternative to 2C) | 3–6 weeks | Only with all hard requirements |
-| 3 Publish | 2–4 days plus lead time | Owner decides on the publisher and registries |
+| Phase | Gate |
+|---|---|
+| 0 Spike  | S1/S4/S5 pass. Owner answers ADR Q1 |
+| 1 MVP (A)  | Exit criteria above. Owner approves the save-semantics SPEC change |
+| 2C Navigation  | Owner wants multi-file navigation in VS Code |
+| 2B Dashboard (alternative to 2C)  | Only with all hard requirements |
+| 3 Publish  | Owner decides on the publisher and registries |
 
-**Ongoing cost:** a third manual test checklist on every UI change, tracking VS Code API and engine updates, and marketplace operations. It is roughly 10–20% overhead on UI work, a rough judgement, not a measurement. Weigh it against ADR Option D.
+**Ongoing cost:** a third manual test checklist on every UI change, tracking VS Code API and engine updates, and marketplace operations.  This cost has not been measured. Weigh it against ADR Option D.
