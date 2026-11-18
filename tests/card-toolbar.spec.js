@@ -24,11 +24,17 @@ test('toolbar rests faded, is full on hover, and stays visible/clickable', async
 test('keyboard focus inside the card brings the toolbar to full strength', async ({ page }) => {
   await openOverviewSection(page);
   await page.mouse.move(2, 2);
-  // :focus-within only matches while the page itself has focus, which isn't
-  // guaranteed with parallel workers unless asked for.
-  await page.bringToFront();
-  await page.locator('.card .card-actions button:not([disabled])').first().focus();
-  await expect.poll(() => opacity(page)).toBe(1);
+  // :focus-within only matches while the page itself has system focus, which
+  // parallel headless workers don't reliably have; emulate it (CDP).
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  // The section-change transition re-renders the card shortly after it first
+  // appears, which would drop focus set too early — so retry focus + assert
+  // until the render has settled.
+  await expect(async () => {
+    await page.locator('.card .card-actions button:not([disabled])').first().focus();
+    expect(await opacity(page)).toBe(1);
+  }).toPass({ timeout: 10000 });
 });
 
 test('the fade only exists inside a hover-capable media query, so touch devices are unchanged', async ({ page }) => {
