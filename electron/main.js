@@ -16,6 +16,19 @@ const { autoUpdater } = require('electron-updater');
 // Paths are compared after symlink resolution (see pathGuard.js), so a
 // symlink inside an opened folder can't point outside it.
 const { createPathGuard } = require('./pathGuard');
+const { toFriendlyFsError } = require('./fsErrors');
+
+// ipcMain.handle for filesystem channels: errno failures reach the renderer
+// as specific, actionable messages (see fsErrors.js), not raw Node text.
+function handleFs(channel, fn) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      return await fn(event, ...args);
+    } catch (err) {
+      throw toFriendlyFsError(err, typeof args[0] === 'string' ? args[0] : null);
+    }
+  });
+}
 
 const guard = createPathGuard();
 const { allow, assertAllowed } = guard;
@@ -300,27 +313,27 @@ ipcMain.handle('pick-file', async () => {
 });
 
 /** Every entry directly inside `dirPath`, unfiltered — js/core/workspaceIO.js's own recursive walk already skips dotfiles and non-Markdown files exactly the way it does for the browser API's real FileSystemDirectoryHandle.entries(), so that filtering isn't duplicated here. */
-ipcMain.handle('read-dir', async (event, dirPath) => {
+handleFs('read-dir', async (event, dirPath) => {
   await assertAllowed(dirPath);
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   return entries.map((e) => ({ name: e.name, kind: e.isDirectory() ? 'directory' : 'file' }));
 });
 
-ipcMain.handle('read-file', async (event, filePath) => {
+handleFs('read-file', async (event, filePath) => {
   await assertAllowed(filePath);
   const text = await fs.readFile(filePath, 'utf-8');
   await recordStat(filePath);
   return text;
 });
 
-ipcMain.handle('write-file', async (event, filePath, content) => {
+handleFs('write-file', async (event, filePath, content) => {
   await assertAllowed(filePath);
   await assertNotChangedExternally(filePath);
   await atomicWriteFile(filePath, content);
   await recordStat(filePath);
 });
 
-ipcMain.handle('exists', async (event, targetPath) => {
+handleFs('exists', async (event, targetPath) => {
   await assertAllowed(targetPath);
   try {
     await fs.access(targetPath);
@@ -330,7 +343,7 @@ ipcMain.handle('exists', async (event, targetPath) => {
   }
 });
 
-ipcMain.handle('delete-file', async (event, filePath) => {
+handleFs('delete-file', async (event, filePath) => {
   // Check the link's own location, not its target — unlink removes the link.
   await assertAllowed(filePath, { followFinal: false });
   await fs.unlink(filePath);
