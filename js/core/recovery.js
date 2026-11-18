@@ -17,8 +17,18 @@
 // timestamp and the pre-edit baseline lets the user judge that for
 // themselves instead of the app silently assuming its cached copy still
 // reflects reality.
-const KEY = 'mdDashboard.recovery.v2';
+// Storage layout (v3): one localStorage entry per document, keyed
+// `mdDashboard.recovery.v3:<identity>`, so an autosave tick rewrites only the
+// document that changed instead of re-serializing every pending snapshot.
+// v2 stored the whole list as one JSON array under LEGACY_KEY; it is migrated
+// on first read. The cache is bounded by entry count *and* total characters,
+// evicting the oldest other entries first, and a write that cannot be stored
+// at all is reported to the caller (saveRecoverySnapshot returns false)
+// instead of silently dropping the very edit it exists to protect.
+const LEGACY_KEY = 'mdDashboard.recovery.v2';
+const PREFIX = 'mdDashboard.recovery.v3:';
 const MAX_SNAPSHOTS = 20;
+const MAX_TOTAL_CHARS = 2_000_000;
 
 function identityFor({ fileName, workspaceRelPath, workspaceRootName }) {
   return workspaceRelPath ? `ws::${workspaceRootName || ''}::${workspaceRelPath}` : `file::${fileName}`;
@@ -29,49 +39,91 @@ export function snapshotIdentity(info) {
   return identityFor(info);
 }
 
+const isEntry = (s) => s && typeof s === 'object' && typeof s.id === 'string';
+
+function migrateLegacy() {
+  let raw = null;
+  try { raw = localStorage.getItem(LEGACY_KEY); } catch { return; }
+  if (raw === null) return;
+  try {
+    const list = JSON.parse(raw);
+    if (Array.isArray(list)) {
+      list.filter(isEntry).forEach((entry) => {
+        try { localStorage.setItem(PREFIX + entry.id, JSON.stringify(entry)); } catch { /* best effort */ }
+      });
+    }
+  } catch { /* malformed legacy blob: drop it */ }
+  try { localStorage.removeItem(LEGACY_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * Every well-formed stored entry. Malformed values (a stray write from an
+ * older version, or something unrelated) are skipped rather than allowed to
+ * throw at startup, before this app's own handlers are even wired up.
+ */
 function readAll() {
+  const out = [];
   try {
-    const raw = localStorage.getItem(KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(list)) return [];
-    // Silently drop anything that isn't a well-formed entry (a stray
-    // null/primitive, or an object some now-removed older version of this
-    // feature — or something entirely unrelated — happened to write under
-    // this key) rather than let it reach every consumer (listing,
-    // saving, clearing) as a landmine: one throw here, at startup, before
-    // this app's own button handlers are even wired up, used to be able to
-    // take the whole page down with it. The next write naturally leaves
-    // the bad entry out of localStorage for good.
-    return list.filter((s) => s && typeof s === 'object' && typeof s.id === 'string');
-  } catch {
-    return [];
-  }
+    migrateLegacy();
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(PREFIX)) continue;
+      try {
+        const entry = JSON.parse(localStorage.getItem(key));
+        if (isEntry(entry)) out.push(entry);
+      } catch { /* skip corrupt entry */ }
+    }
+  } catch { /* localStorage unavailable */ }
+  return out;
 }
 
-function writeAll(list) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(-MAX_SNAPSHOTS)));
-  } catch {
-    // localStorage full/unavailable (private browsing, quota) — recovery is best-effort only.
-  }
+function removeEntry(id) {
+  try { localStorage.removeItem(PREFIX + id); } catch { /* ignore */ }
 }
 
-/** Record (or replace) the pending snapshot for one file. Call with a stable `baselineMarkdown` (the content this editing session started from) every time — only the latest edit needs saving, but the original baseline has to survive every update to stay meaningful. */
+/** Drop oldest entries other than `keepId` until count and size budgets hold. Returns how many were evicted. */
+function enforceBudget(keepId) {
+  let evicted = 0;
+  const others = readAll().filter((e) => e.id !== keepId).sort((a, b) => a.savedAt - b.savedAt);
+  const sizeOf = (e) => (e.markdown?.length || 0) + (e.baselineMarkdown?.length || 0);
+  const kept = readAll().find((e) => e.id === keepId);
+  let total = others.reduce((n, e) => n + sizeOf(e), 0) + (kept ? sizeOf(kept) : 0);
+  let count = others.length + (kept ? 1 : 0);
+  while (others.length && (count > MAX_SNAPSHOTS || total > MAX_TOTAL_CHARS)) {
+    const oldest = others.shift();
+    removeEntry(oldest.id);
+    total -= sizeOf(oldest);
+    count -= 1;
+    evicted += 1;
+  }
+  return evicted;
+}
+
+/**
+ * Record (or replace) the pending snapshot for one file. Call with a stable `baselineMarkdown` (the content this editing session started from) every time — only the latest edit needs saving, but the original baseline has to survive every update to stay meaningful.
+ *
+ * Returns true if the snapshot is stored. On a quota error it evicts the oldest *other* snapshots one at a time and retries; false means even that wasn't enough (this one snapshot alone exceeds what the browser allows, or storage is unavailable), so the caller can warn that this file is not crash-protected.
+ */
 export function saveRecoverySnapshot({
   fileName, workspaceRelPath = null, workspaceRootName = null, markdown, baselineMarkdown,
 }) {
   const id = identityFor({ fileName, workspaceRelPath, workspaceRootName });
-  const list = readAll().filter((s) => s.id !== id);
-  list.push({
-    id,
-    fileName,
-    workspaceRelPath,
-    workspaceRootName,
-    markdown,
-    baselineMarkdown,
-    savedAt: Date.now(),
+  const payload = JSON.stringify({
+    id, fileName, workspaceRelPath, workspaceRootName, markdown, baselineMarkdown, savedAt: Date.now(),
   });
-  writeAll(list);
+  const tryWrite = () => {
+    try { localStorage.setItem(PREFIX + id, payload); return true; } catch { return false; }
+  };
+  let stored = tryWrite();
+  if (!stored) {
+    const oldestFirst = readAll().filter((e) => e.id !== id).sort((a, b) => a.savedAt - b.savedAt);
+    while (!stored && oldestFirst.length) {
+      removeEntry(oldestFirst.shift().id);
+      stored = tryWrite();
+    }
+  }
+  if (stored) enforceBudget(id);
+  return stored;
 }
 
 /** Every pending snapshot, most recently saved first. */
@@ -80,6 +132,5 @@ export function listRecoverySnapshots() {
 }
 
 export function clearRecoverySnapshot({ fileName, workspaceRelPath = null, workspaceRootName = null }) {
-  const id = identityFor({ fileName, workspaceRelPath, workspaceRootName });
-  writeAll(readAll().filter((s) => s.id !== id));
+  removeEntry(identityFor({ fileName, workspaceRelPath, workspaceRootName }));
 }
