@@ -24,7 +24,9 @@ function makeWorkspace() {
 }
 
 async function main() {
-  const extensionDevelopmentPath = path.resolve(__dirname, '..');
+  // MDO_EXTENSION_PATH: run against another copy of the extension, e.g. the
+  // unpacked contents of the .vsix, to check the packaged file set.
+  const extensionDevelopmentPath = path.resolve(process.env.MDO_EXTENSION_PATH || path.join(__dirname, '..'));
   if (!fs.existsSync(path.join(extensionDevelopmentPath, 'media', 'index.html'))) {
     throw new Error('media/ is missing: run `npm run vscode:sync` at the repo root first.');
   }
@@ -34,7 +36,9 @@ async function main() {
     version: process.env.MDO_VSCODE_VERSION || 'stable',
     extensionDevelopmentPath,
     extensionTestsPath: path.resolve(__dirname, 'suite', 'index.js'),
-    launchArgs: [ws, '--disable-extensions', '--no-sandbox', '--disable-gpu', `--user-data-dir=${userDataDir}`, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes'],
+    launchArgs: [ws, '--disable-extensions', '--no-sandbox', '--disable-gpu', `--user-data-dir=${userDataDir}`, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',
+      // Extra flags for machines where an older VS Code's GPU process won't start.
+      ...(process.env.MDO_LAUNCH_ARGS ? process.env.MDO_LAUNCH_ARGS.split(' ') : [])],
   };
   await runTests({ ...common, extensionTestsEnv: { MDO_WS: ws, MDO_PHASE: 'main' } });
   await runTests({ ...common, extensionTestsEnv: { MDO_WS: ws, MDO_PHASE: 'restart' } });

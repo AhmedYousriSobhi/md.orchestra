@@ -246,6 +246,49 @@ Everything above applies except SPEC item 4. In addition:
 | vscode.dev / web-extension support behaves differently (CORS, no Node) | Unknown | Feature unavailable on the web | Treat web as out of scope for the MVP. Spike check only |
 | OS drag-and-drop of files onto the webview behaves differently from Electron (unverified) | Medium | The drop-to-open feature is missing | In VS Code, opening files goes through VS Code itself. Drop is optional in hosted mode |
 
+## Spike and MVP results (issue #51, branch `feature/vscode-extension`)
+
+Status stays **Proposed**. Phase 0 and Phase 1 of the plan were built together on that branch, following the owner's answers to Q1–Q3:
+- sync, with VS Code owning save;
+- single-file first;
+- VS Code's Ctrl/⌘+S and Ctrl/⌘+Shift+S win, and search is disabled in hosted mode.
+
+Everything marked **verified** below was run on 2026-11-18 against VS Code 1.147.0, downloaded by `@vscode/test-electron` (`npm run test:vscode`). It was also run against the unpacked `.vsix` contents (`MDO_EXTENSION_PATH`), and against VS Code 1.90.0, the `engines.vscode` floor (`MDO_VSCODE_VERSION=1.90.0`). On this machine 1.90's GPU process needed `MDO_LAUNCH_ARGS="--disable-gpu-sandbox --in-process-gpu"`. **Unverified** means not exercised; those items are in TESTING.md's VS Code manual checklist.
+
+| # | Outcome | Evidence |
+|---|---|---|
+| S1 | **Verified: works, no bundler.** `<script type="module">` via `asWebviewUri`, under `script-src 'nonce-…' ${cspSource}`, loads the whole relative-import graph of `js/`. | The webview's `ready` message is posted from the last line of `js/main.js`, so it is only sent once every import has resolved. A probe then reports hljs, markdown-it, DOMPurify and mermaid all present, with zero script errors. |
+| S2 | **Partly verified.** (a) Hide, then show: with `retainContextWhenHidden: false` the webview reloads; `localStorage` and `setState` both survive. (b) Close, then reopen: `localStorage` survives; `getState` is empty (expected without a serializer). (c) Reload Window and (d) full restart: **unverified**. | Under extension tests, VS Code keeps all its storage in memory (`useInMemoryStorage: !!extensionTestsLocationURI` in its main process). That includes the memento in which the workbench keeps each webview's origin (`getOrigin(viewType, extensionId)` → `generateUuid()` → `saveMemento()`). So a second test launch gets a new `vscode-webview://` origin and an empty `localStorage` by construction. Read from the code, the origin is persisted per (viewType, extension), so preferences should survive in real use. That has to be checked by hand. The planned storage shim (`js/utils/storage.js`, backed by `globalState`) was prototyped and backed out, because the need for it is not shown. It is the owner's call whether to add it anyway. |
+| S3 | **Partly verified.** In VS Code 1.147's webview frame (`pre/index.html`, `handleInnerKeydown`), the frame calls `preventDefault` on undo/redo, save, find and print inside the webview. It also forwards **every** keydown to the workbench, whether or not the page itself called `preventDefault`. So the app's handlers could never block VS Code's Save. Without hosted mode, the app's Ctrl+S, Shift+S, Shift+P and K handlers would fire **as well as** VS Code's commands. | Hosted mode returns before handling those combinations. Playwright verifies that the app neither handles them nor calls `preventDefault` on them. A real keypress in a real webview: **unverified**. A consequence: Ctrl/⌘+Z inside a field runs VS Code's document Undo, not the field's own undo. |
+| S4 | **Verified.** | See the list after this table. |
+| S5 | **Verified.** A mermaid SVG renders, highlight.js highlights code, and DOMPurify is active, with **zero** `securitypolicyviolation` events. The CSP is `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; script-src 'nonce-…' ${cspSource}; connect-src 'none'`. | Not measured: whether `style-src 'unsafe-inline'` is strictly needed. It was kept for mermaid's inline `<style>`. |
+| S6 | **Verified.** A relative `![](img.png)` loads. | The host sends `documentBaseUri = asWebviewUri(dirname(document.uri))` and adds that folder to `localResourceRoots`. `render.js` resolves relative `img src` against it, and only when it is set, so no other platform is affected. |
+| S7 | **Verified against a mock endpoint.** | The host's `fetch` sends the `context.secrets` key as `x-api-key`, and the reply is relayed. The key is absent from every host→webview message, from webview `localStorage` and from `setState`. With no key, the error reads "No Claude API key configured". A call with a real key: **unverified** (owner). |
+| S8 | **Unverified** (manual). Expected to work, because VS Code owns the `TextDocument` and backs it up. | TESTING.md manual checklist. |
+| S9 | Not attempted (web is out of scope, Q6). | |
+
+The S4 checks:
+- An in-app edit arrives as exactly **one** content change: a pure insertion of only the added characters, made by a common-prefix/suffix diff that never splits a CRLF or a surrogate pair.
+- The tab turns dirty, and `document.save()` writes the file to disk.
+- The webview's dirty flag follows VS Code's.
+- No echo: zero `externalChange` messages go back to the originating editor.
+- An edit typed in a split plain-text editor reaches the webview, keeps the selected heading (matched by slug, since parsing assigns fresh ids), and is not written back.
+- Two MD.Orchestra editors on one document stay in sync.
+- VS Code's `undo` and `redo` commands revert and re-apply a webview edit. `workbench.action.files.revert` restores the disk text and clears dirty in the webview.
+
+Other findings:
+- **Byte-identical round trip: verified.** Opening and saving an untouched file posts no edit and leaves the bytes unchanged. This holds for an LF fixture and for a CRLF fixture with trailing spaces and no final newline. The webview compares against `serialize(parse(text))` taken at load time, so a document whose round trip is lossy is only rewritten when the user actually edits it.
+- **Echo suppression** records the expected `document.version` and text *before* calling `applyEdit`, because the change event can fire before `applyEdit` resolves.
+- **Save right after typing.** The app's fields debounce their edits by up to 700 ms. An `onWillSaveTextDocument` participant asks the webview to flush and returns the remaining edit as `TextEdit`s. Verified: text typed and saved immediately with `workbench.action.files.save` is on disk. `TextDocument.save()` is a no-op on a clean document, so the test has to use the command, as Ctrl+S does.
+- **Hosted mode needed more gates than the plan listed.** Without them:
+  - Ctrl/⌘+Shift+P would open the app's palette as well as VS Code's;
+  - a dropped file would have replaced the bound document, and its content would then have been written over it;
+  - the dirty indicator's click would have downloaded a copy of the file;
+  - a relative link would have navigated the webview away.
+- **Packaging:** `npx @vscode/vsce package` produces a 1.24 MB `.vsix` with 97 files. The vendored libraries are 3.4 MB of that before compression. It installs with `code --install-extension` and lists as `md-orchestra-placeholder.md-orchestra@0.0.1`. The publisher is a placeholder (Q5).
+- **Not done:** cross-file links don't scroll to a `#heading` in the opened file, and the GitHub button is hidden, which allows `connect-src 'none'`.
+- **Unverified:** Remote-SSH and WSL, Live Share, the real keyboard path, hot exit, preference persistence across restarts, large-document typing performance, a real Claude key.
+
 ## Open questions for the owner
 
 1. **Sync or own?** Must an edit made in MD.Orchestra and an edit made in VS Code's plain text editor for the same file stay in sync, with VS Code owning save, dirty state and backup? Or must the dashboard keep its own multi-file save model? "Sync" points to A then C. "Own" points to B with mandatory guards. This is the deciding question.

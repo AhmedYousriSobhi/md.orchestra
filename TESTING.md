@@ -219,6 +219,30 @@ verified once, separately, against a real live public repo (see
 `docs/ANDROID.md`'s "GitHub repo browsing" section) before any of this
 was written.
 
+### VS Code extension (experimental, issue #51)
+
+Two automated layers, plus a manual checklist for what neither can reach.
+
+| Test | Method |
+|---|---|
+| Webview side, in plain Chromium with `VSCODE_STUB` (`tests/helpers.js`) faking `acquireVsCodeApi()`: load renders and posts no edit; an in-app edit posts the serialized document once; `externalChange` keeps the selected heading; Ctrl/⌘+S, +Shift+S, +Shift+P and +K are neither handled nor `preventDefault`ed; the dirty indicator mirrors the host and asks it to save; the flush request returns a still-debounced edit; the Claude call goes through a host request with no key and no `fetch`; Settings never shows or stores the key; relative links and images; a dropped file can't replace the document; `css/vscode.css` hides the file-management UI | **Automated** — `tests/vscode-hosted.spec.js` (part of `npm test`) |
+| Real extension host, in a VS Code build downloaded by `@vscode/test-electron`: the ES-module graph loads under the webview CSP; mermaid, highlight.js, DOMPurify and a relative image render with zero CSP violations; an untouched open + save is byte-identical (LF, and CRLF with no final newline); a webview edit lands as one minimal `WorkspaceEdit`, marks the tab dirty and is not echoed; save writes disk and clears dirty; a split plain-text editor and a second MD.Orchestra editor stay in sync without loops; the undo, redo and Revert File commands; Save right after typing flushes the pending edit; relative `.md` links open in MD.Orchestra; the Claude call uses the SecretStorage key against a mock endpoint and the key never reaches the webview | **Automated** — `npm run test:vscode` (separate from `npm test`; needs a display or `xvfb-run`, and `ELECTRON_RUN_AS_NODE` unset) |
+| `minimalEdit.js` (never splits a CRLF or a surrogate pair) | **Automated** — `cd vscode-extension && npm run test:unit` |
+
+**Manual checklist** (VS Code extension). Run it on the installed `.vsix`
+(`npm run vscode:package`, then `code --install-extension vscode-extension/md-orchestra-*.vsix`),
+on a real `.md` in a local folder, via "Reopen Editor With… → MD.Orchestra":
+
+- [ ] **Keyboard (S3):** with focus inside MD.Orchestra (including inside a section's text field), Ctrl/⌘+S saves to disk (tab dot clears), Ctrl/⌘+Shift+S opens VS Code's Save As, Ctrl/⌘+Shift+P opens VS Code's Command Palette (not the app's), Ctrl/⌘+K starts a VS Code chord and opens no app search panel. Alt+N, Alt+A, Alt+M, Alt+P, Alt+V, Alt+R, Alt+, and `?` still work and don't trigger a VS Code command.
+- [ ] **Undo in a text field:** Ctrl/⌘+Z while typing in a section field runs VS Code's document Undo, not the field's own undo (VS Code's webview frame intercepts it). Check that this is acceptable, and that a quick type-then-undo loses nothing unexpected.
+- [ ] **Hot exit (S8):** make an edit in MD.Orchestra, don't save, quit VS Code (`files.hotExit` at its default), relaunch: the tab is restored dirty with the edit, in MD.Orchestra.
+- [ ] **Preferences across restarts (S2 c/d):** change the view mode, preview scope and width, then run "Developer: Reload Window", then fully quit and relaunch VS Code. They should persist. This can't be automated: VS Code keeps all storage in memory during extension tests.
+- [ ] **Close prompt:** closing a dirty MD.Orchestra tab shows VS Code's own "Save changes?" prompt.
+- [ ] **Theme:** switch between a light, a dark and a high-contrast VS Code theme. The editor follows each, and text and borders stay readable.
+- [ ] **Real Claude call (S7):** run "MD.Orchestra: Set Claude API Key" with a real key, then use a section's insight action. The call succeeds, and the key never appears in "Developer: Open Webview Developer Tools" (Application → Local Storage, and the console).
+- [ ] **Remote:** the same `.vsix` in a Remote-SSH and a WSL window opens, edits and saves a remote `.md`, and relative images render.
+- [ ] **Large file:** a few-thousand-line document stays responsive while typing (every edit serializes the whole document and diffs it against the `TextDocument`).
+
 ## Running the checks
 
 The rows marked **Automated** above are real, committed
