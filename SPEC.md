@@ -115,6 +115,6 @@ format, no account, no server holding the data.
 
 See [docs/RELIABILITY_ARCHITECTURE_REVIEW.md](docs/RELIABILITY_ARCHITECTURE_REVIEW.md)
 and [docs/UI_UX_REVIEW.md](docs/UI_UX_REVIEW.md) for the full audits. Notably:
-no detection of a file changed externally (git, another editor) while open here;
+on Electron, a file changed on disk since it was opened is detected only at save time (the save is refused, not merged) — there is no live file watching and no conflict-resolution UI;
 the document map lays a very large document/folder out in one scrollable region
 rather than paginating or virtualizing it.

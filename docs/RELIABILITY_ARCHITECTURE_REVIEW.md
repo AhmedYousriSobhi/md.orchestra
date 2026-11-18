@@ -293,6 +293,8 @@ never actually gone.
 
 ## Architecture Assessment & Critical Issues Summary
 
+> **Status update:** the three P0 rows below (`reallow-folder` validation, non-atomic writes, stale-overwrite detection) and the P1 fsync row were fixed in commit `5bcd043` (see `electron/main.js`: `atomicWriteFile`, `assertNotChangedExternally`, `reallow-folder`'s granted-folders check). The `electronReopenFolder` P3 row is also covered by that handler's existence check. Still open: symlink/`realpath` handling (#26), the localStorage recovery cache (#27), error-code mapping (#28), and splitting `main.js` (#29). The table below is the review's original text.
+
 | Priority | Issue | Section |
 |---|---|---|
 | **P0** | `reallow-folder` IPC handler grants arbitrary filesystem access with no path validation — defeats the allowlist security model entirely | §7 |
