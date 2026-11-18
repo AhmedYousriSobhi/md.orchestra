@@ -43,6 +43,51 @@ No Node, no npm — just [Docker](https://www.docker.com/):
 Double-click works too. A real window, your real files, nothing phoning
 home.
 
+## Also in VS Code (build the extension yourself)
+
+Open any `.md` file in MD.Orchestra without leaving VS Code. The extension isn't
+published to a marketplace yet, so you build the `.vsix` package yourself.
+
+**You need:** [Node.js](https://nodejs.org/) 20+, git, and VS Code 1.90+ with the
+`code` command on your PATH. The first build needs internet (it downloads
+`@vscode/vsce`, the official packaging tool, via `npx`).
+
+```bash
+# 1. Get the code (use the `dev` branch until the next release)
+git clone https://github.com/AhmedYousriSobhi/md.orchestra.git
+cd md.orchestra
+git checkout dev
+
+# 2. Install dependencies
+npm ci
+
+# 3. Build the package (copies the UI into the extension, then runs vsce)
+npm run vscode:package
+#   -> vscode-extension/md-orchestra-0.0.1.vsix
+
+# 4. Install it
+code --install-extension vscode-extension/md-orchestra-0.0.1.vsix
+```
+
+No terminal? In VS Code open the Extensions view, click **⋯** at the top, choose
+**Install from VSIX…** and pick the file from step 3.
+
+**Use it:** open a `.md` file, run **Reopen Editor With…** (or right-click the tab)
+and pick **MD.Orchestra**. VS Code's normal editor stays the default; this is opt-in.
+More on how it behaves: [vscode-extension/README.md](vscode-extension/README.md).
+
+- **Update:** pull, run `npm run vscode:package` again, then
+  `code --install-extension vscode-extension/md-orchestra-0.0.1.vsix --force`.
+- **Uninstall:** `code --uninstall-extension md-orchestra-placeholder.md-orchestra`.
+- **Try it without installing:** `npm run vscode:sync`, then
+  `code --extensionDevelopmentPath="$PWD/vscode-extension"` opens a throwaway VS Code
+  window with the extension loaded.
+- **Run its tests:** `npm run test:vscode` drives a real VS Code (downloads one, needs
+  a display). Run `unset ELECTRON_RUN_AS_NODE` first if you start it from inside VS
+  Code's terminal.
+- The publisher shown in the extension id (`md-orchestra-placeholder`) is a placeholder
+  until it is published.
+
 ## Also on Android
 
 Same app, real device filesystem access via Android's native folder
