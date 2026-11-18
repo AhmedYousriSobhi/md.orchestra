@@ -13,26 +13,12 @@ const { autoUpdater } = require('electron-updater');
 // IPC surface in preload.js has no way to name a path outside this list;
 // every handler below re-checks it regardless, so a bug anywhere in the
 // renderer can't turn into arbitrary filesystem access.
-const allowlist = [];
+// Paths are compared after symlink resolution (see pathGuard.js), so a
+// symlink inside an opened folder can't point outside it.
+const { createPathGuard } = require('./pathGuard');
 
-function isAllowed(targetPath) {
-  const resolved = path.resolve(targetPath);
-  return allowlist.some((entry) => {
-    const root = path.resolve(entry.path);
-    if (entry.type === 'file') return resolved === root;
-    return resolved === root || resolved.startsWith(root + path.sep);
-  });
-}
-
-function allow(type, targetPath) {
-  allowlist.push({ type, path: targetPath });
-}
-
-function assertAllowed(targetPath) {
-  if (!isAllowed(targetPath)) {
-    throw new Error(`Not allowed: "${targetPath}" is outside every folder/file you've opened.`);
-  }
-}
+const guard = createPathGuard();
+const { allow, assertAllowed } = guard;
 
 // ---------------------------------------------------------------------
 // Atomic file writes: temp file in the same directory -> fsync it ->
@@ -295,7 +281,7 @@ ipcMain.handle('pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths.length) return null;
   const [folderPath] = result.filePaths;
-  allow('dir', folderPath);
+  await allow('dir', folderPath);
   await rememberGrantedFolder(folderPath);
   return { path: folderPath, name: path.basename(folderPath) };
 });
@@ -307,7 +293,7 @@ ipcMain.handle('pick-file', async () => {
   });
   if (result.canceled || !result.filePaths.length) return null;
   const [filePath] = result.filePaths;
-  allow('file', filePath);
+  await allow('file', filePath);
   const text = await fs.readFile(filePath, 'utf-8');
   await recordStat(filePath);
   return { path: filePath, name: path.basename(filePath), text };
@@ -315,27 +301,27 @@ ipcMain.handle('pick-file', async () => {
 
 /** Every entry directly inside `dirPath`, unfiltered — js/core/workspaceIO.js's own recursive walk already skips dotfiles and non-Markdown files exactly the way it does for the browser API's real FileSystemDirectoryHandle.entries(), so that filtering isn't duplicated here. */
 ipcMain.handle('read-dir', async (event, dirPath) => {
-  assertAllowed(dirPath);
+  await assertAllowed(dirPath);
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   return entries.map((e) => ({ name: e.name, kind: e.isDirectory() ? 'directory' : 'file' }));
 });
 
 ipcMain.handle('read-file', async (event, filePath) => {
-  assertAllowed(filePath);
+  await assertAllowed(filePath);
   const text = await fs.readFile(filePath, 'utf-8');
   await recordStat(filePath);
   return text;
 });
 
 ipcMain.handle('write-file', async (event, filePath, content) => {
-  assertAllowed(filePath);
+  await assertAllowed(filePath);
   await assertNotChangedExternally(filePath);
   await atomicWriteFile(filePath, content);
   await recordStat(filePath);
 });
 
 ipcMain.handle('exists', async (event, targetPath) => {
-  assertAllowed(targetPath);
+  await assertAllowed(targetPath);
   try {
     await fs.access(targetPath);
     return true;
@@ -345,7 +331,8 @@ ipcMain.handle('exists', async (event, targetPath) => {
 });
 
 ipcMain.handle('delete-file', async (event, filePath) => {
-  assertAllowed(filePath);
+  // Check the link's own location, not its target — unlink removes the link.
+  await assertAllowed(filePath, { followFinal: false });
   await fs.unlink(filePath);
   // Keyed the same (unresolved) way recordStat()/assertNotChangedExternally()
   // key it above — resolving here and not there would leave a stale entry
@@ -379,7 +366,7 @@ ipcMain.handle('reallow-folder', async (event, folderPath) => {
   if (!stat || !stat.isDirectory()) {
     throw new Error(`"${folderPath}" no longer exists — pick it again.`);
   }
-  allow('dir', resolved);
+  await allow('dir', resolved);
 });
 
 ipcMain.handle('get-app-version', () => ({ version: app.getVersion(), isPackaged: app.isPackaged, lastStatus }));
