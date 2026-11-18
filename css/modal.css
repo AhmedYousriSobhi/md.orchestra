@@ -344,3 +344,10 @@
 .shortcut-hint kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 0.35rem; font-family: inherit; }
 .shortcut-hint-close { background: none; border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; color: inherit; opacity: 0.6; }
 .shortcut-hint-close:hover { opacity: 1; }
+
+/* Command palette (ui/commandPalette.js) */
+.command-palette-item { flex-direction: row; align-items: center; justify-content: space-between; gap: 0.8rem; }
+.command-palette-active {
+  border-color: color-mix(in srgb, var(--accent-default) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent-default) 10%, var(--bg-soft));
+}
