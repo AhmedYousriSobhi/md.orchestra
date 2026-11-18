@@ -6,7 +6,7 @@ import { findChangedNodes, tagsDiffer } from './markdown/diff.js';
 import { applySectionToBase, revertSectionToBase } from './markdown/sectionMerge.js';
 import {
   getState, setState, subscribe, loadDocument, selectSection, getSelectedNode, getSelectedPath, moveSection, updateNode,
-  setDocTags,
+  setDocTags, flushPendingEdits, getDocSession,
 } from './state/store.js';
 import { addNote } from './markdown/markers.js';
 import { focusNewestNoteTextarea } from './ui/notesPanel.js';
@@ -203,6 +203,7 @@ function toggleSidebarSection(key) {
 el.explorerToggle.addEventListener('click', () => toggleSidebarSection('explorer'));
 el.outlineToggle.addEventListener('click', () => toggleSidebarSection('outline'));
 
+let lastRenderedDocSession = -1;
 let lastPathLength = 0;
 let previewSyncedForDoc = false;
 // Identifies "which section, in which view mode, of which document" is
@@ -397,10 +398,18 @@ function renderInner() {
   // them would drop focus, jump the cursor, and swallow whatever they type next — so
   // skip the rebuild entirely until they click away. Nothing else changes while typing
   // a note (sidebar/breadcrumb reflect headings, not note text), so this is always safe.
+  //
+  // That only holds within one document: if a different document was loaded
+  // since the last full render (a new doc session), the focused field belongs
+  // to the old one and must not be left on screen under the new file's name,
+  // where typing into it would silently go nowhere (#17).
+  const docSession = getDocSession();
   const active = document.activeElement;
-  if (active && el.sectionView.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+  if (docSession === lastRenderedDocSession
+    && active && el.sectionView.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
     return;
   }
+  lastRenderedDocSession = docSession;
 
   renderSidebar(el.headingTree, doc, path.map((n) => n.id), selectSection, handleSidebarMove);
   renderBreadcrumb(el.breadcrumb, path, doc.id, fileName, selectSection);
@@ -477,6 +486,9 @@ render();
 
 /** The actual snapshot-writing logic, callable directly (bypassing the debounce below) when something needs the current dirty state captured *right now* — see handleChangesOpenSnapshot, which relies on this to make switching files from the Changes panel non-destructive without needing a confirm prompt. */
 function snapshotNow() {
+  // Land any not-yet-debounced raw-source edit on the current document first,
+  // so the snapshot (and therefore a file switch) doesn't drop it (#17).
+  flushPendingEdits();
   const {
     doc, fileName, dirty, workspaceRelPath, workspaceRootName,
   } = getState();
