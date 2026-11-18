@@ -49,6 +49,7 @@ import { openSourcePanel } from './ui/sourcePanel.js';
 import * as ct from './core/changeTracking.js';
 import { diffSnapshot, countChangedSections, enrichSnapshot } from './core/changeTracking.js';
 import { openShortcutsPanel } from './ui/shortcutsPanel.js';
+import { openCommandPalette } from './ui/commandPalette.js';
 import { maybeShowShortcutHint } from './ui/shortcutHint.js';
 import { showContextMenu } from './ui/contextMenu.js';
 import { openNewFileModal, closeNewFileModal } from './ui/newFileModal.js';
@@ -1779,6 +1780,32 @@ document.addEventListener('keydown', (e) => {
  * "write this file to disk" action instead — what plain Ctrl+S used to
  * do, back when there was a Save button to match it.
  */
+/** Every action the palette offers, with the same enabled/disabled rules as the toolbar buttons and Alt shortcuts above/below. */
+function handleOpenCommandPalette() {
+  const hasDoc = Boolean(getState().doc);
+  openCommandPalette([
+    { id: 'search', title: 'Search open folders', keys: 'Ctrl/⌘+K', run: handleOpenSearch },
+    { id: 'save', title: 'Save file to disk', keys: 'Ctrl/⌘+Shift+S', disabled: !hasDoc, run: () => handleSave() },
+    { id: 'open-file', title: 'Open a .md file', keys: 'Alt+O', run: () => el.openFileBtn.click() },
+    { id: 'open-folder', title: 'Open a folder', keys: 'Alt+D', run: () => el.openFolderBtn.click() },
+    { id: 'add-file', title: 'Add a new file', keys: 'Alt+F', run: () => el.addFileBtn.click() },
+    { id: 'add-section', title: 'Add a new section', keys: 'Alt+A', disabled: el.addSectionBtn.disabled, run: () => el.addSectionBtn.click() },
+    { id: 'changes', title: 'Open Changes (unsaved edits)', keys: 'Alt+C', run: () => el.changesBtn.click() },
+    { id: 'map', title: 'Open the workspace Map', keys: 'Alt+M', disabled: el.mapViewBtn.disabled, run: () => el.mapViewBtn.click() },
+    { id: 'preview', title: 'Toggle the preview panel', keys: 'Alt+P', disabled: el.previewToggleBtn.disabled, run: () => el.previewToggleBtn.click() },
+    {
+      id: 'view-mode',
+      title: 'Toggle Full text / Sections view',
+      keys: 'Alt+V',
+      disabled: el.viewModeBar.hidden,
+      run: () => handleViewModeChange(el.viewModeFullBtn.getAttribute('aria-selected') === 'true' ? 'sections' : 'full'),
+    },
+    { id: 'source', title: 'Open the raw Markdown source', keys: 'Alt+R', disabled: el.sourceBtn.disabled, run: () => el.sourceBtn.click() },
+    { id: 'settings', title: 'Open Settings', keys: 'Alt+,', run: () => el.settingsBtn.click() },
+    { id: 'shortcuts', title: 'Show keyboard shortcuts', keys: '?', run: openShortcutsPanel },
+  ]);
+}
+
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   // Works everywhere, including while typing in some other field — same
@@ -1787,6 +1814,11 @@ document.addEventListener('keydown', (e) => {
   if (key === 'k' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     handleOpenSearch();
+    return;
+  }
+  if (key === 'p' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+    e.preventDefault();
+    handleOpenCommandPalette();
     return;
   }
   if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) {

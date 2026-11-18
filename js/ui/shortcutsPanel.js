@@ -8,6 +8,7 @@ import { openOverlay, closeOverlay } from './transitions.js';
  */
 export const SHORTCUTS = [
   { keys: 'Ctrl/⌘ + K', action: 'Search every open folder — filenames, headings, tags, and content' },
+  { keys: 'Ctrl/⌘ + Shift + P', action: 'Command palette — type to run any action' },
   { keys: 'Ctrl/⌘ + S', action: 'Save what you’re currently editing (not to disk — every field autosaves already; this just commits it right now)' },
   { keys: 'Ctrl/⌘ + Shift + S', action: 'Save the whole file to disk' },
   { keys: 'Alt + O', action: 'Open a .md file' },
