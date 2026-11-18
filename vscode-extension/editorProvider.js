@@ -53,6 +53,7 @@ class MdOrchestraEditorProvider {
       // Recorded for tests: every message posted to this webview, and every
       // diagnostic (CSP violation, uncaught error) it reported.
       sent: [],
+      received: [],
       diagnostics: [],
     };
     this.sessions.add(session);
@@ -115,6 +116,7 @@ class MdOrchestraEditorProvider {
 
   onMessage(session, msg, snapshot) {
     if (!msg || typeof msg !== 'object') return;
+    if (this.isTestMode) session.received.push(msg);
     switch (msg.type) {
       case 'ready':
         // Sent on every webview (re)load. With retainContextWhenHidden off,

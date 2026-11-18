@@ -171,10 +171,26 @@ async function runTestOp(msg) {
       a.click();
       return true;
     }
+    case 'callClaude': {
+      const { callClaude } = await import('./ai/client.js');
+      try {
+        return { text: await callClaude({ model: 'test-model', prompt: msg.prompt }) };
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    case 'storageDump': {
+      // Everything this webview persists, to check the API key is never in it.
+      const local = {};
+      try {
+        for (let i = 0; i < localStorage.length; i += 1) local[localStorage.key(i)] = localStorage.getItem(localStorage.key(i));
+      } catch { /* unavailable */ }
+      return { local, state: vscodeState.get() };
+    }
     case 'storage':
       try {
         if (msg.set) localStorage.setItem(msg.key, msg.value);
-        return { value: localStorage.getItem(msg.key), vscodeState: vscodeState.get()[msg.key] ?? null };
+        return { value: localStorage.getItem(msg.key), vscodeState: vscodeState.get()[msg.key] ?? null, origin: window.location.origin };
       } catch (err) {
         return { error: err.message };
       } finally {
