@@ -11,6 +11,8 @@ const vscode = require('vscode');
 const WS = process.env.MDO_WS;
 const VIEW_TYPE = 'mdOrchestra.editor';
 const RESULTS_FILE = path.join(WS || '.', 'results.json');
+// Timing-sensitive tests repeat this many times (MDO_REPEAT=n).
+const REPEAT = Number(process.env.MDO_REPEAT || 1);
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
@@ -242,34 +244,77 @@ test('S4: VS Code undo/redo and Revert File act on the webview edit', async () =
   await closeAll();
 });
 
-test('Save right after typing (debounced edit still pending) saves the latest text', async () => {
-  const uri = fresh();
-  const session = await openEditor(uri);
-  assert.strictEqual(await hostRequest(session, 'viewMode', { mode: 'full' }), true);
-  assert.strictEqual(await hostRequest(session, 'typePending', { text: '\nTYPED-JUST-BEFORE-SAVE\n' }), true);
-  const doc = docFor(uri);
-  assert.ok(!doc.getText().includes('TYPED-JUST-BEFORE-SAVE'), 'edit is still pending in the webview');
-  assert.strictEqual(doc.isDirty, false, 'document is still clean: the edit has not reached VS Code yet');
-  // What Ctrl/Cmd+S runs (TextDocument.save() is a no-op on a clean document).
-  await vscode.commands.executeCommand('workbench.action.files.save');
-  assert.ok(fs.readFileSync(uri.fsPath, 'utf8').includes('TYPED-JUST-BEFORE-SAVE'), 'onWillSave flushed it to disk');
-  await sleep(300);
-  assert.strictEqual(doc.isDirty, false);
-  await closeAll();
+test(`Save right after typing saves the latest text (x${REPEAT})`, async () => {
+  for (let round = 0; round < REPEAT; round += 1) {
+    const uri = fresh();
+    const session = await openEditor(uri);
+    assert.strictEqual(await hostRequest(session, 'viewMode', { mode: 'full' }), true);
+    const marker = `TYPED-JUST-BEFORE-SAVE-${round}`;
+    assert.strictEqual(await hostRequest(session, 'typePending', { text: `\n${marker}\n` }), true);
+    const doc = docFor(uri);
+    // No waiting at all: what Ctrl/Cmd+S runs, immediately. (The edit is sent
+    // as it is typed; onWillSave's flush request covers anything in flight.)
+    await vscode.commands.executeCommand('workbench.action.files.save');
+    assert.ok(fs.readFileSync(uri.fsPath, 'utf8').includes(marker), `round ${round}: the typed text is on disk`);
+    await sleep(300);
+    assert.strictEqual(doc.isDirty, false);
+    await closeAll();
+  }
 });
 
-test('Switching tabs right after typing (debounced edit still pending) does not lose it', async () => {
-  const uri = fresh();
-  const session = await openEditor(uri);
-  await hostRequest(session, 'viewMode', { mode: 'full' });
-  assert.strictEqual(await hostRequest(session, 'typePending', { text: '\nTYPED-BEFORE-TAB-SWITCH\n' }), true);
-  await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
-  const doc = docFor(uri);
-  let landed = false;
-  try { await waitFor(() => doc.getText().includes('TYPED-BEFORE-TAB-SWITCH'), { timeout: 3000 }); landed = true; } catch { /* recorded */ }
-  record('pending-edit-on-tab-switch', { landed });
-  assert.ok(landed, 'the pending edit reached the document when the tab was hidden');
-  await closeAll();
+test(`Switching tabs right after typing never loses the edit (full text, section, note fields; x${REPEAT})`, async () => {
+  const outcomes = { landed: 0, lost: 0 };
+  for (let round = 0; round < REPEAT; round += 1) {
+    for (const target of ['full', 'section', 'note']) {
+      const uri = fresh();
+      const session = await openEditor(uri);
+      await hostRequest(session, 'viewMode', { mode: target === 'full' ? 'full' : 'sections' });
+      if (target !== 'full') await hostRequest(session, 'select', { slug: 'second-section' });
+      if (target === 'note') assert.ok(await hostRequest(session, 'addNote'), 'a note field exists');
+      await sleep(300);
+      const marker = `TAB-SWITCH-${target}-${round}`;
+      // The keystroke happens (the webview confirms it typed), then the tab
+      // is switched at once: no debounce wait, no focus change first.
+      assert.strictEqual(await hostRequest(session, 'typePending', { target, text: ` ${marker} ` }), true);
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
+      const doc = docFor(uri);
+      try { await waitFor(() => doc.getText().includes(marker), { timeout: 3000 }); outcomes.landed += 1; } catch { outcomes.lost += 1; }
+      await closeAll();
+    }
+  }
+  record(`tab-switch-after-typing-x${REPEAT}`, outcomes);
+  assert.strictEqual(outcomes.lost, 0, 'no typed edit was lost');
+});
+
+// The strict version: the typing request is NOT awaited before the tab is
+// switched, so the switch can overtake it. Whenever the webview confirms it
+// typed, the text must be in the document. Repeat with MDO_REPEAT=n.
+test(`Tab switch racing a keystroke never loses a typed edit (full text, section, note fields; x${REPEAT})`, async () => {
+  const outcomes = { typedAndLanded: 0, notTyped: 0, lost: 0 };
+  for (let round = 0; round < REPEAT; round += 1) {
+    for (const target of ['full', 'section', 'note']) {
+      const uri = fresh();
+      const session = await openEditor(uri);
+      await hostRequest(session, 'viewMode', { mode: target === 'full' ? 'full' : 'sections' });
+      if (target !== 'full') await hostRequest(session, 'select', { slug: 'second-section' });
+      if (target === 'note') assert.ok(await hostRequest(session, 'addNote'), 'a note field exists');
+      await sleep(300);
+      const marker = `RACE-${target}-${round}`;
+      const typed = hostRequest(session, 'typePending', { target, text: ` ${marker} ` });
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
+      const didType = await typed;
+      const doc = docFor(uri);
+      await sleep(500);
+      if (didType !== true) outcomes.notTyped += 1;
+      else if (doc.getText().includes(marker)) outcomes.typedAndLanded += 1;
+      else outcomes.lost += 1;
+      await closeAll();
+    }
+  }
+  // When the switch wins the race, the webview is gone before it types:
+  // nothing was typed, so nothing can be lost. Recorded, not required.
+  record(`tab-switch-race-x${REPEAT}`, outcomes);
+  assert.strictEqual(outcomes.lost, 0, 'no typed edit was lost');
 });
 
 test('With files.autoSave=afterDelay, an autosave while typing keeps focus in the live text field', async () => {
@@ -329,8 +374,36 @@ test('A webview edit based on stale text never silently reverts a newer external
   assert.ok(doc.getText().includes('Nested BODY-EXTERNAL.'), 'overlapping stale edit was not applied');
   assert.ok(!doc.getText().includes('Rewritten in the webview.'));
   assert.ok(session.sent.filter((m) => m.type === 'externalChange').length > externalCount, 'view reloaded to the real text');
+  assert.strictEqual(session.conflicts, 1, 'the user was warned once');
+  await waitFor(async () => (await hostRequest(session, 'probe')).hostText === doc.getText(), { what: 'webview reloaded from exactly the document text' });
   record('stale-edit-overlap', { refused: true });
   await vscode.commands.executeCommand('notifications.clearAll');
+  await closeAll();
+});
+
+test('Hide/show recreates the webview (retainContextWhenHidden false) and restores selection, view mode and scroll', async () => {
+  const uri = fresh();
+  let long = fs.readFileSync(uri.fsPath, 'utf8');
+  for (let i = 1; i <= 40; i += 1) long += `\n## Extra ${i}\n\n${'Filler text to make the page scroll. '.repeat(12)}\n`;
+  fs.writeFileSync(uri.fsPath, long);
+  const session = await openEditor(uri);
+  await hostRequest(session, 'viewMode', { mode: 'sections' });
+  assert.strictEqual(await hostRequest(session, 'select', { slug: 'fixture-document' }), 'fixture-document');
+  await sleep(400);
+  const top = await hostRequest(session, 'scrollSection', { top: 400 });
+  assert.ok(top > 0, 'the section view is scrollable');
+  const readyBefore = countReceived(session, 'ready');
+  await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(WS, 'other.md')), { preview: false, viewColumn: vscode.ViewColumn.One });
+  await sleep(600);
+  await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, vscode.ViewColumn.One);
+  await waitFor(() => countReceived(session, 'ready') > readyBefore, { what: 'webview recreated on show', timeout: 20000 });
+  const probe = await waitFor(async () => {
+    const p = await hostRequest(session, 'probe');
+    return p && p.scroll.section === top ? p : null;
+  }, { what: 'scroll restored', timeout: 5000 });
+  assert.strictEqual(probe.selectedSlug, 'fixture-document');
+  assert.strictEqual(probe.viewMode, 'sections');
+  record('hide-show-view-state', { selectedSlug: probe.selectedSlug, viewMode: probe.viewMode, scroll: probe.scroll.section });
   await closeAll();
 });
 
@@ -339,7 +412,10 @@ test('A relative .md link opens the target in MD.Orchestra', async () => {
   const session = await openEditor(uri);
   await hostRequest(session, 'select', { slug: 'rendering' });
   await sleep(500);
-  assert.strictEqual(await hostRequest(session, 'clickLink', { href: 'other.md' }), true);
+  // Not awaited for its reply: the click opens other.md in this same column,
+  // which hides, and so destroys, this webview (retainContextWhenHidden is
+  // false), sometimes before its reply is delivered (seen on VS Code 1.90).
+  hostRequest(session, 'clickLink', { href: 'other.md' });
   const otherUri = vscode.Uri.file(path.join(WS, 'other.md'));
   const other = await waitFor(() => testApi.provider.sessionsFor(otherUri)[0], { what: 'other.md opened in MD.Orchestra' });
   assert.ok(await testApi.provider.waitReady(other));
@@ -396,7 +472,7 @@ test('S2: webview localStorage vs vscode.setState across hide/show and close/reo
   await sleep(800);
   await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, vscode.ViewColumn.One);
   await sleep(1500);
-  // With retainContextWhenHidden: true the webview is kept alive, not reloaded.
+  // retainContextWhenHidden is false: the webview is recreated on show.
   const reloadedOnShow = countReceived(session, 'ready') > readyBefore;
   const afterShow = await hostRequest(session, 'storage', { key: 'mdo.s2' });
 

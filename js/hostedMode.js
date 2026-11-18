@@ -35,6 +35,8 @@ let lastSerialized = null;
 // The last text this webview actually sent, or null if it hasn't sent
 // anything since the host's text last replaced it.
 let lastSent = null;
+// The exact text the host last loaded into this view.
+let lastHostText = null;
 // Which host load/externalChange this view is based on; sent back with every
 // edit so the host can rebase an edit made before a newer change arrived.
 let syncId = null;
@@ -82,6 +84,7 @@ function loadFromHost(msg, { keepSelection }) {
   lastSerialized = serializeMarkdown(doc);
   lastSent = null;
   syncId = msg.syncId ?? null;
+  lastHostText = msg.text;
   loadDocument({ doc, fileName: msg.fileName || getState().fileName, dirty: Boolean(msg.isDirty) });
   hostedSession = getDocSession();
   selectBySlug(slug);
@@ -144,6 +147,10 @@ async function runTestOp(msg) {
         fileName: getState().fileName,
         dirty: getState().dirty,
         selectedSlug: selectedSlug(),
+        text: getState().doc ? serializeMarkdown(getState().doc) : null,
+        hostText: lastHostText,
+        viewMode: document.getElementById('view-mode-full-btn')?.getAttribute('aria-selected') === 'true' ? 'full' : 'sections',
+        scroll: Object.fromEntries(Object.entries(SCROLLERS).map(([k, id]) => [k, document.getElementById(id)?.scrollTop ?? null])),
         vendors: {
           hljs: Boolean(window.hljs), markdownit: Boolean(window.markdownit), DOMPurify: Boolean(window.DOMPurify), mermaid: Boolean(window.mermaid),
         },
@@ -161,11 +168,25 @@ async function runTestOp(msg) {
         cspViolations: diagnostics.cspViolations.slice(),
         errors: diagnostics.errors.slice(),
       };
+    case 'addNote': {
+      const { addNote } = await import('./markdown/markers.js');
+      const node = getSelectedNode();
+      updateNode(node.id, { bodyMarkdown: addNote(node.bodyMarkdown) });
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      return Boolean(document.querySelector('#section-view .notes-textarea'));
+    }
     case 'appendToSelected': {
       const node = getSelectedNode();
       if (!node) return false;
       updateNode(node.id, { bodyMarkdown: `${node.bodyMarkdown}${msg.text}` });
       return true;
+    }
+    case 'scrollSection': {
+      const scroller = document.getElementById(SCROLLERS.section);
+      scroller.scrollTop = msg.top;
+      scroller.dispatchEvent(new Event('scroll'));
+      await new Promise((resolve) => { setTimeout(resolve, 250); });
+      return scroller.scrollTop;
     }
     case 'select':
       selectBySlug(msg.slug);
@@ -177,7 +198,8 @@ async function runTestOp(msg) {
     case 'typePending': {
       // Types into the full-text editor without waiting for its debounce,
       // leaving the edit pending, as a fast Ctrl/Cmd+S would.
-      const ta = document.querySelector('.full-doc-source-textarea');
+      const selector = { section: '#section-view .content-edit-textarea', note: '#section-view .notes-textarea' }[msg.target] || '.full-doc-source-textarea';
+      const ta = document.querySelector(selector);
       if (!ta) return false;
       ta.focus();
       ta.value += msg.text;
@@ -225,6 +247,7 @@ function onMessage(msg) {
     case 'load':
       testMode = Boolean(msg.testMode);
       loadFromHost(msg, { keepSelection: false });
+      restoreViewState();
       break;
     case 'externalChange':
       loadFromHost(msg, { keepSelection: true });
@@ -238,6 +261,41 @@ function onMessage(msg) {
     default:
       break;
   }
+}
+
+// --- view state across webview re-creation --------------------------------
+// The selected heading (slug) is saved by onStoreChange. The view mode and
+// the scroll positions are saved here, all through vscodeState
+// (getState/setState), which survives the webview being hidden and recreated.
+const SCROLLERS = { section: 'section-view-wrap', preview: 'preview-panel' };
+
+function trackViewState() {
+  const full = document.getElementById('view-mode-full-btn');
+  const sections = document.getElementById('view-mode-sections-btn');
+  full?.addEventListener('click', () => vscodeState.set({ viewMode: 'full' }));
+  sections?.addEventListener('click', () => vscodeState.set({ viewMode: 'sections' }));
+  Object.entries(SCROLLERS).forEach(([key, id]) => {
+    const scroller = document.getElementById(id);
+    let timer = null;
+    scroller?.addEventListener('scroll', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => vscodeState.set({ scroll: { ...(vscodeState.get().scroll || {}), [key]: scroller.scrollTop } }), 100);
+    }, { passive: true });
+  });
+}
+
+function restoreViewState() {
+  const saved = vscodeState.get();
+  const btn = saved.viewMode === 'full' ? 'view-mode-full-btn' : saved.viewMode === 'sections' ? 'view-mode-sections-btn' : null;
+  if (btn && document.getElementById(btn)?.getAttribute('aria-selected') !== 'true') document.getElementById(btn)?.click();
+  if (!saved.scroll) return;
+  // After the section view's own swap animation (transitions.js) settles.
+  setTimeout(() => {
+    Object.entries(SCROLLERS).forEach(([key, id]) => {
+      const scroller = document.getElementById(id);
+      if (scroller && typeof saved.scroll[key] === 'number') scroller.scrollTop = saved.scroll[key];
+    });
+  }, 250);
 }
 
 /** The dirty indicator's click: VS Code's own Save. */
@@ -257,10 +315,16 @@ export function initHostedMode({ dirtyIndicator }) {
   if (dirtyIndicator) dirtyIndicator.title = 'Save (VS Code Save, Ctrl/⌘+S)';
   subscribe(onStoreChange);
   onHostMessage(onMessage);
-  // Land pending field edits whenever the webview may be about to go away
-  // (tab hidden or closed) or loses focus.
+  // No debounce window in VS Code: a hidden webview is destroyed without
+  // any event reaching the host (retainContextWhenHidden is false), so an
+  // edit still waiting in a field's debounce would be lost on a tab switch.
+  // Every keystroke's edit is landed and sent at once (fields' own input
+  // handlers run first, at the target, then this document-level one).
+  document.addEventListener('input', flushAllEdits);
+  // Belt and braces, for whatever does get a chance to run.
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushAllEdits(); });
   window.addEventListener('pagehide', flushAllEdits);
   window.addEventListener('blur', flushAllEdits);
+  trackViewState();
   post({ type: 'ready' });
 }

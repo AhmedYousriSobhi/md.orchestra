@@ -7,11 +7,12 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
-      // true, not the cheaper false: a hidden (not retained) webview is torn
-      // down without any event reaching the host, so a field edit still in
-      // its debounce window when the tab is switched would be lost
-      // (measured: see ADR 0001). Retained, it lands normally.
-      webviewOptions: { retainContextWhenHidden: true },
+      // false, per VS Code's guidance (retaining keeps every hidden webview
+      // in memory). A hidden webview is torn down without any event reaching
+      // the host, so hosted mode sends each edit as it is typed (no debounce
+      // window to lose) and restores the user's place from getState() when
+      // the webview is recreated. See ADR 0001.
+      webviewOptions: { retainContextWhenHidden: false },
       supportsMultipleEditorsPerDocument: true,
     }),
     vscode.commands.registerCommand('mdOrchestra.setApiKey', async () => {

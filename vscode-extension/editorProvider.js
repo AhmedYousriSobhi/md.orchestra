@@ -198,7 +198,11 @@ class MdOrchestraEditorProvider {
   }
 
   reportConflict(session) {
-    vscode.window.showWarningMessage('MD.Orchestra: your last edit in MD.Orchestra overlapped a change made elsewhere in this file at the same moment, so it was not applied. The view now shows the file as it is.');
+    // The TextDocument is the source of truth: a newer change made elsewhere
+    // is never overwritten. The webview's overlapping edit is dropped, said
+    // so plainly, and the view is reloaded from the document.
+    if (this.isTestMode) session.conflicts = (session.conflicts || 0) + 1;
+    vscode.window.showWarningMessage(`MD.Orchestra: your last edit to ${path.posix.basename(session.document.uri.path)} was NOT applied. It overlapped a newer change made to the same text elsewhere (another editor, undo, or another MD.Orchestra tab). The view has been reloaded from the file, so what you see is what the file contains; redo the edit if you still want it.`);
     session.post({ type: 'externalChange', ...session.snapshot() });
   }
 

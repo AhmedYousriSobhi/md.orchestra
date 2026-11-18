@@ -14,7 +14,7 @@ const sentOfType = async (page, type) => (await outbox(page)).filter((m) => m.ty
 async function hostLoad(page, text = DOC) {
   await expect.poll(async () => (await sentOfType(page, 'ready')).length).toBe(1);
   await page.evaluate(([t, base]) => window.__vscodeSend({
-    type: 'load', text: t, fileName: 'doc.md', isDirty: false, documentBaseUri: base,
+    type: 'load', text: t, fileName: 'doc.md', isDirty: false, documentBaseUri: base, syncId: 1,
   }), [text, BASE]);
   await expect(page.locator('#dirty-text')).toHaveText('doc.md — up to date');
 }
@@ -38,6 +38,7 @@ test('an in-app edit posts the whole serialized document, once', async ({ page }
   await expect.poll(async () => (await sentOfType(page, 'edit')).length, { timeout: 5000 }).toBe(1);
   const [edit] = await sentOfType(page, 'edit');
   expect(edit.text).toBe(`${DOC}Added line.\n`);
+  expect(edit.syncId).toBe(1);
   await page.waitForTimeout(500);
   expect(await sentOfType(page, 'edit')).toHaveLength(1);
 });
@@ -80,18 +81,24 @@ test("the dirty indicator mirrors VS Code's dirty flag, and clicking it asks VS 
   await expect(page.locator('#dirty-text')).toHaveText('doc.md — up to date');
 });
 
-test('Save from VS Code flushes a still-debounced edit through the flush request', async ({ page }) => {
+test('each keystroke is sent at once (no debounce window), and the flush request reports it with its syncId', async ({ page }) => {
   await hostLoad(page);
   await page.locator('#view-mode-full-btn').click();
   const ta = page.locator('.full-doc-source-textarea');
   await ta.focus();
   await ta.evaluate((el) => { el.value += 'Typed fast.\n'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  expect(await sentOfType(page, 'edit')).toEqual([]);
+  // Synchronously, before any debounce could have fired.
+  const edits = await sentOfType(page, 'edit');
+  expect(edits).toHaveLength(1);
+  expect(edits[0].text).toBe(`${DOC}Typed fast.\n`);
   await page.evaluate(() => window.__vscodeSend({ type: 'hostRequest', id: 7, op: 'flush' }));
   await expect.poll(async () => (await sentOfType(page, 'hostResponse')).length).toBe(1);
   const [reply] = await sentOfType(page, 'hostResponse');
   expect(reply.id).toBe(7);
   expect(reply.result.text).toBe(`${DOC}Typed fast.\n`);
+  expect(reply.result.syncId).toBe(1);
+  // Focus stays in the field (nothing is blurred to flush).
+  await expect(ta).toBeFocused();
 });
 
 test('the Claude call goes through a host request, not fetch, and never carries an API key', async ({ page }) => {

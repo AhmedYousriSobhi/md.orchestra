@@ -88,6 +88,7 @@ export function createEditableMarkdownBody(node, { placeholder = 'Nothing here y
   registerHostedFieldFlush(textarea, () => {
     if (pendingValue === null) return;
     debouncedSave.cancel();
+    status.textContent = '';
     const value = pendingValue;
     pendingValue = null;
     save(value);

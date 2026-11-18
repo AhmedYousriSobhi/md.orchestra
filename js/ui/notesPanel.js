@@ -90,6 +90,7 @@ function createNoteCard(note, { onUpdate, onDelete }) {
   registerHostedFieldFlush(textarea, () => {
     if (pendingValue === null) return;
     debouncedSave.cancel();
+    status.textContent = '';
     const value = pendingValue;
     pendingValue = null;
     onUpdate(note.id, value);
