@@ -1239,8 +1239,20 @@ async function handleWorkspaceOpened({
  * otherwise on whichever section was actually edited first (see
  * markdown/diff.js), not just wherever the document opens by default.
  */
-function loadSnapshotAsActive(snapshot, { sectionId = null, anchor = null, fileHandle = null } = {}) {
+function loadSnapshotAsActive(storedSnapshot, { sectionId = null, anchor = null, fileHandle = null } = {}) {
+  let snapshot = storedSnapshot;
   try {
+    // A snapshot can outlive the session that knew its workspace: if the
+    // folder it belonged to isn't open now, no Explorer code path can show
+    // or close it, and Save has nowhere to write back to (#13). Restore it
+    // as a plain open file instead — visible, closable, and honest that
+    // Save will download a copy — and say so.
+    const orphanedFrom = snapshot.workspaceRootName
+      && !getWorkspaces().some((w) => w.rootName === snapshot.workspaceRootName)
+      ? snapshot.workspaceRootName : null;
+    if (orphanedFrom) {
+      snapshot = { ...snapshot, workspaceRelPath: null, workspaceRootName: null };
+    }
     if (!snapshot.workspaceRelPath) {
       openStandaloneFileNames.delete(snapshot.fileName);
       openStandaloneFileNames.add(snapshot.fileName);
@@ -1269,8 +1281,12 @@ function loadSnapshotAsActive(snapshot, { sectionId = null, anchor = null, fileH
       }
     }
     if (targetId) selectSection(targetId);
-    clearRecoverySnapshot(snapshot);
-    showToast(`Restored unsaved work for "${snapshot.fileName}"`);
+    // Clear by the identity it was *stored* under, which differs from the
+    // restored one when orphaned.
+    clearRecoverySnapshot(storedSnapshot);
+    showToast(orphanedFrom
+      ? `Restored unsaved work for "${snapshot.fileName}" as a loose file — its folder "${orphanedFrom}" isn't open, so Save will download a copy. Reopen the folder to save back to the original.`
+      : `Restored unsaved work for "${snapshot.fileName}"`);
   } catch (err) {
     console.error(err);
     showToast(`Could not restore "${snapshot.fileName}"`, { type: 'error' });
