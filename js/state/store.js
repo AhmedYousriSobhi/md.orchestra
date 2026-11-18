@@ -57,9 +57,29 @@ export function setState(patch) {
 const undoStacks = new Map();
 const MAX_UNDO_DEPTH = 20;
 
+// Bumped by every loadDocument(). A debounced edit captures it when its
+// editor renders and passes it back to replaceWholeDocument(), so an edit
+// that fires after a different document became active is dropped instead of
+// overwriting that document (issue #17).
+let docSession = 0;
+export function getDocSession() { return docSession; }
+
+// Editors with an unsent debounced edit register a flush function here so a
+// document switch can land that edit on the document it belongs to *before*
+// the switch (see flushPendingEdits(), called ahead of the recovery snapshot).
+const pendingFlushers = new Set();
+export function registerPendingFlush(fn) {
+  pendingFlushers.add(fn);
+  return () => pendingFlushers.delete(fn);
+}
+export function flushPendingEdits() {
+  [...pendingFlushers].forEach((fn) => fn());
+}
+
 export function loadDocument({
   doc, fileName, fileHandle = null, dirty = false, workspaceRelPath = null, workspaceRootName = null,
 }) {
+  docSession += 1;
   undoStacks.clear();
   registerTags(doc.tags);
   const firstChild = doc.children[0];
@@ -99,8 +119,9 @@ export function getSelectedPath() {
  * undo history for the old ids is simply left orphaned in undoStacks — a
  * raw-source edit is undone via the textarea's own native undo instead.
  */
-export function replaceWholeDocument(newDoc) {
+export function replaceWholeDocument(newDoc, { session } = {}) {
   if (!state.doc) return;
+  if (session !== undefined && session !== docSession) return;
   registerTags(newDoc.tags);
   setState({ doc: newDoc, selectedId: newDoc.id, dirty: true });
 }

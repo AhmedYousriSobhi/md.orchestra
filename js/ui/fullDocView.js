@@ -1,7 +1,9 @@
 import { h } from '../utils/dom.js';
 import { serializeMarkdown } from '../markdown/serializer.js';
 import { parseMarkdown } from '../markdown/parser.js';
-import { replaceWholeDocument } from '../state/store.js';
+import {
+  replaceWholeDocument, getDocSession, registerPendingFlush,
+} from '../state/store.js';
 import { debounce } from '../utils/debounce.js';
 import { attachMarkdownEditingHelpers } from './markdownEditing.js';
 import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
@@ -24,7 +26,11 @@ import { wireImageAttach, createAttachImageButton } from './imageAttach.js';
  * which patches one specific node in place — there's no way to know which
  * old node a given line in the freshly-typed text "used to be".
  */
+let unregisterFlush = null;
+
 export function renderFullDocView(container, doc, fileName) {
+  if (unregisterFlush) unregisterFlush();
+  const session = getDocSession();
   container.innerHTML = '';
   const card = h('article', { class: 'card card-full-doc' });
   card.appendChild(h('div', { class: 'card-head' }, [
@@ -41,11 +47,15 @@ export function renderFullDocView(container, doc, fileName) {
 
   const status = h('span', { class: 'editable-md-status' }, '');
 
+  // Which document this textarea belongs to: a save that fires after another
+  // file became active must not land on it (replaceWholeDocument checks).
   const save = (value) => {
     const parsed = parseMarkdown(value);
-    replaceWholeDocument(parsed);
+    replaceWholeDocument(parsed, { session });
   };
+  let pendingValue = null;
   const debouncedSave = debounce((value) => {
+    pendingValue = null;
     save(value);
     status.textContent = 'Saved';
     setTimeout(() => { status.textContent = ''; }, 1200);
@@ -53,7 +63,17 @@ export function renderFullDocView(container, doc, fileName) {
 
   textarea.addEventListener('input', () => {
     status.textContent = 'Saving…';
+    pendingValue = textarea.value;
     debouncedSave(textarea.value);
+  });
+  // A document switch calls this (via flushPendingEdits) before it snapshots
+  // the current document, so the not-yet-debounced edit is in that snapshot.
+  unregisterFlush = registerPendingFlush(() => {
+    if (pendingValue === null) return;
+    debouncedSave.cancel();
+    const value = pendingValue;
+    pendingValue = null;
+    save(value);
   });
   // Same reasoning as editableMarkdownBody.js's own blur handler: deferred
   // so a blur *caused* by clicking elsewhere (a different file, an
@@ -61,6 +81,7 @@ export function renderFullDocView(container, doc, fileName) {
   // when the click landed, before a resulting re-render can replace it.
   textarea.addEventListener('blur', () => {
     debouncedSave.cancel();
+    pendingValue = null;
     setTimeout(() => save(textarea.value), 0);
   });
 
