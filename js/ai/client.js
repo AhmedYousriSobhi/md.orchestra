@@ -2,9 +2,35 @@
 // project: the key the user enters in Settings is stored in localStorage and
 // sent only to api.anthropic.com via the header Anthropic documents for
 // client-side use (`anthropic-dangerous-direct-browser-access`).
+// In VS Code (hosted mode) the call is made by the extension host instead
+// (vscode-extension/aiProxy.js), with the key from VS Code SecretStorage,
+// so the key never enters this webview; the error messages below are still
+// produced here, in one place.
+import { isVSCode, request } from '../core/vscodeBridge.js';
+
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
+function httpError(status, detail) {
+  if (status === 401) return new Error('Claude rejected the API key (401 Unauthorized). Check it in Settings.');
+  if (status === 429) return new Error('Rate limited by the Claude API (429). Try again shortly.');
+  return new Error(`Claude request failed (${status}). ${detail}`);
+}
+
+async function callClaudeViaHost({ model, system, prompt, maxTokens }) {
+  const r = await request('ai', {
+    model, system, prompt, maxTokens,
+  });
+  if (r && r.ok) return r.text;
+  if (r?.untrusted) throw new Error('Claude requests are disabled until this VS Code workspace is trusted.');
+  if (r?.noKey) throw new Error('No Claude API key configured. Run "MD.Orchestra: Set Claude API Key" or open Settings and add one.');
+  if (r?.networkError) throw new Error(`Could not reach the Claude API (network error): ${r.networkError}`);
+  throw httpError(r?.status, r?.detail || '');
+}
+
 export async function callClaude({ apiKey, model, system, prompt, maxTokens = 1200 }) {
+  if (isVSCode) return callClaudeViaHost({
+    model, system, prompt, maxTokens,
+  });
   if (!apiKey) {
     throw new Error('No Claude API key configured. Open Settings and add one.');
   }
@@ -32,9 +58,7 @@ export async function callClaude({ apiKey, model, system, prompt, maxTokens = 12
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.json())?.error?.message || ''; } catch { /* ignore */ }
-    if (res.status === 401) throw new Error('Claude rejected the API key (401 Unauthorized). Check it in Settings.');
-    if (res.status === 429) throw new Error('Rate limited by the Claude API (429). Try again shortly.');
-    throw new Error(`Claude request failed (${res.status}). ${detail}`);
+    throw httpError(res.status, detail);
   }
 
   const data = await res.json();

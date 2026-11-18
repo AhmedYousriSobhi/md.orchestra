@@ -1,0 +1,8 @@
+# Only the extension's runtime files and media/ (the synced web app) ship.
+test/**
+.vscode-test/**
+node_modules/**
+package-lock.json
+**/*.vsix
+**/*.map
+media/icons/icon.svg

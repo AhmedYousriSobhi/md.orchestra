@@ -63,6 +63,36 @@ const CAPACITOR_STUB = `
   };
 `;
 
+/**
+ * Injected via page.addInitScript() to make the app take its VS Code
+ * hosted-mode code paths (js/hostedMode.js, js/core/vscodeBridge.js) in an
+ * ordinary browser, without VS Code: defines window.acquireVsCodeApi, the
+ * function a real VS Code webview provides. Every message the app posts to
+ * the "extension host" is recorded in window.__vscodeOutbox;
+ * window.__vscodeSend(msg) delivers a host->webview message; and
+ * window.__vscodeAutoReply, if set, is called for each posted message so a
+ * test can answer RPC requests (it receives the message and returns the
+ * `result` to send back, or undefined for no reply).
+ */
+const VSCODE_STUB = `
+  window.__vscodeOutbox = [];
+  window.__vscodeState = undefined;
+  window.__vscodeSend = (data) => window.dispatchEvent(new MessageEvent('message', { data }));
+  window.acquireVsCodeApi = () => ({
+    postMessage: (msg) => {
+      const copy = JSON.parse(JSON.stringify(msg));
+      window.__vscodeOutbox.push(copy);
+      if (copy.type === 'request' && window.__vscodeAutoReply) {
+        Promise.resolve(window.__vscodeAutoReply(copy)).then((result) => {
+          if (result !== undefined) window.__vscodeSend({ type: 'response', id: copy.id, result });
+        });
+      }
+    },
+    getState: () => window.__vscodeState,
+    setState: (s) => { window.__vscodeState = s; },
+  });
+`;
+
 /** A phone-width viewport, matching the app's own @media (max-width: 860px) breakpoint. */
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
@@ -127,5 +157,5 @@ async function mockGithubRepo(page, { owner, repo, branch = 'main', files }) {
 }
 
 module.exports = {
-  FIXTURES_DIR, fixturePath, CAPACITOR_STUB, MOBILE_VIEWPORT, openDemoFile, swipe, mockGithubRepo,
+  FIXTURES_DIR, fixturePath, CAPACITOR_STUB, VSCODE_STUB, MOBILE_VIEWPORT, openDemoFile, swipe, mockGithubRepo,
 };

@@ -1,3 +1,5 @@
+import { isVSCode } from '../core/vscodeBridge.js';
+
 const STORAGE_KEY = 'mdDashboard.aiSettings.v1';
 
 export const CLAUDE_MODELS = [
@@ -12,18 +14,24 @@ const DEFAULTS = {
   model: CLAUDE_MODELS[0].id,
 };
 
+// In VS Code the key lives in the extension host's SecretStorage, never in
+// webview storage: it is stripped on read and on write.
+function withoutKeyInVSCode(settings) {
+  return isVSCode ? { ...settings, apiKey: '' } : settings;
+}
+
 export function getAiSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    return withoutKeyInVSCode({ ...DEFAULTS, ...JSON.parse(raw) });
   } catch {
     return { ...DEFAULTS };
   }
 }
 
 export function saveAiSettings(settings) {
-  const merged = { ...getAiSettings(), ...settings };
+  const merged = withoutKeyInVSCode({ ...getAiSettings(), ...settings });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   return merged;
 }

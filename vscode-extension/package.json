@@ -1,0 +1,80 @@
+{
+  "name": "md-orchestra",
+  "displayName": "MD.Orchestra",
+  "description": "Open a Markdown file as navigable section cards, an outline and a map, with notes, tags and optional Claude insights. VS Code keeps owning save, undo and backups.",
+  "version": "0.0.1",
+  "publisher": "md-orchestra-placeholder",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AhmedYousriSobhi/md.orchestra"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markdown"
+  ],
+  "icon": "media/icons/icon.png",
+  "main": "./extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Claude requests are disabled until the workspace is trusted. Viewing and editing work normally."
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "mdOrchestra.editor",
+        "displayName": "MD.Orchestra",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mdOrchestra.openWith",
+        "title": "Open with MD.Orchestra",
+        "category": "MD.Orchestra"
+      },
+      {
+        "command": "mdOrchestra.setApiKey",
+        "title": "Set Claude API Key",
+        "category": "MD.Orchestra"
+      },
+      {
+        "command": "mdOrchestra.clearApiKey",
+        "title": "Clear Claude API Key",
+        "category": "MD.Orchestra"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "mdOrchestra.openWith",
+          "when": "editorLangId == markdown"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node ./test/runTest.js",
+    "test:unit": "node ./test/minimalEdit.unit.js",
+    "bench": "node ./test/bench/runBench.js"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^3.1.0"
+  }
+}

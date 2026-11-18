@@ -2,6 +2,26 @@ import { escapeHtml, escapeAttr } from '../utils/dom.js';
 
 let mdParser = null;
 
+// Set only in VS Code hosted mode (js/hostedMode.js): the webview URI of the
+// document's own folder, so a relative `![](img.png)` resolves to a file
+// the webview is allowed to load. Null everywhere else: no rewriting.
+let imageBaseUri = null;
+
+export function setImageBaseUri(uri) {
+  imageBaseUri = uri ? (uri.endsWith('/') ? uri : `${uri}/`) : null;
+}
+
+function rewriteRelativeImages(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  tpl.content.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src');
+    if (!src || /^([a-z][a-z0-9+.-]*:|\/|#)/i.test(src)) return;
+    try { img.setAttribute('src', new URL(src, imageBaseUri).toString()); } catch { /* leave it */ }
+  });
+  return tpl.innerHTML;
+}
+
 function getMdParser() {
   if (mdParser) return mdParser;
   if (!window.markdownit) {
@@ -43,10 +63,11 @@ function getMdParser() {
 export function renderMarkdownToSafeHtml(mdText) {
   const html = getMdParser().render(mdText || '');
   if (window.DOMPurify) {
-    return window.DOMPurify.sanitize(html, {
+    const safe = window.DOMPurify.sanitize(html, {
       ADD_TAGS: ['details', 'summary'],
       ADD_ATTR: ['data-lang', 'target'],
     });
+    return imageBaseUri ? rewriteRelativeImages(safe) : safe;
   }
   console.error('DOMPurify not available — refusing to render unsanitized HTML.');
   return `<p class="render-error">Could not safely render this content (DOMPurify failed to load — check network access to the CDN, then reload).</p>`;

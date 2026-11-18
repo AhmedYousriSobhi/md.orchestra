@@ -246,6 +246,133 @@ Everything above applies except SPEC item 4. In addition:
 | vscode.dev / web-extension support behaves differently (CORS, no Node) | Unknown | Feature unavailable on the web | Treat web as out of scope for the MVP. Spike check only |
 | OS drag-and-drop of files onto the webview behaves differently from Electron (unverified) | Medium | The drop-to-open feature is missing | In VS Code, opening files goes through VS Code itself. Drop is optional in hosted mode |
 
+## Spike and MVP results (issue #51, branch `feature/vscode-extension`)
+
+Status stays **Proposed**. Phase 0 and Phase 1 of the plan were built together on that branch, following the owner's answers to Q1–Q3:
+- sync, with VS Code owning save;
+- single-file first;
+- VS Code's Ctrl/⌘+S and Ctrl/⌘+Shift+S win, and search is disabled in hosted mode.
+
+Everything marked **verified** below was run on 2026-11-18 against VS Code 1.147.0, downloaded by `@vscode/test-electron` (`npm run test:vscode`). It was also run against the unpacked `.vsix` contents (`MDO_EXTENSION_PATH`), and against VS Code 1.90.0, the `engines.vscode` floor (`MDO_VSCODE_VERSION=1.90.0`). On this machine 1.90's GPU process needed `MDO_LAUNCH_ARGS="--disable-gpu-sandbox --in-process-gpu"`. **Unverified** means not exercised; those items are in TESTING.md's VS Code manual checklist.
+
+| # | Outcome | Evidence |
+|---|---|---|
+| S1 | **Verified: works, no bundler.** `<script type="module">` via `asWebviewUri`, under `script-src 'nonce-…' ${cspSource}`, loads the whole relative-import graph of `js/`. | The webview's `ready` message is posted from the last line of `js/main.js`, so it is only sent once every import has resolved. A probe then reports hljs, markdown-it, DOMPurify and mermaid all present, with zero script errors. |
+| S2 | **Partly verified.** (a) Hide, then show: with `retainContextWhenHidden: false` the webview reloads; `localStorage` and `setState` both survive. The extension uses `false`, per VS Code's guidance. It restores the selected heading, the view mode and the scroll position from `getState()` when the webview is recreated (verified). (b) Close, then reopen: `localStorage` survives; `getState` is empty (expected without a serializer). (c) Reload Window and (d) full restart: **unverified**. | Under extension tests, VS Code keeps all its storage in memory (`useInMemoryStorage: !!extensionTestsLocationURI` in its main process). That includes the memento in which the workbench keeps each webview's origin (`getOrigin(viewType, extensionId)` → `generateUuid()` → `saveMemento()`). So a second test launch gets a new `vscode-webview://` origin and an empty `localStorage` by construction. Read from the code, the origin is persisted per (viewType, extension), so preferences should survive in real use. That has to be checked by hand. The planned storage shim (`js/utils/storage.js`, backed by `globalState`) was prototyped and backed out, because the need for it is not shown. It is the owner's call whether to add it anyway. |
+| S3 | **Partly verified.** In VS Code 1.147's webview frame (`pre/index.html`, `handleInnerKeydown`), the frame calls `preventDefault` on undo/redo, save, find and print inside the webview. It also forwards **every** keydown to the workbench, whether or not the page itself called `preventDefault`. So the app's handlers could never block VS Code's Save. Without hosted mode, the app's Ctrl+S, Shift+S, Shift+P and K handlers would fire **as well as** VS Code's commands. | Hosted mode returns before handling those combinations. Playwright verifies that the app neither handles them nor calls `preventDefault` on them. A real keypress in a real webview: **unverified**. A consequence: Ctrl/⌘+Z inside a field runs VS Code's document Undo, not the field's own undo. |
+| S4 | **Verified.** | See the list after this table. |
+| S5 | **Verified.** A mermaid SVG renders, highlight.js highlights code, and DOMPurify is active, with **zero** `securitypolicyviolation` events. The CSP is `default-src 'none'; img-src ${cspSource} data: https:; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; script-src 'nonce-…' ${cspSource}; connect-src 'none'`. | Not measured: whether `style-src 'unsafe-inline'` is strictly needed. It was kept for mermaid's inline `<style>`. |
+| S6 | **Verified.** A relative `![](img.png)` loads. | The host sends `documentBaseUri = asWebviewUri(dirname(document.uri))` and adds that folder to `localResourceRoots`. `render.js` resolves relative `img src` against it, and only when it is set, so no other platform is affected. |
+| S7 | **Verified against a mock endpoint.** | The host's `fetch` sends the `context.secrets` key as `x-api-key`, and the reply is relayed. The key is absent from every host→webview message, from webview `localStorage` and from `setState`. With no key, the error reads "No Claude API key configured". A call with a real key: **unverified** (owner). |
+| S8 | **Unverified** (manual). Expected to work, because VS Code owns the `TextDocument` and backs it up. | TESTING.md manual checklist. |
+| S9 | Not attempted (web is out of scope, Q6). | |
+
+The S4 checks:
+- An in-app edit arrives as exactly **one** content change: a pure insertion of only the added characters, made by a common-prefix/suffix diff that never splits a CRLF or a surrogate pair.
+- The tab turns dirty, and `document.save()` writes the file to disk.
+- The webview's dirty flag follows VS Code's.
+- No echo: zero `externalChange` messages go back to the originating editor.
+- An edit typed in a split plain-text editor reaches the webview, keeps the selected heading (matched by slug, since parsing assigns fresh ids), and is not written back.
+- Two MD.Orchestra editors on one document stay in sync.
+- VS Code's `undo` and `redo` commands revert and re-apply a webview edit. `workbench.action.files.revert` restores the disk text and clears dirty in the webview.
+
+Other findings:
+- **Byte-identical round trip: verified.** Opening and saving an untouched file posts no edit and leaves the bytes unchanged. This holds for an LF fixture and for a CRLF fixture with trailing spaces and no final newline. The webview compares against `serialize(parse(text))` taken at load time, so a document whose round trip is lossy is only rewritten when the user actually edits it.
+- **Echo suppression** records the expected `document.version` and text *before* calling `applyEdit`. That way the order in which the change event and `applyEdit`'s promise arrive doesn't matter. The order itself was not measured.
+- **Save right after typing.** The app's fields debounce their edits by up to 900 ms. An `onWillSaveTextDocument` participant asks the webview to flush and returns the remaining edit as `TextEdit`s. Verified: text typed and saved immediately with `workbench.action.files.save` is on disk. `TextDocument.save()` is a no-op on a clean document, so the test has to use the command, as Ctrl+S does.
+- **Three data-loss cases were found by tests and then fixed.** The basic S4 checks above did not cover them.
+  1. **A tab switch within the debounce window lost the edit.** With `retainContextWhenHidden: false`, a hidden webview is torn down, and no event (`visibilitychange`, `pagehide`, `blur`, `beforeunload`) reached the host before that. A first fix used `retainContextWhenHidden: true`. **Decision (owner: best practice):** keep `false`, per VS Code's guidance, and remove the cause instead. In hosted mode there is no debounce window: a document-level `input` listener lands each keystroke's edit synchronously through the fields' flushers and posts it at once. The listeners for `visibilitychange`, `pagehide` and `blur` remain as a fallback. View state is restored through `getState()`/`setState()`, so a recreated webview keeps the user's place. Verified: a typed edit followed immediately by a tab switch landed **15/15 times, 0 lost**, on both VS Code 1.147 and 1.90.0 (`MDO_REPEAT=5`; then 9/9 more on 1.90 with `MDO_REPEAT=3`). This covers the full-text, section and note fields. A stricter race, where the tab switch is not made to wait for the keystroke, never managed to type first: in all 15 rounds the webview was torn down before it typed, so nothing was typed and nothing was lost. That shows there is no window in which a typed keystroke is lost: the edit goes out in the same event that handles the keystroke.
+  2. **Autosave stole focus.** The first flush blurred the active field, as the standalone app's Ctrl+S does. With `files.autoSave: afterDelay`, every autosave then dropped focus to `<body>` mid-typing. Section and note fields now register a VS Code-only synchronous flusher through the store's existing `registerPendingFlush` (`registerHostedFieldFlush` in `js/hostedMode.js`). The flush no longer blurs anything, and this is verified. Electron, Android and the browser don't register these flushers.
+  3. **A stale webview edit reverted an external change.** The webview always sends the whole document. An edit it made before seeing a newer change (split editor, VS Code undo, another MD.Orchestra tab) was diffed against the new text, which silently undid that change. Now:
+     - each load/externalChange carries a `syncId`, which the webview echoes with every edit;
+     - the host rebases a stale edit onto the current text (`rebaseEdit` in `minimalEdit.js`), so both survive, as verified;
+     - if the two edits overlap, the webview's edit is **refused**. **Decision (owner):** the VS Code `TextDocument` is the source of truth, and a newer change is never silently overwritten. The refusal is visible and recoverable:
+       - a warning names the file and says the edit was **not applied** and why;
+       - the view is reloaded from the document, so the screen matches the file;
+       - the user redoes the edit if they still want it.
+
+       Verified: the document keeps the newer change, there is exactly one warning, and the webview's loaded text equals the document's.
+- **Closing a tab right after typing.** With per-keystroke sending, a keystroke's edit is posted before the next input event (a click on ✕ or Ctrl+W) can be handled. This was not run, because closing a dirty editor in the test host opens a blocking modal. It is on the manual checklist.
+- **Pre-existing round-trip gap (not new; outside this ADR):** a line of text placed directly above the first heading, with no blank line between, comes back from `parse`→`serialize` with a blank line inserted. Opening such a file doesn't rewrite it (no edit is posted until the user edits), but the first edit would add that blank line.
+- **Hosted mode needed more gates than the plan listed.** Without them:
+  - Ctrl/⌘+Shift+P would open the app's palette as well as VS Code's;
+  - a dropped file would have replaced the bound document, and its content would then have been written over it;
+  - the dirty indicator's click would have downloaded a copy of the file;
+  - a relative link would have navigated the webview away.
+- **Packaging:** `npx @vscode/vsce package` produces a 1.24 MB `.vsix` with 97 files. The vendored libraries are 3.4 MB of that before compression. It installs with `code --install-extension` and lists as `md-orchestra-placeholder.md-orchestra@0.0.1`. The publisher is a placeholder (Q5).
+- **Not done:** cross-file links don't scroll to a `#heading` in the opened file, and the GitHub button is hidden, which allows `connect-src 'none'`.
+- **Unverified:**
+  - Remote-SSH and WSL. The manifest no longer claims `virtualWorkspaces`, since non-`file` schemes were never exercised.
+  - Live Share.
+  - The real keyboard path.
+  - Hot exit.
+  - Preference persistence across restarts.
+  - Closing a tab right after typing.
+  - Typing on documents above about 1 MB: measured, see "Typing cost" below. It lags there regardless of strategy.
+  - Typing performance on large documents.
+  - A real Claude key.
+
+## Typing cost (measured)
+
+**Question.** Hosted mode sends every keystroke's edit at once, because a hidden or closed webview is destroyed before any event reaches the host. Is that affordable? If not, what is the best option that still never loses an edit?
+
+**How it was measured.** The benchmark is `vscode-extension/test/bench/` (`npm run bench`, not part of any default test run). It ran in a real VS Code 1.147 (`@vscode/test-electron`) on generated, realistic Markdown: headings, prose, lists, a code block per section and one mermaid block.
+
+For each document it typed into the full-text, section and note fields, one key every 80 ms, using `execCommand('insertText')`, which fires real input events. It recorded:
+- **sync:** the webview's synchronous handler time per keystroke;
+- **input-to-paint:** until after the next animation frame. Frames that stalled, because the window was occluded, are counted and not reported as latency;
+- **long tasks:** collected with a PerformanceObserver;
+- host apply time, host queue depth, the echo handler, message volume and heap.
+
+The tables below give p50/p95 in ms, from 12–20 keystrokes per cell.
+
+**Before: every keystroke re-parses (full text) or re-serializes (section, note) and sends the whole document**
+
+| Size | Full text: sync (paint p50, long tasks) | Section: sync | Note: sync |
+|---|---|---|---|
+| 10 KB | 19 / 44 (41) | 2.6 / 6.6 | 6.3 / 6.8 |
+| 100 KB | **123 / 134** (203; 21 long tasks, max 233) | 7.0 / 8.4 | 7.5 / 10.4 |
+| 1 MB | **1122 / 1240** (1822; 26, max 1974) | 18.6 / 20.9 | 19.4 / 21.3 |
+| 5 MB | **6986 / 8196** (long tasks up to 12.3 s) | 41 / 50 | 48 / 61 |
+
+Typing in the full-text field visibly lagged from 100 KB up. Closing the preview cut the 1 MB full-text cost from 1122 to 45 ms. So the cause was the **webview re-rendering the whole-document preview and re-parsing the text on every keystroke**, work the standalone app only does once per 700 ms pause. Sending the text was not the cause. The host side stayed cheap throughout:
+- apply: p50 1–6 ms up to 1 MB, and 16–29 ms at 5 MB (p95 ≤ 150 ms);
+- echo handler: about 1 ms at 1 MB and 5 ms at 5 MB;
+- queue depth: never above 3.
+
+Message volume equals the document size per keystroke (12 keystrokes at 5 MB sent 60 MB). Heap deltas were dominated by garbage collection (from −90 to +187 MB at 5 MB) and are not conclusive.
+
+**Alternatives, measured the same way, then run through the loss-safety tests.** Those tests are: tab switch right after typing; close right after typing (new); save right after typing; and the racing-keystroke test. Each covers the full-text, section and note fields and was repeated.
+
+| Option | Sync, full / section / note at 1 MB | At 5 MB | Loss safety | Verdict |
+|---|---|---|---|---|
+| (a) Coalesce 50 ms, plus flushes on hide, blur and pagehide | 24 / 1.0 / 0.5 | 315 / 3.5 / 12 | **Tab switch: 6 of 6 edits lost. Close: 6 of 6 lost.** Save safe (onWillSave) | **Rejected:** loses edits. No hide or close event reaches the host in time. |
+| (a') Coalesce per animation frame | 26 / 1.7 / 0.9 | 300 / 14 / 6.2 | **Tab switch: 6/6 lost. Close: 6/6 lost.** | **Rejected:** loses edits. |
+| (b) Send only the changed range; host rebuilds the text from the webview's previous text for that `syncId` | 31 / 22 / 23 | 184 (p95 1436) / 62 / 69 | Safe: tab 6/6, close 6/6, 0 lost | **Rejected:** bytes fall from 60 MB to 2.5 MB, but webview time doesn't (the diff is O(n) in JS). It also adds a resync failure mode. |
+| (c) Adaptive: immediate when small, coalesced when large | — | — | Inherits (a)'s losses above the threshold | **Rejected** by (a)'s loss result. |
+| **(d) Fast path (chosen).** The full-text field sends its text the moment it is typed, without re-parsing; the model catches up on the field's own debounce. Section and note fields stay per-keystroke. | **28 / 18.5 / 19.5** | 295 / 50 / 46 | Safe: tab 6/6, close 6/6, 0 lost (prototype). Final implementation, `MDO_REPEAT=5`: tab switch **15/15**, close **15/15**, 0 lost, and save right after typing 5/5, on **both VS Code 1.147 and 1.90.0**. | **Chosen.** |
+
+The racing-keystroke test, in which the tab switch is not made to wait for the keystroke, never managed to type first under any option. The webview was always destroyed before it typed, so nothing was typed and nothing was lost.
+
+**Chosen: (d), measured p50/p95 sync per keystroke**
+
+| Size | Full text | Section | Note |
+|---|---|---|---|
+| 10 KB | 1.7 / 1.9 | 5.7 / 7.0 | 4.7 / 6.1 |
+| 100 KB | 7.7 / 8.9 | 7.6 / 8.6 | 7.3 / 8.7 |
+| 1 MB | 28 / 66 | 18.5 / 20.9 | 19.5 / 21.6 |
+| 5 MB | 295 / 371 | 50 / 75 | 46 / 56 |
+
+A re-run of the benchmark on the final code (not the prototype switch) agrees. At 100 KB, p50 is 7.3 ms full text, 7.4 ms section and 8.1 ms note. At 1 MB it is 27.5, 19.9 and 18.9 ms.
+
+**Decision.** (d) is the only option measured as both safe and fast.
+- **Up to about 1 MB:** typing is fine in every field. p50 is ≤ 28 ms, and section and note fields have no long tasks.
+- **Remaining long tasks** (2 at 100 KB, 5 at 1 MB) are the app's own debounced re-parse and preview render after a pause. The standalone app has the same cost.
+- **At 5 MB:** typing lags under every option, including sending nothing at all. That baseline costs 142–326 ms per keystroke in a 5 MB `<textarea>`, and the app's debounced re-parse blocks for up to about 9 s. That is a limit of the app's UI, not of the VS Code transport, and is outside this ADR.
+- **Stated limit:** documents up to about 1 MB.
+
+**Full-text normalization.** Because the full-text field's raw text is sent as typed, the model's debounced re-parse can produce a normalized form: the serializer collapses runs of blank lines between blocks. Hosted mode does not send that form back over what the user typed, so the document doesn't flip between the two. A Playwright test covers this.
+
 ## Open questions for the owner
 
 1. **Sync or own?** Must an edit made in MD.Orchestra and an edit made in VS Code's plain text editor for the same file stay in sync, with VS Code owning save, dirty state and backup? Or must the dashboard keep its own multi-file save model? "Sync" points to A then C. "Own" points to B with mandatory guards. This is the deciding question.
